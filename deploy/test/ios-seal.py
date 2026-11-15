@@ -4,7 +4,9 @@
 A signed .ipa holds its development profile, which names the team and the one iPhone it is made for. The
 workflow's artifacts can be downloaded by anyone who can read the repository (anyone at all, once it is public),
 so .github/workflows/ios.yml uploads only sealed apps: AES-256-GCM under a key made by scrypt from the passphrase
-in the secret IPA_PASSPHRASE. The file is "KARTO-SEAL1", a 16-byte salt, a 12-byte nonce, then the sealed bytes.
+in the secret IPA_PASSPHRASE. The sealed files can be downloaded and guessed at for good, so the passphrase must
+be random (openssl rand -base64 32), not a word. The file is "KARTO-SEAL1", a 16-byte salt, a 12-byte nonce, then
+the sealed bytes.
 
     ios-seal.py seal IN OUT   (the passphrase from IPA_PASSPHRASE)
     ios-seal.py open IN OUT   (from IPA_PASSPHRASE if it is set, else asked for)
@@ -24,13 +26,14 @@ MAGIC = b"KARTO-SEAL1"
 
 
 def key(passphrase, salt):
-    return Scrypt(salt=salt, length=32, n=2**15, r=8, p=1).derive(passphrase.encode())
+    return Scrypt(salt=salt, length=32, n=2**17, r=8, p=1).derive(passphrase.encode())
 
 
 def passphrase(asking):
-    value = os.environ.get("IPA_PASSPHRASE", "")
+    # Stripped: a secret set from a file keeps its last newline, and the same text typed at the prompt has none.
+    value = os.environ.get("IPA_PASSPHRASE", "").strip()
     if not value and asking:
-        value = getpass.getpass("The passphrase (the secret IPA_PASSPHRASE): ")
+        value = getpass.getpass("The passphrase (the secret IPA_PASSPHRASE): ").strip()
     if not value:
         sys.exit("IPA_PASSPHRASE is not set")
     return value

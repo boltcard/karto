@@ -7,29 +7,34 @@
 #   [ios:sim]     the package's tests on a Mac, and the app built for the simulator and started there on its
 #                 diagnostics screen, whose checks must all pass
 #   [ios:device]  the app built for a real iPhone, unsigned (the code a simulator build leaves out)
-#   [ios:signed]  the same, then signed for the one registered iPhone by a job that runs no package's code:
-#                 Karto.ipa, and with a line "diag: HOST:PORT:USER:HOSTKEYBLOB" in the message (where the test SSH
-#                 server of deploy/test/iphone-diag.sh will be, on the local network) Karto-Diagnostics.ipa too,
-#                 with Karto-Diagnostics-login.pub, the one key that server is to let in. A commit message is
-#                 public history: to keep a local network address out of it, start the workflow by hand and give
-#                 the line in the form's diag field.
+#   [ios:signed]  the same, then signed for the one registered iPhone by a job that runs none of the build's
+#                 packages: Karto.ipa.sealed, and with a line "diag: HOST:PORT:USER:HOSTKEYBLOB" in the message
+#                 (where the test SSH server of deploy/test/iphone-diag.sh will be, on the local network)
+#                 Karto-Diagnostics.ipa.sealed too, with Karto-Diagnostics-login.pub, the one key that server is
+#                 to let in. A commit message is history that stays: to keep a local network address out of it,
+#                 start the workflow by hand and give the line in the form's diag field. The run's log still
+#                 shows the line (a private address, a port, a throwaway user and a host key, nothing more).
 # Which app: Karto Wallet unless the message also says [ios:app=pos] (or the form's app is pos), for Karto PoS: its
 # own identifier and profile, its Xcode project KartoPoS, no simulator run (sim and the package's Mac tests are the
-# wallet's), and Karto-PoS.ipa when signed.
+# wallet's), and Karto-PoS.ipa.sealed when signed.
 # [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
-# Every Mac job waits for the Linux checks. Signing needs the secrets ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
-# team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM) and IPA_PASSPHRASE, and the
-# variable IPHONE_UDID (the one iPhone the development profile is made for). Without them check, sim and device
-# still run; a fork that wants signed builds sets its own.
+# Every Mac job waits for the Linux checks. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
+# team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM), IPHONE_UDID (the one iPhone
+# the development profile is made for, exactly as Apple shows it: a secret, not a variable, because a step's log
+# shows its variables in clear) and IPA_PASSPHRASE (a random one, e.g. openssl rand -base64 32: the sealed apps
+# can be downloaded by anyone and guessed at for as long as they like). Without them check, sim and device still
+# run; a fork that wants signed builds sets its own.
 #
 # What a signed run leaves where others can see it. Anyone who can read the repository can read its runs' logs and
 # download their artifacts. The certificate and the profile name the team, the developer and the iPhone, so they
 # are made in the job that signs and never leave it, and that job's log names none of them (the team's ID and the
 # iPhone's are masked). The signed apps carry the profile, so they are uploaded sealed with IPA_PASSPHRASE
 # (Karto.ipa.sealed and so on): open one with python3 deploy/test/ios-seal.py open Karto.ipa.sealed Karto.ipa.
+# The unsigned apps go from the build to the sign job as an artifact, and the diagnostics app's holds the test
+# server's login key: the sign job deletes that artifact when it ends, so it can be downloaded only meanwhile.
 #
 # Who can reach those secrets. They are the repository's, so GitHub hands them to a workflow on any branch:
-# whoever may push here can read them, with this file or with one of their own. So keep the five secrets in an
+# whoever may push here can read them, with this file or with one of their own. So keep the six secrets in an
 # environment that only chosen branches may use, and name it on the one job that reads them (sign), before more
 # than one person has push access. Workflows started from a fork's pull request are given no secrets, and this
 # one does not run on pull requests at all. Within this file: only the sign job is given a secret; it checks out
@@ -111,7 +116,7 @@ jobs:
             echo "the diag line is not HOST:PORT:USER:HOSTKEYBLOB"
             exit 1
           fi
-          echo "asked for: $what of $app${diag:+, with a diagnostics app for ${diag%:*}}"
+          echo "asked for: $what of $app${diag:+, with a diagnostics app}"
           echo "what=$what" >> "$GITHUB_OUTPUT"
           echo "diag=$diag" >> "$GITHUB_OUTPUT"
           echo "app=$app" >> "$GITHUB_OUTPUT"
@@ -454,8 +459,8 @@ jobs:
         working-directory: app
         run: |
           # The one key the test server will let in is made here, for this build: its seed goes into the app
-          # and nowhere else (no commit, no log line, no file that is kept), and its public half goes out beside
-          # the apps for the server to be given. Not the test phrase's key, which is in the repository.
+          # and nowhere else (no commit, no log line, no file kept after the sign job, which deletes the unsigned
+          # apps' artifact), and its public half goes out beside the apps for the server to be given. Not the test phrase's key, which is in the repository.
           seed=$(sh ../deploy/test/diag-login-key.sh "$RUNNER_TEMP/unsigned")
           [ "${#seed}" = 64 ]
           export EXPO_PUBLIC_DIAG_SSH="$DIAG:$seed"
@@ -511,7 +516,8 @@ jobs:
         with:
           name: unsigned-apps
           path: ${{ runner.temp }}/unsigned
-          retention-days: 3
+          # Deleted by the sign job when it ends; a day at most if it never starts.
+          retention-days: 1
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -529,6 +535,10 @@ jobs:
     if: needs.plan.outputs.what == 'signed'
     runs-on: macos-26
     timeout-minutes: 15
+    # actions: write only to delete the unsigned apps' artifact at the end.
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -541,6 +551,12 @@ jobs:
             deploy/test/ios-provision.py
             deploy/test/ios-provision-requirements.txt
             deploy/test/ios-seal.py
+      # Exact versions with their hashes, wheels only (no package is built here), in a Python of the job's own,
+      # and in a step given no secret.
+      - name: The provisioning script's packages
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r deploy/test/ios-provision-requirements.txt
       - name: The certificate, the iPhone, the identifier and the profile
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -548,16 +564,11 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
           IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
-          IPHONE_UDID: ${{ vars.IPHONE_UDID }}
+          IPHONE_UDID: ${{ secrets.IPHONE_UDID }}
           APP_VARIANT: ${{ needs.plan.outputs.app }}
         run: |
-          # A variable is not masked as a secret is: the iPhone's ID is masked here, for every later step too.
-          [ -n "$IPHONE_UDID" ] && echo "::add-mask::$IPHONE_UDID"
           # Checked now, not after the build is signed: without it the apps could not be uploaded.
           [ -n "$IPA_PASSPHRASE" ] || { echo "IPA_PASSPHRASE is not set: the signed apps could not be sealed"; exit 1; }
-          # Exact versions with their hashes, in a Python of the job's own: this step holds the team's Apple key.
-          python3 -m venv "$RUNNER_TEMP/venv"
-          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r deploy/test/ios-provision-requirements.txt
           # The identifier as app.config.js gives it for the app asked for (variant.js): node and nothing installed.
           BUNDLE_ID=$(cd app && node -e 'console.log(require("./app.config.js")({ config: require("./app.json").expo }).ios.bundleIdentifier)')
           echo "identifier: $BUNDLE_ID"
@@ -626,8 +637,9 @@ jobs:
             -c "Add :keychain-access-groups:0 string $team.$bundle" "$ent"
           cat "$ent"
 
-          # A Python that has the filter for untrusted archives (3.12, or an older one with the fix): the one
-          # thing in this job that is not Apple's own tool, and only to unpack.
+          # A Python that has the filter for untrusted archives (3.12, or an older one with the fix), to unpack:
+          # beside Apple's own tools, the only other things this job runs are that Python, the provisioning
+          # script and its pinned packages, node on app.config.js, and the sealing script.
           py=
           for p in python3 python3.13 python3.12 /opt/homebrew/bin/python3; do
             if "$p" -c 'import sys, tarfile; sys.exit(not hasattr(tarfile, "data_filter"))' 2>/dev/null; then
@@ -638,7 +650,7 @@ jobs:
           [ -n "$py" ] || { echo "no Python on this machine has a filter for untrusted archives"; exit 1; }
           echo "unpacking with $("$py" --version)"
 
-          # sign_one PACKED NAME FOLDER: one packed app (FOLDER inside), signed and zipped as NAME.ipa.
+          # sign_one PACKED NAME FOLDER: one packed app (FOLDER inside), signed, zipped as NAME.ipa and sealed as NAME.ipa.sealed.
           sign_one() {
             packed=$1
             folder=$3
@@ -724,3 +736,13 @@ jobs:
           name: signed-apps
           path: ${{ runner.temp }}/out
           retention-days: 7
+      # The unsigned apps were uploaded for this job alone, and the diagnostics app's bundle holds the test server's
+      # login key: gone when signing is over, whether it worked or not.
+      - name: Delete the unsigned apps' artifact
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "unsigned-apps") | .id')
+          [ -z "$id" ] || gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+          echo "unsigned-apps ${id:+deleted}${id:-was not there}"
