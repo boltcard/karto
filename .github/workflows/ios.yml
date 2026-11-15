@@ -31,7 +31,8 @@
 # iPhone's are masked). The signed apps carry the profile, so they are uploaded sealed with IPA_PASSPHRASE
 # (Karto.ipa.sealed and so on): open one with python3 deploy/test/ios-seal.py open Karto.ipa.sealed Karto.ipa.
 # The unsigned apps go from the build to the sign job as an artifact, and the diagnostics app's holds the test
-# server's login key: the sign job deletes that artifact when it ends, so it can be downloaded only meanwhile.
+# server's login key: a last job deletes that artifact however the sign job ends, so it can be downloaded only
+# while the run lasts (or for a day, the artifact's own limit, if GitHub never gets to that job).
 #
 # Who can reach those secrets. They are the repository's, so GitHub hands them to a workflow on any branch:
 # whoever may push here can read them, with this file or with one of their own. So keep the six secrets in an
@@ -459,8 +460,8 @@ jobs:
         working-directory: app
         run: |
           # The one key the test server will let in is made here, for this build: its seed goes into the app
-          # and nowhere else (no commit, no log line, no file kept after the sign job, which deletes the unsigned
-          # apps' artifact), and its public half goes out beside the apps for the server to be given. Not the test phrase's key, which is in the repository.
+          # and nowhere else (no commit, no log line, no file kept after the run, whose last job deletes the
+          # unsigned apps' artifact), and its public half goes out beside the apps for the server to be given. Not the test phrase's key, which is in the repository.
           seed=$(sh ../deploy/test/diag-login-key.sh "$RUNNER_TEMP/unsigned")
           [ "${#seed}" = 64 ]
           export EXPO_PUBLIC_DIAG_SSH="$DIAG:$seed"
@@ -516,7 +517,7 @@ jobs:
         with:
           name: unsigned-apps
           path: ${{ runner.temp }}/unsigned
-          # Deleted by the sign job when it ends; a day at most if it never starts.
+          # Deleted by the forget-unsigned job at the run's end; a day at most if that job never runs.
           retention-days: 1
       - uses: actions/upload-artifact@v7
         if: always()
@@ -535,10 +536,6 @@ jobs:
     if: needs.plan.outputs.what == 'signed'
     runs-on: macos-26
     timeout-minutes: 15
-    # actions: write only to delete the unsigned apps' artifact at the end.
-    permissions:
-      contents: read
-      actions: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -736,11 +733,19 @@ jobs:
           name: signed-apps
           path: ${{ runner.temp }}/out
           retention-days: 7
-      # The unsigned apps were uploaded for this job alone, and the diagnostics app's bundle holds the test server's
-      # login key: gone when signing is over, whether it worked or not.
-      - name: Delete the unsigned apps' artifact
-        if: always()
-        env:
+
+  # The unsigned apps were uploaded for the sign job alone, and the diagnostics app's bundle holds the test server's
+  # login key: deleted once the sign job is over, whether it signed, failed, was skipped or the run was cancelled
+  # (always() runs on a cancelled run too). A job of its own, on Linux, given no secret and nothing checked out.
+  forget-unsigned:
+    needs: [plan, device, sign]
+    if: always() && needs.plan.outputs.what == 'signed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
           GH_TOKEN: ${{ github.token }}
         run: |
           id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "unsigned-apps") | .id')
