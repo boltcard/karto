@@ -1,5 +1,6 @@
-# The iPhone apps' builds, on GitHub's macOS runners: the project has no Mac of its own. While the repository is
-# private a macOS minute counts ten times against its allowance, so nothing here runs because of an ordinary push:
+# The iPhone apps' builds, on GitHub's macOS runners: the project has no Mac of its own. In a private repository a
+# macOS minute counts ten times against its allowance, and in any a Mac run takes a while, so nothing here runs
+# because of an ordinary push:
 # on a branch named ios-* the pushed commit's message must ask, and anywhere else the workflow is started by hand
 # (Actions, iOS, Run workflow). What can be asked for, the least first:
 #   [ios:check]   Linux only: the project's settings as expo prebuild writes them, and the package's tests
@@ -17,17 +18,24 @@
 # wallet's), and Karto-PoS.ipa when signed.
 # [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
 # Every Mac job waits for the Linux checks. Signing needs the secrets ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
-# team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM) and the variable IPHONE_UDID
-# (the one iPhone the development profile is made for). Without them check, sim and device still run; a fork that
-# wants signed builds sets its own.
+# team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM) and IPA_PASSPHRASE, and the
+# variable IPHONE_UDID (the one iPhone the development profile is made for). Without them check, sim and device
+# still run; a fork that wants signed builds sets its own.
+#
+# What a signed run leaves where others can see it. Anyone who can read the repository can read its runs' logs and
+# download their artifacts. The certificate and the profile name the team, the developer and the iPhone, so they
+# are made in the job that signs and never leave it, and that job's log names none of them (the team's ID and the
+# iPhone's are masked). The signed apps carry the profile, so they are uploaded sealed with IPA_PASSPHRASE
+# (Karto.ipa.sealed and so on): open one with python3 deploy/test/ios-seal.py open Karto.ipa.sealed Karto.ipa.
 #
 # Who can reach those secrets. They are the repository's, so GitHub hands them to a workflow on any branch:
-# whoever may push here can read them, with this file or with one of their own. So keep the four secrets in an
-# environment that only chosen branches may use, and name it on the two jobs that read them (provision and
-# sign), before more than one person has push access. Workflows started from a fork's pull request are given no
-# secrets, and this one does not run on pull requests at all. Within this file: only those two jobs are given a
-# secret; the sign job checks out nothing and installs nothing; the jobs that run npm's and CocoaPods' scripts
-# are given none.
+# whoever may push here can read them, with this file or with one of their own. So keep the five secrets in an
+# environment that only chosen branches may use, and name it on the one job that reads them (sign), before more
+# than one person has push access. Workflows started from a fork's pull request are given no secrets, and this
+# one does not run on pull requests at all. Within this file: only the sign job is given a secret; it checks out
+# only the few files it needs, installs only the hash-pinned Python packages of
+# deploy/test/ios-provision-requirements.txt and runs no npm or CocoaPods code; the jobs that run npm's and
+# CocoaPods' scripts are given none.
 name: iOS
 on:
   push:
@@ -148,39 +156,6 @@ jobs:
         with:
           name: deploy-assets
           path: app/deploy-assets
-          retention-days: 3
-
-  # At Apple: the certificate, the iPhone, the identifier and the profile. Nothing here needs a Mac.
-  provision:
-    needs: [plan, check]
-    if: needs.plan.outputs.what == 'signed'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      # Exact versions with their hashes: this job holds the team's Apple key.
-      - run: pip install --quiet --require-hashes -r deploy/test/ios-provision-requirements.txt
-      - name: The certificate, the iPhone, the identifier and the profile
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
-          IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
-          IPHONE_UDID: ${{ vars.IPHONE_UDID }}
-          APP_VARIANT: ${{ needs.plan.outputs.app }}
-        run: |
-          # The identifier as app.config.js gives it for the app asked for (variant.js): node and nothing installed.
-          BUNDLE_ID=$(cd app && node -e 'console.log(require("./app.config.js")({ config: require("./app.json").expo }).ios.bundleIdentifier)')
-          echo "identifier: $BUNDLE_ID"
-          # Each app has its own profile and identifier names: a profile is made afresh by deleting those of its name.
-          if [ "$APP_VARIANT" = pos ]; then
-            export PROFILE_NAME='Karto PoS development' IDENTIFIER_NAME='Karto PoS development'
-          fi
-          BUNDLE_ID=$BUNDLE_ID python3 deploy/test/ios-provision.py "$RUNNER_TEMP/signing"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: signing
-          path: ${{ runner.temp }}/signing
           retention-days: 3
 
   # The package's tests again, where the app is built: against the Mac's own sshd.
@@ -544,18 +519,53 @@ jobs:
           path: ${{ runner.temp }}/out
           retention-days: 7
 
-  # The built apps signed for the one iPhone. A job of its own, with no checkout and no package installed, so
-  # the signing key meets only Apple's tools.
+  # At Apple, the certificate, the iPhone, the identifier and the profile; then the built apps signed for the one
+  # iPhone. A job of its own, with only the files it needs checked out and only hash-pinned Python packages
+  # installed, so the keys meet no package of the build's. The certificate and the profile are made here and
+  # never leave the job: they name the team, the developer and the iPhone, and artifacts can be read by anyone
+  # who can read the repository.
   sign:
-    needs: [plan, device, provision]
+    needs: [plan, device]
     if: needs.plan.outputs.what == 'signed'
     runs-on: macos-26
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/checkout@v7
         with:
-          name: signing
-          path: ${{ runner.temp }}/signing
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            app/app.config.js
+            app/app.json
+            app/variant.js
+            deploy/test/ios-provision.py
+            deploy/test/ios-provision-requirements.txt
+            deploy/test/ios-seal.py
+      - name: The certificate, the iPhone, the identifier and the profile
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
+          IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
+          IPHONE_UDID: ${{ vars.IPHONE_UDID }}
+          APP_VARIANT: ${{ needs.plan.outputs.app }}
+        run: |
+          # A variable is not masked as a secret is: the iPhone's ID is masked here, for every later step too.
+          [ -n "$IPHONE_UDID" ] && echo "::add-mask::$IPHONE_UDID"
+          # Checked now, not after the build is signed: without it the apps could not be uploaded.
+          [ -n "$IPA_PASSPHRASE" ] || { echo "IPA_PASSPHRASE is not set: the signed apps could not be sealed"; exit 1; }
+          # Exact versions with their hashes, in a Python of the job's own: this step holds the team's Apple key.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet --require-hashes -r deploy/test/ios-provision-requirements.txt
+          # The identifier as app.config.js gives it for the app asked for (variant.js): node and nothing installed.
+          BUNDLE_ID=$(cd app && node -e 'console.log(require("./app.config.js")({ config: require("./app.json").expo }).ios.bundleIdentifier)')
+          echo "identifier: $BUNDLE_ID"
+          # Each app has its own profile and identifier names: a profile is made afresh by deleting those of its name.
+          if [ "$APP_VARIANT" = pos ]; then
+            export PROFILE_NAME='Karto PoS development' IDENTIFIER_NAME='Karto PoS development'
+          fi
+          BUNDLE_ID=$BUNDLE_ID "$RUNNER_TEMP/venv/bin/python" deploy/test/ios-provision.py "$RUNNER_TEMP/signing"
       - uses: actions/download-artifact@v8
         with:
           name: unsigned-apps
@@ -565,19 +575,24 @@ jobs:
       - name: Sign them for the iPhone
         env:
           IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
+          IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
         run: |
           s="$RUNNER_TEMP/signing"
           OUT="$RUNNER_TEMP/out"
           mkdir -p "$OUT"
           security cms -D -i "$s/profile.mobileprovision" > "$s/profile.plist"
           team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$s/profile.plist")
+          [ -n "$team" ]
+          # The team's ID is in every entitlement printed below: masked, so the log shows *** in its place.
+          echo "::add-mask::$team"
           # The identifier is the profile's; an app that names another is not signed.
           bundle=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$s/profile.plist")
           bundle=${bundle#"$team."}
-          echo "team $team, identifier $bundle, profile $(/usr/libexec/PlistBuddy -c 'Print :Name' "$s/profile.plist")"
+          echo "identifier $bundle, profile $(/usr/libexec/PlistBuddy -c 'Print :Name' "$s/profile.plist")"
           echo "== what the profile allows"
           /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$s/profile.plist"
-          /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$s/profile.plist"
+          # The iPhones by count only: an ID is the phone's own.
+          echo "for $(/usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$s/profile.plist" | grep -c '^ ') iPhone(s)"
 
           # The key and its certificate, in a keychain of this job's own.
           pass=$(uuidgen)
@@ -594,7 +609,8 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$kc" > /dev/null
           # shellcheck disable=SC2046 # one word for each keychain already there
           security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
-          security find-identity -v -p codesigning "$kc"
+          # Only the count: an identity's line holds the certificate's name, which is the developer's.
+          security find-identity -v -p codesigning "$kc" | tail -1
           identity=$(security find-identity -v -p codesigning "$kc" | awk 'NR==1 {print $2}')
           [ -n "$identity" ]
 
@@ -676,9 +692,12 @@ jobs:
             codesign -d --entitlements - "$APP"
             mkdir -p "$work/ipa/Payload"
             cp -R "$APP" "$work/ipa/Payload/"
-            (cd "$work/ipa" && zip -qry "$OUT/$2.ipa" Payload)
-            ls -l "$OUT/$2.ipa"
-            shasum -a 256 "$OUT/$2.ipa"
+            (cd "$work/ipa" && zip -qry "$work/$2.ipa" Payload)
+            ls -l "$work/$2.ipa"
+            shasum -a 256 "$work/$2.ipa"
+            # Sealed for the upload: the app holds the profile (see the top of this file).
+            "$RUNNER_TEMP/venv/bin/python" deploy/test/ios-seal.py seal "$work/$2.ipa" "$OUT/$2.ipa.sealed"
+            ls -l "$OUT/$2.ipa.sealed"
           }
           if [ -f "$RUNNER_TEMP/unsigned/pos.tar" ]; then
             sign_one "$RUNNER_TEMP/unsigned/pos.tar" Karto-PoS KartoPoS.app
@@ -699,6 +718,7 @@ jobs:
             cp "$login" "$OUT/Karto-Diagnostics-login.pub"
           fi
           security delete-keychain "$kc"
+          rm -rf "${s:?}"
       - uses: actions/upload-artifact@v7
         with:
           name: signed-apps

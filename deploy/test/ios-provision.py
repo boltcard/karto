@@ -5,7 +5,8 @@ Through the App Store Connect API, with a team key, it makes sure of four things
 of them twice: a development certificate for our own signing key, the iPhone registered as a
 device, the app's identifier with NFC Tag Reading switched on, and a development profile that
 names all three. It writes the certificate (cert.der) and the profile (profile.mobileprovision)
-to the folder given; neither is a secret. Run by .github/workflows/ios.yml, on Linux.
+to the folder given. Neither is a secret, but both name the team and the iPhone, so they never leave the
+signing job of .github/workflows/ios.yml, and what this prints names neither the phone nor the certificate.
 
     ios-provision.py OUT_DIR
 
@@ -72,7 +73,7 @@ def certificate(key):
     for item in found["data"]:
         der = base64.b64decode(item["attributes"]["certificateContent"])
         if public_bytes(x509.load_der_x509_certificate(der).public_key()) == ours:
-            print(f"certificate: found {item['attributes']['serialNumber']}, good until {item['attributes']['expirationDate']}")
+            print(f"certificate: found, good until {item['attributes']['expirationDate']}")
             return item["id"], der
     csr = (
         x509.CertificateSigningRequestBuilder()
@@ -92,7 +93,7 @@ def certificate(key):
             }
         },
     )["data"]
-    print(f"certificate: made {made['attributes']['serialNumber']}, good until {made['attributes']['expirationDate']}")
+    print(f"certificate: made, good until {made['attributes']['expirationDate']}")
     return made["id"], base64.b64decode(made["attributes"]["certificateContent"])
 
 
@@ -101,13 +102,13 @@ def device(udid):
     if found:
         item = found[0]
         if item["attributes"]["status"] != "ENABLED":
-            sys.exit(f"device: {udid} is registered but {item['attributes']['status']}")
-        print(f"device: found {item['attributes']['name']} ({item['attributes'].get('model')})")
+            sys.exit(f"device: the iPhone is registered but {item['attributes']['status']}")
+        print("device: found")
         return item["id"]
     made = call(
         "POST", "/devices", {"data": {"type": "devices", "attributes": {"name": DEVICE_NAME, "udid": udid, "platform": "IOS"}}}
     )["data"]
-    print(f"device: registered as {DEVICE_NAME}")
+    print("device: registered")
     return made["id"]
 
 
@@ -167,7 +168,7 @@ def profile(bundle, cert, phone, name=PROFILE_NAME):
             }
         },
     )["data"]
-    print(f"profile: made {made['attributes']['uuid']}, good until {made['attributes']['expirationDate']}")
+    print(f"profile: made, good until {made['attributes']['expirationDate']}")
     return base64.b64decode(made["attributes"]["profileContent"])
 
 
