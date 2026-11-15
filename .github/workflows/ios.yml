@@ -1,0 +1,706 @@
+# The iPhone apps' builds, on GitHub's macOS runners: the project has no Mac of its own. While the repository is
+# private a macOS minute counts ten times against its allowance, so nothing here runs because of an ordinary push:
+# on a branch named ios-* the pushed commit's message must ask, and anywhere else the workflow is started by hand
+# (Actions, iOS, Run workflow). What can be asked for, the least first:
+#   [ios:check]   Linux only: the project's settings as expo prebuild writes them, and the package's tests
+#   [ios:sim]     the package's tests on a Mac, and the app built for the simulator and started there on its
+#                 diagnostics screen, whose checks must all pass
+#   [ios:device]  the app built for a real iPhone, unsigned (the code a simulator build leaves out)
+#   [ios:signed]  the same, then signed for the one registered iPhone by a job that runs no package's code:
+#                 Karto.ipa, and with a line "diag: HOST:PORT:USER:HOSTKEYBLOB" in the message (where the test SSH
+#                 server of deploy/test/iphone-diag.sh will be, on the local network) Karto-Diagnostics.ipa too,
+#                 with Karto-Diagnostics-login.pub, the one key that server is to let in. A commit message is
+#                 public history: to keep a local network address out of it, start the workflow by hand and give
+#                 the line in the form's diag field.
+# Which app: Karto Wallet unless the message also says [ios:app=pos] (or the form's app is pos), for Karto PoS: its
+# own identifier and profile, its Xcode project KartoPoS, no simulator run (sim and the package's Mac tests are the
+# wallet's), and Karto-PoS.ipa when signed.
+# [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
+# Every Mac job waits for the Linux checks. Signing needs the secrets ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
+# team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM) and the variable IPHONE_UDID
+# (the one iPhone the development profile is made for). Without them check, sim and device still run; a fork that
+# wants signed builds sets its own.
+#
+# Who can reach those secrets. They are the repository's, so GitHub hands them to a workflow on any branch:
+# whoever may push here can read them, with this file or with one of their own. So keep the four secrets in an
+# environment that only chosen branches may use, and name it on the two jobs that read them (provision and
+# sign), before more than one person has push access. Workflows started from a fork's pull request are given no
+# secrets, and this one does not run on pull requests at all. Within this file: only those two jobs are given a
+# secret; the sign job checks out nothing and installs nothing; the jobs that run npm's and CocoaPods' scripts
+# are given none.
+name: iOS
+on:
+  push:
+    branches: ['ios-*']
+  workflow_dispatch:
+    inputs:
+      what:
+        description: What to run
+        type: choice
+        options: [check, sim, device, signed]
+        default: check
+      app:
+        description: Which app
+        type: choice
+        options: [wallet, pos]
+        default: wallet
+      diag:
+        description: 'For signed: the line deploy/test/iphone-diag.sh line prints (HOST:PORT:USER:HOSTKEYBLOB of the test SSH server on the local network); empty for no diagnostics app'
+        type: string
+        default: ''
+concurrency:
+  group: ios
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # What was asked for, from the commit's message or from the form. A push that asks for nothing runs nothing.
+  plan:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ios:')
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      what: ${{ steps.read.outputs.what }}
+      diag: ${{ steps.read.outputs.diag }}
+      app: ${{ steps.read.outputs.app }}
+    steps:
+      - id: read
+        env:
+          EVENT: ${{ github.event_name }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+          INPUT_WHAT: ${{ inputs.what }}
+          INPUT_DIAG: ${{ inputs.diag }}
+          INPUT_APP: ${{ inputs.app }}
+        run: |
+          what=$INPUT_WHAT
+          diag=$INPUT_DIAG
+          app=$INPUT_APP
+          if [ "$EVENT" = push ]; then
+            # The first [ios:WORD] that is a word alone ([ios:app=pos] has an = in it, so it is never taken for this).
+            # None at all is no failure (grep's 1 would fail the step under pipefail): it asks for nothing.
+            what=$(printf '%s\n' "$MESSAGE" | { grep -o '\[ios:[a-z]*\]' || true; } | head -1 | sed 's/\[ios:\([a-z]*\)\]/\1/')
+            diag=$(printf '%s\n' "$MESSAGE" | sed -n 's/^diag: *//p' | head -1)
+            app=$(printf '%s\n' "$MESSAGE" | sed -n 's/.*\[ios:app=\([a-z]*\)\].*/\1/p' | head -1)
+          fi
+          case "$what" in check | sim | device | signed) ;; *) what=none ;; esac
+          [ "$app" = pos ] || app=wallet
+          # The till has no simulator run (no diagnostics screen of its own) and no diagnostics app.
+          if [ "$app" = pos ] && [ "$what" = sim ]; then
+            echo "Karto PoS has no simulator run: ask for check, device or signed"
+            exit 1
+          fi
+          if [ "$app" = pos ] && [ -n "$diag" ]; then
+            echo "a diagnostics app is the wallet's: leave out the diag line for Karto PoS"
+            exit 1
+          fi
+          # The line is built into an app: only what an address, a port, a user name and a host key can hold.
+          # Nothing in it is secret.
+          if [ -n "$diag" ] && ! printf '%s' "$diag" | grep -Eq '^[A-Za-z0-9.-]+:[0-9]+:[a-z_][a-z0-9_-]*:[A-Za-z0-9+/=]+$'; then
+            echo "the diag line is not HOST:PORT:USER:HOSTKEYBLOB"
+            exit 1
+          fi
+          echo "asked for: $what of $app${diag:+, with a diagnostics app for ${diag%:*}}"
+          echo "what=$what" >> "$GITHUB_OUTPUT"
+          echo "diag=$diag" >> "$GITHUB_OUTPUT"
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+
+  # Linux, cheap: a wrong setting or a broken package is found here, before a Mac is started.
+  check:
+    needs: plan
+    if: needs.plan.outputs.what != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: The project's settings
+        run: sh deploy/test/ios-prebuild-check.sh
+      - name: The package's tests
+        run: |
+          sh deploy/test/ios-swift-test.sh 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+          # Without a server the SSH tests skip themselves: a run that skipped any proved nothing.
+          if grep -q 'skipped' "$RUNNER_TEMP/swift-test.log"; then echo "some tests were skipped"; exit 1; fi
+
+  # The server bundle is made on Linux and brought to the Mac, as the plugin's iPhone half expects.
+  assets:
+    needs: [plan, check]
+    if: contains(fromJSON('["sim", "device", "signed"]'), needs.plan.outputs.what)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - run: make app-deploy-assets
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deploy-assets
+          path: app/deploy-assets
+          retention-days: 3
+
+  # At Apple: the certificate, the iPhone, the identifier and the profile. Nothing here needs a Mac.
+  provision:
+    needs: [plan, check]
+    if: needs.plan.outputs.what == 'signed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Exact versions with their hashes: this job holds the team's Apple key.
+      - run: pip install --quiet --require-hashes -r deploy/test/ios-provision-requirements.txt
+      - name: The certificate, the iPhone, the identifier and the profile
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
+          IPHONE_UDID: ${{ vars.IPHONE_UDID }}
+          APP_VARIANT: ${{ needs.plan.outputs.app }}
+        run: |
+          # The identifier as app.config.js gives it for the app asked for (variant.js): node and nothing installed.
+          BUNDLE_ID=$(cd app && node -e 'console.log(require("./app.config.js")({ config: require("./app.json").expo }).ios.bundleIdentifier)')
+          echo "identifier: $BUNDLE_ID"
+          # Each app has its own profile and identifier names: a profile is made afresh by deleting those of its name.
+          if [ "$APP_VARIANT" = pos ]; then
+            export PROFILE_NAME='Karto PoS development' IDENTIFIER_NAME='Karto PoS development'
+          fi
+          BUNDLE_ID=$BUNDLE_ID python3 deploy/test/ios-provision.py "$RUNNER_TEMP/signing"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signing
+          path: ${{ runner.temp }}/signing
+          retention-days: 3
+
+  # The package's tests again, where the app is built: against the Mac's own sshd.
+  swift-tests:
+    needs: [plan, check]
+    if: needs.plan.outputs.what == 'sim'
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: The Mac
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+      - name: A test sshd
+        run: |
+          target=$(sh deploy/test/sshd-mac.sh "$RUNNER_TEMP/sshd")
+          echo "CARD_SSH_TEST=$target" >> "$GITHUB_ENV"
+      - name: swift test
+        working-directory: app/modules/card-native/swift/CardKit
+        run: |
+          swift test 2>&1 | tee "$RUNNER_TEMP/swift-test.log"
+          if grep -q 'skipped' "$RUNNER_TEMP/swift-test.log"; then echo "some tests were skipped"; exit 1; fi
+      - name: Collect the logs
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          cp "$RUNNER_TEMP/swift-test.log" "$RUNNER_TEMP/out/" || true
+          sudo cat "$RUNNER_TEMP/sshd/sshd.log" > "$RUNNER_TEMP/out/sshd.log" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: swift-tests
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+
+  # The app built for the simulator and started there on its diagnostics screen, against the Mac's own sshd.
+  sim:
+    needs: [plan, assets]
+    if: needs.plan.outputs.what == 'sim'
+    runs-on: macos-26
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: The Mac
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+          sw_vers
+          xcodebuild -version
+          echo "node $(node --version), CocoaPods $(pod --version)"
+          xcrun simctl list runtimes
+      - name: Start a simulator (it boots while the app builds)
+        run: |
+          # The first iPhone of the newest iOS runtime installed.
+          picked=$(xcrun simctl list devices available -j | jq -r '
+            .devices | to_entries
+            | map(select(.key | test("SimRuntime\\.iOS-")))
+            | map(select(any(.value[]; .name | test("^iPhone"))))
+            | sort_by(.key | [scan("[0-9]+") | tonumber]) | last
+            | (.value | map(select(.name | test("^iPhone"))) | first) as $d
+            | "\($d.udid) \($d.name), \(.key | sub(".*SimRuntime\\."; ""))"')
+          echo "$picked"
+          udid=${picked%% *}
+          xcrun simctl boot "$udid"
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v8
+        with:
+          name: deploy-assets
+          path: app/deploy-assets
+      - name: A test sshd
+        run: |
+          target=$(sh deploy/test/sshd-mac.sh "$RUNNER_TEMP/sshd")
+          seed=$(sed -n 's/.*"sshEd25519Seed": "\([^"]*\)".*/\1/p' testvectors/vectors.json)
+          echo "EXPO_PUBLIC_DIAG_SSH=$target:$seed" >> "$GITHUB_ENV"
+          # Expo's bundler also reads this file, should Xcode not hand the variable to its build step.
+          echo "EXPO_PUBLIC_DIAG_SSH=$target:$seed" > app/.env.local
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      - name: expo prebuild
+        working-directory: app
+        run: npx expo prebuild -p ios --no-install
+      - name: pod install
+        working-directory: app/ios
+        run: pod install 2>&1 | tee "$OUT/pod-install.log"
+      - name: What prebuild and CocoaPods wrote
+        working-directory: app/ios
+        run: |
+          echo "== the copy step in the app's project"
+          grep -n 'withDeployAssets' -B2 -A14 Karto.xcodeproj/project.pbxproj || echo "NOT FOUND"
+          echo "== the Swift package in the Pods project"
+          grep -n 'SwiftPackage\|CardSsh\|CardLogic\|CardKit' Pods/Pods.xcodeproj/project.pbxproj | head -40 || echo "NOT FOUND"
+          echo "== [SPM] lines of pod install"
+          grep -n 'SPM' "$OUT/pod-install.log" || echo "none"
+      - name: xcodebuild
+        working-directory: app
+        run: |
+          status=0
+          xcodebuild -workspace ios/Karto.xcworkspace -scheme Karto -configuration Release \
+            -sdk iphonesimulator -destination "id=$UDID" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation ONLY_ACTIVE_ARCH=YES build > "$OUT/xcodebuild.log" 2>&1 || status=$?
+          echo "== errors, and warnings in our own files"
+          grep -nE '(error:|fatal error|ld: |Undefined symbols|duplicate symbol|warning: .*(CardNative|CardSsh|CardLogic|DeviceKey|NfcReader|QrScannerView|CardCameraView|withDeployAssets))' "$OUT/xcodebuild.log" | cut -c1-400 | head -150 || echo "none"
+          echo "== the end of the log"
+          tail -40 "$OUT/xcodebuild.log" | cut -c1-400
+          exit "$status"
+      - name: What is in the app
+        run: |
+          app="$RUNNER_TEMP/dd/Build/Products/Release-iphonesimulator/Karto.app"
+          du -sh "$app"
+          find "$app/deploy-assets" -type f -exec ls -l {} +
+          echo "cardd in the app:      $(shasum -a 256 < "$app/deploy-assets/deploy/bin/cardd")"
+          echo "cardd in the manifest: $(jq -r '.[] | select(.path == "bin/cardd") | .sha256' "$app/deploy-assets/manifest.json")"
+          ls "$app/Frameworks" 2>/dev/null || echo "no Frameworks folder (all static)"
+          echo "== the fonts"
+          ls -l "$app"/*.ttf
+          echo "== what the app asks of the phone (Info.plist)"
+          plutil -p "$app/Info.plist" | grep -E 'UsageDescription|CFBundleDisplayName|CFBundleIdentifier|UIAppFonts' -A3 | cut -c1-200 || true
+          echo "APP=$app" >> "$GITHUB_ENV"
+      - name: Run it in the simulator
+        run: |
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")
+          xcrun simctl bootstatus "$UDID"
+          xcrun simctl install "$UDID" "$APP"
+          # A release build's console.log lines reach the simulator's log (com.facebook.react.log:javascript).
+          xcrun simctl spawn "$UDID" log stream --level debug --style compact \
+            --predicate 'process == "Karto"' > "$OUT/simulator.log" 2>&1 &
+          logpid=$!
+          sleep 2
+          xcrun simctl launch "$UDID" "$bundle"
+          waited=0
+          until grep -q 'CARDAPP-DIAG-DONE' "$OUT/simulator.log" || [ "$waited" -ge 240 ]; do
+            sleep 5
+            waited=$((waited + 5))
+          done
+          sleep 2
+          xcrun simctl io "$UDID" screenshot "$OUT/screen-end.png" || true
+          kill "$logpid" 2>/dev/null || true
+          grep -o 'CARDAPP-DIAG.*' "$OUT/simulator.log" > "$OUT/cardapp-diag.txt" || true
+          echo "== the diagnostics screen's results (waited ${waited}s)"
+          if [ ! -s "$OUT/cardapp-diag.txt" ]; then
+            echo "no CARDAPP-DIAG line in the simulator's log"
+            grep -iE 'error|exception|fatal|crash' "$OUT/simulator.log" | cut -c1-400 | head -60 || true
+            exit 1
+          fi
+          cat "$OUT/cardapp-diag.txt"
+          echo "== the server's side: what the app uploaded"
+          ls -l ~/card-app ~/card-app/bin 2>&1 || true
+          on_server=$(shasum -a 256 < ~/card-app/bin/cardd | cut -d' ' -f1 || true)
+          in_manifest=$(jq -r '.[] | select(.path == "bin/cardd") | .sha256' "$APP/deploy-assets/manifest.json")
+          echo "cardd on the server:   $on_server"
+          echo "cardd in the manifest: $in_manifest"
+          grep -q 'CARDAPP-DIAG-DONE.*"fail":0' "$OUT/cardapp-diag.txt"
+          [ "$on_server" = "$in_manifest" ]
+      - name: Collect the logs
+        if: always()
+        run: |
+          sudo cat "$RUNNER_TEMP/sshd/sshd.log" > "$OUT/sshd.log" || true
+          cp app/ios/Podfile app/ios/Podfile.lock "$OUT/" 2>/dev/null || true
+          ls ~/Library/Logs/DiagnosticReports 2>/dev/null | head -20 || true
+          cp ~/Library/Logs/DiagnosticReports/Karto* "$OUT/" 2>/dev/null || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sim
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+
+  # For a real iPhone: the iphoneos SDK, arm64, no signing. It proves the device-only code compiles and links
+  # (the Secure Enclave branch of the phone's key). One compile gives both apps: the wallet is built, then built
+  # again as the diagnostics app, in the same project and the same place, so only the JavaScript and the app's
+  # own few files are done twice. This job has run npm's and CocoaPods' scripts, so it is given no secret.
+  device:
+    needs: [plan, assets]
+    if: contains(fromJSON('["device", "signed"]'), needs.plan.outputs.what)
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DIAG: ${{ needs.plan.outputs.diag }}
+      # Which app (variant.js), and its Xcode project's name: Expo names it after the app's name without spaces.
+      APP_VARIANT: ${{ needs.plan.outputs.app }}
+      EXPO_PUBLIC_APP_VARIANT: ${{ needs.plan.outputs.app }}
+      PROJ: ${{ needs.plan.outputs.app == 'pos' && 'KartoPoS' || 'Karto' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: The Mac
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/unsigned"
+          echo "OUT=$RUNNER_TEMP/out" >> "$GITHUB_ENV"
+          sw_vers
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos
+      - uses: actions/download-artifact@v8
+        with:
+          name: deploy-assets
+          path: app/deploy-assets
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      - name: expo prebuild
+        working-directory: app
+        run: |
+          # Xcode's bundle step may not hand the job's environment to Metro, which reads the app's config (the
+          # router's root) and the entry's EXPO_PUBLIC_APP_VARIANT: the file is read whatever the step is given.
+          if [ "$APP_VARIANT" = pos ]; then printf 'APP_VARIANT=pos\nEXPO_PUBLIC_APP_VARIANT=pos\n' > .env.local; fi
+          npx expo prebuild -p ios --no-install
+          # The project under the app's own name (the workspace is CocoaPods', made by the next step).
+          ls -d "ios/$PROJ.xcodeproj" "ios/$PROJ"
+      - name: pod install
+        working-directory: app/ios
+        run: |
+          pod install 2>&1 | tee "$OUT/pod-install.log"
+          ls -d "$PROJ.xcworkspace"
+      - name: Build the app for a device, unsigned
+        working-directory: app
+        run: |
+          status=0
+          xcodebuild -workspace "ios/$PROJ.xcworkspace" -scheme "$PROJ" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-$APP_VARIANT.log" 2>&1 || status=$?
+          echo "== errors, and warnings in our own files"
+          grep -nE '(error:|fatal error|ld: |Undefined symbols|duplicate symbol|warning: .*(CardNative|CardSsh|CardLogic|DeviceKey|NfcReader|QrScannerView|CardCameraView|withDeployAssets))' "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400 | head -150 || echo "none"
+          echo "== the end of the log"
+          tail -25 "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400
+          exit "$status"
+      - name: What is in the wallet
+        if: env.APP_VARIANT == 'wallet'
+        run: |
+          app="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/Karto.app"
+          du -sh "$app"
+          lipo -info "$app/Karto"
+          echo "cardd in the app:      $(shasum -a 256 < "$app/deploy-assets/deploy/bin/cardd" | cut -d' ' -f1)"
+          echo "cardd in the manifest: $(jq -r '.[] | select(.path == "bin/cardd") | .sha256' "$app/deploy-assets/manifest.json")"
+          echo "== what the app asks of the phone (Info.plist)"
+          plutil -p "$app/Info.plist" | grep -E 'UsageDescription|select-identifiers|MinimumOSVersion|CFBundleIdentifier|CFBundleDisplayName|UIDeviceFamily|UIRequiredDeviceCapabilities|UIBackgroundModes|BGTaskScheduler|UIAppFonts' -A3 | cut -c1-200 || true
+          # The wallet asks for the camera (Scan QR and a card's photo), in the words iOS shows under its question.
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$app/Info.plist")" = "Karto Wallet uses the camera to scan a QR code you want to pay and to photograph your cards." ]
+          # It asks for neither the microphone, the photo library nor the local network, and is not the diagnostics app.
+          if plutil -p "$app/Info.plist" | grep -E 'NSMicrophoneUsageDescription|NSPhotoLibrary|NSLocalNetworkUsageDescription'; then
+            echo "the wallet carries a line it must not"
+            exit 1
+          fi
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist")" = "Karto" ]
+          echo "== the entitlements a signed build would carry"
+          cat app/ios/Karto/Karto.entitlements
+          tar -C "$(dirname "$app")" -cf "$RUNNER_TEMP/unsigned/wallet.tar" Karto.app
+          shasum -a 256 "$app/main.jsbundle" | cut -d' ' -f1 > "$RUNNER_TEMP/wallet-bundle.sha"
+          # Its JavaScript is the wallet's, not the till's (deploy/test/bundle-markers.sh's markers).
+          grep -aqF 'Add your first card' "$app/main.jsbundle"
+          if grep -aqF 'Pair this phone to take payments' "$app/main.jsbundle"; then echo "Karto PoS's code is in the wallet's bundle"; exit 1; fi
+      # Karto PoS: its own name, lines and JavaScript.
+      - name: What is in Karto PoS
+        if: env.APP_VARIANT == 'pos'
+        run: |
+          app="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/KartoPoS.app"
+          du -sh "$app"
+          lipo -info "$app/KartoPoS"
+          echo "== what the app asks of the phone (Info.plist)"
+          plutil -p "$app/Info.plist" | grep -E 'UsageDescription|select-identifiers|MinimumOSVersion|CFBundleIdentifier|CFBundleDisplayName|UIDeviceFamily|UIRequiredDeviceCapabilities|UIBackgroundModes|BGTaskScheduler|UIAppFonts' -A3 | cut -c1-200 || true
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist")" = "Karto PoS" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = "tech.whitewolf.kartopos.dev" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSCameraUsageDescription' "$app/Info.plist")" = "Karto PoS uses the camera to scan the pairing code Karto Wallet shows." ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NFCReaderUsageDescription' "$app/Info.plist")" = "Karto PoS reads Bolt Cards to charge them." ]
+          # No Face ID, microphone, photo library or local network line, and none of the wallet's server files.
+          if plutil -p "$app/Info.plist" | grep -E 'NSFaceIDUsageDescription|NSMicrophoneUsageDescription|NSPhotoLibrary|NSLocalNetworkUsageDescription'; then
+            echo "Karto PoS carries a line it must not"
+            exit 1
+          fi
+          [ ! -d "$app/deploy-assets" ]
+          # Its JavaScript is the till's, not the wallet's (deploy/test/bundle-markers.sh's markers): a build whose
+          # bundle step missed the variant would be the wallet under the till's name.
+          grep -aqF 'Pair this phone to take payments' "$app/main.jsbundle"
+          for marker in 'Add your first card' 'CARDAPP-ONBOARDING' '.lnvps.cloud'; do
+            if grep -aqF "$marker" "$app/main.jsbundle"; then echo "Karto Wallet's code is in the till's bundle ($marker)"; exit 1; fi
+          done
+          echo "== the entitlements a signed build would carry"
+          cat app/ios/KartoPoS/KartoPoS.entitlements
+          tar -C "$(dirname "$app")" -cf "$RUNNER_TEMP/unsigned/pos.tar" KartoPoS.app
+      # The diagnostics app: the same build with three differences: it starts at the diagnostics
+      # screen, it has the local-network line, and its name on the phone is "Karto Diagnostics".
+      - name: Build it again as the diagnostics app
+        if: needs.plan.outputs.what == 'signed' && env.DIAG != '' && env.APP_VARIANT == 'wallet'
+        working-directory: app
+        run: |
+          # The one key the test server will let in is made here, for this build: its seed goes into the app
+          # and nowhere else (no commit, no log line, no file that is kept), and its public half goes out beside
+          # the apps for the server to be given. Not the test phrase's key, which is in the repository.
+          seed=$(sh ../deploy/test/diag-login-key.sh "$RUNNER_TEMP/unsigned")
+          [ "${#seed}" = 64 ]
+          export EXPO_PUBLIC_DIAG_SSH="$DIAG:$seed"
+          (umask 077 && echo "EXPO_PUBLIC_DIAG_SSH=$DIAG:$seed" > .env.local)
+          # The lines the diagnostics app's Info.plist differs by, as app.config.js gives them, written into the
+          # project that is there. Not by a second prebuild: with nobody to ask, prebuild clears the project it
+          # finds, Pods and all. (make ios-prebuild-check sees prebuild itself write the same lines, on Linux.)
+          node -e '
+            const { expo } = require("./app.json");
+            const diag = require("./app.config.js").withDiagnostics(expo, process.env).ios.infoPlist;
+            for (const key of Object.keys(diag)) if (diag[key] !== expo.ios.infoPlist[key]) console.log(key + "\t" + diag[key]);
+          ' > "$RUNNER_TEMP/diag-lines.tsv"
+          cat "$RUNNER_TEMP/diag-lines.tsv"
+          [ "$(wc -l < "$RUNNER_TEMP/diag-lines.tsv" | tr -d ' ')" = 2 ]
+          while IFS="$(printf '\t')" read -r key value; do
+            /usr/libexec/PlistBuddy -c "Delete :$key" ios/Karto/Info.plist 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :$key string $value" ios/Karto/Info.plist
+          done < "$RUNNER_TEMP/diag-lines.tsv"
+          # The bundler must not hand back the wallet's JavaScript from its cache.
+          rm -rf "${TMPDIR:?}"/metro-* "${TMPDIR:?}"/haste-map-* 2>/dev/null || true
+          began=$(date +%s)
+          status=0
+          xcodebuild -workspace ios/Karto.xcworkspace -scheme Karto -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-diagnostics.log" 2>&1 || status=$?
+          # What is said above, checked by the run itself before a line of the log is shown: no file this job
+          # keeps holds the seed. (A build log lists each script step's settings; the simulator run's log, with
+          # the variable in the build's environment the same way, held neither its name nor its value.)
+          leaked=$(grep -rlaF -- "$seed" "$OUT" || true)
+          if [ -n "$leaked" ]; then
+            echo "$leaked" | while IFS= read -r kept; do : > "$kept"; done
+            echo "the login key's seed was in a file this job keeps, now emptied:"
+            echo "$leaked"
+            exit 1
+          fi
+          echo "the second build took $(( $(date +%s) - began )) s"
+          grep -nE '(error:|fatal error|ld: |Undefined symbols)' "$OUT/xcodebuild-diagnostics.log" | cut -c1-400 | head -60 || echo "no errors"
+          tail -8 "$OUT/xcodebuild-diagnostics.log" | cut -c1-400
+          [ "$status" = 0 ]
+          app="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/Karto.app"
+          plutil -p "$app/Info.plist" | grep -E 'UsageDescription|CFBundleIdentifier|CFBundleDisplayName' | cut -c1-200
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist")" = "Karto Diagnostics" ]
+          /usr/libexec/PlistBuddy -c 'Print :NSLocalNetworkUsageDescription' "$app/Info.plist"
+          # Its JavaScript is another: the wallet's bundle does not start at the diagnostics screen.
+          [ "$(shasum -a 256 "$app/main.jsbundle" | cut -d' ' -f1)" != "$(cat "$RUNNER_TEMP/wallet-bundle.sha")" ]
+          grep -aq "${DIAG%%:*}" "$app/main.jsbundle"
+          rm .env.local
+          tar -C "$(dirname "$app")" -cf "$RUNNER_TEMP/unsigned/diagnostics.tar" Karto.app
+          ls -l "$RUNNER_TEMP/unsigned"
+      - uses: actions/upload-artifact@v7
+        if: needs.plan.outputs.what == 'signed'
+        with:
+          name: unsigned-apps
+          path: ${{ runner.temp }}/unsigned
+          retention-days: 3
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: device
+          path: ${{ runner.temp }}/out
+          retention-days: 7
+
+  # The built apps signed for the one iPhone. A job of its own, with no checkout and no package installed, so
+  # the signing key meets only Apple's tools.
+  sign:
+    needs: [plan, device, provision]
+    if: needs.plan.outputs.what == 'signed'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: signing
+          path: ${{ runner.temp }}/signing
+      - uses: actions/download-artifact@v8
+        with:
+          name: unsigned-apps
+          path: ${{ runner.temp }}/unsigned
+      # Signed after the build, not by it: the build is then the one already proven, and the pods' targets
+      # (which take no profile) never meet the signing settings.
+      - name: Sign them for the iPhone
+        env:
+          IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
+        run: |
+          s="$RUNNER_TEMP/signing"
+          OUT="$RUNNER_TEMP/out"
+          mkdir -p "$OUT"
+          security cms -D -i "$s/profile.mobileprovision" > "$s/profile.plist"
+          team=$(/usr/libexec/PlistBuddy -c 'Print :TeamIdentifier:0' "$s/profile.plist")
+          # The identifier is the profile's; an app that names another is not signed.
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' "$s/profile.plist")
+          bundle=${bundle#"$team."}
+          echo "team $team, identifier $bundle, profile $(/usr/libexec/PlistBuddy -c 'Print :Name' "$s/profile.plist")"
+          echo "== what the profile allows"
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements' "$s/profile.plist"
+          /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$s/profile.plist"
+
+          # The key and its certificate, in a keychain of this job's own.
+          pass=$(uuidgen)
+          printf '%s\n' "$IOS_SIGNING_KEY" > "$s/key.pem"
+          /usr/bin/openssl x509 -inform der -in "$s/cert.der" -out "$s/cert.pem"
+          /usr/bin/openssl pkcs12 -export -inkey "$s/key.pem" -in "$s/cert.pem" -out "$s/identity.p12" -passout "pass:$pass"
+          rm "$s/key.pem"
+          kc="$s/signing.keychain-db"
+          security create-keychain -p "$pass" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$pass" "$kc"
+          security import "$s/identity.p12" -k "$kc" -P "$pass" -T /usr/bin/codesign
+          rm "$s/identity.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$pass" "$kc" > /dev/null
+          # shellcheck disable=SC2046 # one word for each keychain already there
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          security find-identity -v -p codesigning "$kc"
+          identity=$(security find-identity -v -p codesigning "$kc" | awk 'NR==1 {print $2}')
+          [ -n "$identity" ]
+
+          # What an app claims, written here: app.json's one entitlement (NFC tag reading) and the four lines
+          # signing adds. A new entitlement in app.json must be added here too.
+          ent="$s/app.entitlements"
+          /usr/libexec/PlistBuddy -c "Add :com.apple.developer.nfc.readersession.formats array" \
+            -c "Add :com.apple.developer.nfc.readersession.formats:0 string TAG" \
+            -c "Add :application-identifier string $team.$bundle" \
+            -c "Add :com.apple.developer.team-identifier string $team" \
+            -c "Add :get-task-allow bool true" \
+            -c "Add :keychain-access-groups array" \
+            -c "Add :keychain-access-groups:0 string $team.$bundle" "$ent"
+          cat "$ent"
+
+          # A Python that has the filter for untrusted archives (3.12, or an older one with the fix): the one
+          # thing in this job that is not Apple's own tool, and only to unpack.
+          py=
+          for p in python3 python3.13 python3.12 /opt/homebrew/bin/python3; do
+            if "$p" -c 'import sys, tarfile; sys.exit(not hasattr(tarfile, "data_filter"))' 2>/dev/null; then
+              py=$p
+              break
+            fi
+          done
+          [ -n "$py" ] || { echo "no Python on this machine has a filter for untrusted archives"; exit 1; }
+          echo "unpacking with $("$py" --version)"
+
+          # sign_one PACKED NAME FOLDER: one packed app (FOLDER inside), signed and zipped as NAME.ipa.
+          sign_one() {
+            packed=$1
+            folder=$3
+            # The app comes from a job that ran other people's code, so it is treated as data: nothing in it is
+            # run, and what the signature claims comes from the profile and from this file, never from the app.
+            # It is unpacked by the same code that checks it, so the two cannot read the archive differently:
+            # every entry is a plain file, a folder or a symbolic link, each inside the app's folder, and no link
+            # climbs: a link's target is relative and holds no "..", so no chain of links can leave the app. A
+            # hard link, a device, a path outside or such a link refuses the whole archive before anything is
+            # written. Python's own filter for untrusted archives is then used as well, and a Python without it
+            # refuses: nothing here falls back to unpacking unguarded.
+            work="$RUNNER_TEMP/app-$2"
+            mkdir "$work"
+            "$py" - "$packed" "$work" "$folder" <<'PY'
+          import os, sys, tarfile
+          packed, work, folder = sys.argv[1:4]
+          if folder not in ('Karto.app', 'KartoPoS.app'):
+              sys.exit(f'not one of the apps this job signs: {folder}')
+          if not hasattr(tarfile, 'data_filter'):
+              sys.exit('this Python has no filter for untrusted archives: the app is not unpacked')
+          inside = lambda path: path == folder or path.startswith(folder + '/')
+          with tarfile.open(packed) as tar:
+              for m in tar.getmembers():
+                  name = os.path.normpath(m.name)
+                  if m.name.startswith('/') or not inside(name):
+                      sys.exit(f'the packed app holds a path outside {folder}: {m.name}')
+                  if not (m.isreg() or m.isdir() or m.issym()):
+                      sys.exit(f'the packed app holds something that is not a file, a folder or a symbolic link: {m.name}')
+                  if m.issym() and (m.linkname.startswith('/') or '..' in m.linkname.split('/')):
+                      sys.exit(f'the packed app holds a link that could lead outside it: {m.name} -> {m.linkname}')
+              tar.extractall(work, filter='data')
+          PY
+            APP="$work/$folder"
+            [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist")" = "$bundle" ]
+            # The app's own text is not echoed as it is: only letters, digits and spaces of its name.
+            echo "== $2: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Info.plist" | LC_ALL=C tr -cd 'A-Za-z0-9 ' | cut -c1-40)"
+            cp "$s/profile.mobileprovision" "$APP/embedded.mobileprovision"
+            # Inside first: a signature covers what is beneath it.
+            # (Only the folders there are: find fails on a missing one, and the step with it.)
+            for dir in Frameworks PlugIns; do
+              [ -d "$APP/$dir" ] || continue
+              find "$APP/$dir" -depth \( -name '*.framework' -o -name '*.dylib' -o -name '*.appex' \) -print |
+                while read -r inner; do
+                  echo "signing ${inner#"$APP/"}"
+                  codesign --force --sign "$identity" --keychain "$kc" --timestamp=none "$inner"
+                done
+            done
+            codesign --force --sign "$identity" --keychain "$kc" --timestamp=none --entitlements "$ent" "$APP"
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            echo "== the signed app's entitlements"
+            codesign -d --entitlements - "$APP"
+            mkdir -p "$work/ipa/Payload"
+            cp -R "$APP" "$work/ipa/Payload/"
+            (cd "$work/ipa" && zip -qry "$OUT/$2.ipa" Payload)
+            ls -l "$OUT/$2.ipa"
+            shasum -a 256 "$OUT/$2.ipa"
+          }
+          if [ -f "$RUNNER_TEMP/unsigned/pos.tar" ]; then
+            sign_one "$RUNNER_TEMP/unsigned/pos.tar" Karto-PoS KartoPoS.app
+          else
+            sign_one "$RUNNER_TEMP/unsigned/wallet.tar" Karto Karto.app
+          fi
+          if [ -f "$RUNNER_TEMP/unsigned/diagnostics.tar" ]; then
+            sign_one "$RUNNER_TEMP/unsigned/diagnostics.tar" Karto-Diagnostics Karto.app
+            # The key the test server is to let in comes from the build job too, and is taken for data: one
+            # line, an Ed25519 public key and nothing else, or it is not passed on.
+            login="$RUNNER_TEMP/unsigned/diag-login.pub"
+            # (One test with its own exit: a failed test on the left of an && would not stop this script.)
+            if [ "$(wc -l < "$login" | tr -d ' ')" != 1 ] || [ "$(wc -c < "$login" | tr -d ' ')" -ge 200 ] ||
+              ! LC_ALL=C grep -Eq '^ssh-ed25519 [A-Za-z0-9+/=]+$' "$login"; then
+              echo "what came as the login key is not one Ed25519 public key on one line"
+              exit 1
+            fi
+            cp "$login" "$OUT/Karto-Diagnostics-login.pub"
+          fi
+          security delete-keychain "$kc"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: signed-apps
+          path: ${{ runner.temp }}/out
+          retention-days: 7

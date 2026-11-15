@@ -1,0 +1,10 @@
+# TLS for the VM's hostname (Let's Encrypt; Caddy's internal CA for localhost).
+{$CARDD_HOST} {
+	reverse_proxy cardd:8080
+}
+
+# The server's own ntfy (alerts with the app closed): ntfy
+# can't live on a sub-path, and LNVPS hostnames get no subdomains.
+{$CARDD_HOST}:8443 {
+	reverse_proxy ntfy:80
+}

@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Karto",
+    "slug": "card-app",
+    "version": "1.0.0",
+    "scheme": "cardapp",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "tech.whitewolf.karto.dev",
+      "infoPlist": {
+        "NFCReaderUsageDescription": "Karto Wallet reads and sets up your Bolt Cards.",
+        "NSCameraUsageDescription": "Karto Wallet uses the camera to scan a QR code you want to pay and to photograph your cards.",
+        "NSFaceIDUsageDescription": "Karto Wallet asks for Face ID before it shows your recovery phrase, wipes a card or changes your server.",
+        "com.apple.developer.nfc.readersession.iso7816.select-identifiers": ["D2760000850101"]
+      },
+      "entitlements": { "com.apple.developer.nfc.readersession.formats": ["TAG"] }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#24292f",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "app.cardapp",
+      "blockedPermissions": ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.WRITE_EXTERNAL_STORAGE"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "./plugins/withDeployAssets",
+      "./plugins/withPosQuery",
+      "./plugins/withPhoneCard",
+      "./plugins/withAlerts",
+      "./plugins/withAndroid9",
+      "./plugins/withGradleDaemon",
+      "expo-sqlite",
+      "expo-secure-store",
+      ["expo-router", { "sitemap": false }],
+      "expo-localization",
+      "expo-background-task",
+      "expo-system-ui",
+      [
+        "expo-font",
+        {
+          "ios": { "fonts": ["./assets/fonts/Inter-Regular.ttf", "./assets/fonts/Inter-SemiBold.ttf", "./assets/fonts/Inter-Bold.ttf"] },
+          "android": {
+            "fonts": [
+              {
+                "fontFamily": "Inter",
+                "fontDefinitions": [
+                  { "path": "./assets/fonts/Inter-Regular.ttf", "weight": 400 },
+                  { "path": "./assets/fonts/Inter-SemiBold.ttf", "weight": 600 },
+                  { "path": "./assets/fonts/Inter-Bold.ttf", "weight": 700 }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      ["expo-splash-screen", { "backgroundColor": "#24292f", "image": "./assets/splash-icon.png", "imageWidth": 200 }]
+    ]
+  }
+}

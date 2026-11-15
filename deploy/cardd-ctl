@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs a cardd command inside the running container, e.g.
+#   ~/card-app/cardd-ctl device add -pubkey 04... -name "Pixel 8"
+set -eu
+cd "$(dirname "$0")"
+if docker info >/dev/null 2>&1; then DOCKER=docker; else DOCKER="sudo docker"; fi
+exec $DOCKER compose exec -T cardd /cardd "$@"

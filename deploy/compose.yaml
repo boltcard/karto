@@ -1,0 +1,117 @@
+# The card-app stack on the VM. install.sh builds cardd:local and writes .env
+# (CARDD_HOST, and ntfy's NTFY_CARDD_TOKEN and NTFY_CARDD_HASH). HTTP_PORT,
+# HTTPS_PORT, NTFY_PORT and CARDD_RESTORE_CHANNEL_WAIT are set only by local
+# tests.
+name: card-app
+
+services:
+  phoenixd:
+    image: acinq/phoenixd:0.9.2@sha256:009f91eaca9aa7126c9ba97a64b1f8be0b22effe5781730af732b7335667b322
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+    healthcheck:
+      test: ["CMD", "/phoenix/phoenix-cli", "getinfo"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    # Received payments are announced to cardd's internal port.
+    command: ["--webhook", "http://cardd:8081/phoenixd"]
+    volumes:
+      - phoenix_data:/phoenix/.phoenix
+
+  cardd:
+    image: cardd:local
+    restart: unless-stopped
+    environment:
+      CARDD_HOST: ${CARDD_HOST:?set CARDD_HOST in .env}
+      CARDD_PHOENIXD_URL: http://phoenixd:9740
+      CARDD_PHOENIXD_CONF: /phoenix/phoenix.conf
+      CARDD_WEBHOOK_ADDR: ":8081"
+      # How long a restore waits for its channel; empty is cardd's 30m.
+      CARDD_RESTORE_CHANNEL_WAIT: ${CARDD_RESTORE_CHANNEL_WAIT:-}
+      # The server's own ntfy for alerts: the URL phones are
+      # given, and where cardd posts to it inside the stack, with its token.
+      CARDD_NTFY_PUBLIC: https://${CARDD_HOST}:8443
+      CARDD_NTFY_INTERNAL: http://ntfy:80
+      CARDD_NTFY_TOKEN: ${NTFY_CARDD_TOKEN:-}
+      GOMEMLIMIT: 100MiB
+    deploy:
+      resources:
+        limits:
+          memory: 160M
+    volumes:
+      - cardd_data:/data
+      # Read-only, for phoenix.conf (http-password, webhook-secret). seed.dat
+      # is 0600 and owned by phoenixd's user, so cardd can't read it.
+      - phoenix_data:/phoenix:ro
+    depends_on:
+      phoenixd:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    restart: unless-stopped
+    environment:
+      CARDD_HOST: ${CARDD_HOST:?set CARDD_HOST in .env}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${NTFY_PORT:-8443}:8443"
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      cardd:
+        condition: service_healthy
+
+  # Alerts with the app closed: the phones' UnifiedPush
+  # server, at https://<CARDD_HOST>:8443 through Caddy. Nothing waits on it:
+  # a down ntfy makes only :8443 answer 502 (up --wait still waits for its
+  # health, so a broken one fails up). The hash is single-quoted in .env, so
+  # compose leaves its $s alone. Empty values (no prepare yet) make ntfy exit.
+  ntfy:
+    image: binwiederhier/ntfy:v2.31.1@sha256:91bb7fa607b02006c119bb4a31032923b414a713a032ecb40f0c5d6bfd5b7e40
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: https://${CARDD_HOST:?set CARDD_HOST in .env}:8443
+      NTFY_AUTH_USERS: cardd:${NTFY_CARDD_HASH:-}:user
+      NTFY_AUTH_TOKENS: cardd:${NTFY_CARDD_TOKEN:-}:cardd
+      GOMEMLIMIT: 48MiB
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://localhost/v1/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    volumes:
+      - ./ntfy/server.yml:/etc/ntfy/server.yml:ro
+      - ntfy_data:/var/lib/ntfy
+
+volumes:
+  phoenix_data:
+  cardd_data:
+  caddy_data:
+  caddy_config:
+  ntfy_data:
+
+# IPv6 out of the containers, so cardd reaches a host that has only an
+# IPv6 address (a Lightning address on such a server). Docker 27+ picks a
+# private range itself. Keep this block last: the stack test cuts it off to
+# make a server from before it.
+networks:
+  default:
+    enable_ipv6: true

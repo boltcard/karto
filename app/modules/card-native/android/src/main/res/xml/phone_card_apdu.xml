@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The phone as a card: the NFC Forum Type 4 tag application,
+     answered by PhoneCardService. It is in both apps' resources; only Karto Wallet's manifest names it
+     (app/plugins/withPhoneCard.js). -->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/phone_card_service"
+    android:requireDeviceUnlock="true">
+  <aid-group android:description="@string/phone_card_service" android:category="other">
+    <aid-filter android:name="D2760000850101" />
+  </aid-group>
+</host-apdu-service>

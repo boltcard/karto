@@ -1,0 +1,28 @@
+*.db
+# A snapshot cardd made, which the app's summary SQL is tested against.
+!/testvectors/snapshot.db
+*.db-shm
+*.db-wal
+/server/cardd
+/deploy/bin/
+/.venv-icons/
+/.signing-proof/
+# The signing key is never the repository's: only old.keystore (public), lineage.bin and signer.sha256 live here.
+/deploy/signing/*.p12
+/deploy/signing/*.jks
+# Local tooling and worktrees, never the project's.
+/.superpowers/
+/.claude/
+/.playwright-mcp/
+# Server settings and secrets.
+.env
+*.p12
+*.jks
+*.p8
+*.pem
+*.mobileprovision
+__pycache__/
+*.log
+# Keystores: only deploy/signing/old.keystore (the public Android debug key) is kept.
+*.keystore
+!/deploy/signing/old.keystore

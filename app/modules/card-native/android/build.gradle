@@ -1,0 +1,65 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'app.cardapp.cardnative'
+version = '0.1.0'
+
+android {
+  namespace "app.cardapp.cardnative"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+  packagingOptions {
+    // BouncyCastle jars carry duplicate metadata.
+    resources.excludes += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF', 'META-INF/BCKEY.DSA', 'META-INF/BCKEY.SF']
+  }
+  testOptions {
+    unitTests.all {
+      // SshSessionsTest talks to a throwaway OpenSSH container; see deploy/test/sshd-test.sh.
+      environment 'CARD_SSH_TEST', System.getenv('CARD_SSH_TEST') ?: ''
+    }
+  }
+}
+
+// CameraX needs listenablefuture:1.0 at compile time; the React Native Gradle
+// plugin's full Guava would force it to the empty 9999.0 (as expo-camera notes).
+configurations.configureEach {
+  resolutionStrategy.force 'com.google.guava:listenablefuture:1.0'
+}
+
+dependencies {
+  implementation 'com.hierynomus:sshj:0.41.1'
+  implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
+  // The QR scanner: CameraX and ZXing (Apache-2.0, no Play Services; Expo's
+  // camera scans with Google's Play Services code scanner and ML Kit instead).
+  def camerax = '1.6.0'
+  implementation "androidx.camera:camera-camera2:${camerax}"
+  implementation "androidx.camera:camera-lifecycle:${camerax}"
+  implementation "androidx.camera:camera-view:${camerax}"
+  implementation 'com.google.zxing:core:3.5.3'
+  // Alerts with the app closed: UnifiedPush's connector makes
+  // the RFC 8291 keys, registers with the phone's distributor (ntfy) and hands over decrypted messages. It brings
+  // Tink (com.google.crypto.tink), which is not Play Services.
+  implementation 'org.unifiedpush.android:connector:3.3.5'
+  implementation 'androidx.core:core:1.18.0'
+  // The Play build alone (KARTO_STORE=play): UnifiedPush's embedded FCM distributor, which asks Play
+  // Services for an FCM Web Push endpoint with the server's VAPID key as the sender. It has no Firebase code; with
+  // VAPID it needs no receiver of the app's own (its Module.md): its manifest declares its own. Read here, at each
+  // build, so switching needs no new android/ (deploy/test/prebuild.sh). Checked by deploy/test/play-gms.sh.
+  // It asks for kotlin-stdlib 2.3.0, whose metadata this project's Kotlin 2.1 compiler can't read; its own code is
+  // built for Kotlin 2.1 (its build.gradle's languageVersion), so the stdlib the app already has serves it.
+  if (providers.environmentVariable('KARTO_STORE').getOrElse('') == 'play') {
+    implementation('org.unifiedpush.android:embedded-fcm-distributor:3.1.0') {
+      exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib'
+    }
+  }
+  testImplementation 'junit:junit:4.13.2'
+  // Android's org.json is a stub in JVM tests: AlertWordsTest runs the real one.
+  testImplementation 'org.json:json:20240303'
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!-- What Android's NFC settings call the service that answers a till. -->
+  <string name="phone_card_service">Pay with this phone as a Bolt Card</string>
+</resources>

@@ -1,0 +1,25 @@
+# ntfy, the server's own UnifiedPush server for alerts with the app closed,
+# behind Caddy at https://<CARDD_HOST>:8443. compose.yaml
+# sets base-url (NTFY_BASE_URL) and the secrets: cardd's user, with its
+# password's hash (NTFY_AUTH_USERS), and its token (NTFY_AUTH_TOKENS), both
+# from .env, so this file holds none. Keys as in ntfy serve --help (v2.31.1).
+listen-http: ":80"
+behind-proxy: true
+
+# Nobody may do anything but what auth-access grants: phones read their up*
+# topic (its random name is the secret, its messages ciphertext), and only
+# cardd writes to one, so nobody else can post to a phone.
+auth-file: /var/lib/ntfy/auth.db
+auth-default-access: deny-all
+auth-access:
+  - "cardd:up*:write-only"
+  - "*:up*:read-only"
+enable-signup: false
+enable-login: false
+
+# The cache is the delivery window: a message published while the phone's
+# connection is down is handed over when it reconnects, kept for the alert's
+# TTL. No attachments (attachment-cache-dir unset), no web app.
+cache-file: /var/lib/ntfy/cache.db
+cache-duration: 24h
+web-root: disable

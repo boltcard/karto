@@ -1,0 +1,59 @@
+# The checks every change must pass, on Linux: cardd's (go vet and go test in server/) and the apps' (vitest and
+# the TypeScript compiler in app/). They are the last two lines of `make test`; its first three, the signing and
+# Play-services scripts' tests, need the Android SDK and are left to a developer's computer. Nothing here is given a secret.
+# Actions are pinned by commit: the tag beside each is the release that commit was when it was pinned.
+name: Tests
+on:
+  push:
+  pull_request:
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  server:
+    name: cardd (Go)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - name: go vet
+        working-directory: server
+        run: go vet ./...
+      - name: go test
+        working-directory: server
+        run: go test ./...
+
+  app:
+    name: The apps (TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      - name: npm test
+        working-directory: app
+        run: npm test
+      - name: npm run typecheck
+        working-directory: app
+        run: npm run typecheck

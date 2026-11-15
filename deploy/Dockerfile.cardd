@@ -1,0 +1,16 @@
+# cardd as a container: the static binary the app uploads, plus CA roots
+# copied from the VM. No base image to pull.
+FROM scratch
+COPY ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+# An empty /data owned by the cardd user: Docker copies this ownership into
+# the cardd_data volume the first time it is mounted.
+COPY --chown=65532:65532 data/ /data/
+COPY cardd /cardd
+USER 65532:65532
+ENV CARDD_DB=/data/cardd.db \
+    CARDD_ISSUER_KEY_FILE=/data/issuer.key \
+    CARDD_ADDR=:8080
+EXPOSE 8080
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=6 CMD ["/cardd", "healthcheck"]
+ENTRYPOINT ["/cardd"]
+CMD ["serve"]

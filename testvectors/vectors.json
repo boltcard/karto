@@ -1,0 +1,60 @@
+{
+  "phrase": {
+    "phrase": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    "nostrPrivateKey": "5f29af3b9676180290e77a4efad265c4c2ff28a5302461f73597fda26bb25731",
+    "nostrPublicKey": "e8bcf3823669444d0b49ad45d65088635d9fd8500a75b5f20b59abefa56a144f",
+    "phoenixdSeed": "prosper short ramp prepare exchange stove life snack client enough purpose fold",
+    "issuerKey": "866a12e42e31a09aa8ca4f25a02e999e",
+    "backupAgeIdentity": "AGE-SECRET-KEY-1RJ7TJGQVC7RVSW7XXPA3ZTG387CLSSNV5542RTX66JACK2D9Y95S0XRUPZ",
+    "backupAgeRecipient": "age1xxg672re45mvahk27jnrt9xdrhhck5gy40fm0usu46tsgnfqxe9qd9stm5",
+    "sshEd25519Seed": "022c068f88ab8f8b4ae486f1928bbcbccbaf8149b95999fdb07572470e3aa5fa",
+    "sshAuthorizedKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7OaJ/OiX8fQqSebMIWCvTHRxCAl3j+ZDKh4HZao3gE",
+    "mailtmName": "f6ygjrifabn6ne2s",
+    "mailtmPassword": "ad3532a660b8700e9f3b22fe02f14e6459df30033ba0144dcbfaa1639ac538ec"
+  },
+  "sun": [
+    {
+      "name": "AN12196",
+      "k1": "00000000000000000000000000000000",
+      "k2": "00000000000000000000000000000000",
+      "p": "ef963ff7828658a599f3041510671e88",
+      "c": "94eed9ee65337086",
+      "uid": "04de5f1eacc040",
+      "counter": 61
+    },
+    {
+      "name": "deterministic-v1-ctr5",
+      "k1": "55da174c9608993dc27bb3f30a4a7314",
+      "k2": "f4b404be700ab285e333e32348fa3d3b",
+      "p": "72325f452baef7989272f6125f1aa5c0",
+      "c": "5034adf5fd8f11c0",
+      "uid": "04a39493cc8680",
+      "counter": 5
+    }
+  ],
+  "deviceAuth": {
+    "privateKey": "c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721",
+    "publicKey": "0460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299",
+    "keyId": "b18b86ce1389e46d",
+    "method": "POST",
+    "path": "/api/v1/cards",
+    "ts": 1790000000,
+    "body": "{\"id\":\"e07ce1279d980ecb892a81924b67bf18\"}",
+    "canonical": "POST\n/api/v1/cards\n1790000000\n75e133a4e0aba01c4936009af54fceed482e1b861468f7f0f6dde3cf16d5f3be",
+    "signatureDer": "30440220133983dae70245e7b2eac9cd4b2f0c87f6d788fa8f9154cdf2f7cef4ad5fe278022063bafcf79ba54809a6614379cc1d2c7cbbb3451529dc329ce9a3ac4ca65a5a79"
+  },
+  "deterministic": {
+    "issuerKey": "00000000000000000000000000000001",
+    "uid": "04a39493cc8680",
+    "version": 1,
+    "expected": {
+      "k0": "a29119fcb48e737d1591d3489557e49b",
+      "k1": "55da174c9608993dc27bb3f30a4a7314",
+      "k2": "f4b404be700ab285e333e32348fa3d3b",
+      "k3": "73610ba4afe45b55319691cb9489142f",
+      "k4": "addd03e52964369be7f2967736b7bdb5",
+      "id": "e07ce1279d980ecb892a81924b67bf18",
+      "cardKey": "ebff5a4e6da5ee14cbfe720ae06fbed9"
+    }
+  }
+}

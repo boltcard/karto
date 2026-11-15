@@ -1,0 +1,600 @@
+{
+  "cases": [
+    {
+      "name": "topup-card",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 31,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 123000,
+        "name": "Blue",
+        "reason": null,
+        "sat": 123,
+        "tx": 41,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "123 sat received (£0.31)",
+      "link": "cardapp://payment?account=b1ee\u0026tx=41"
+    },
+    {
+      "name": "topup-pool",
+      "payload": {
+        "account": "pool",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 31,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 123000,
+        "name": "",
+        "reason": null,
+        "sat": 123,
+        "tx": 42,
+        "v": 1
+      },
+      "title": "Karto",
+      "text": "123 sat received (£0.31)",
+      "link": "cardapp://payment?account=pool\u0026tx=42"
+    },
+    {
+      "name": "topup-card-unnamed-no-currency",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": null,
+        "kind": "received",
+        "msat": 1234567000,
+        "name": "",
+        "reason": null,
+        "sat": 1234567,
+        "tx": 43,
+        "v": 1
+      },
+      "title": "Card",
+      "text": "1,234,567 sat received",
+      "link": "cardapp://payment?account=b1ee\u0026tx=43"
+    },
+    {
+      "name": "topup-card-yen",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": {
+          "currency": "JPY",
+          "minor": 55,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 123000,
+        "name": "Blue",
+        "reason": null,
+        "sat": 123,
+        "tx": 44,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "123 sat received (¥55)",
+      "link": "cardapp://payment?account=b1ee\u0026tx=44"
+    },
+    {
+      "name": "sale-priced",
+      "payload": {
+        "account": "shop",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 500,
+          "priced": true
+        },
+        "kind": "received",
+        "msat": 2000000,
+        "name": "Till 1",
+        "reason": null,
+        "sat": 2000,
+        "tx": 45,
+        "v": 1
+      },
+      "title": "Shop · Till 1",
+      "text": "2,000 sat received (priced £5.00)",
+      "link": "cardapp://payment?account=shop\u0026tx=45"
+    },
+    {
+      "name": "sale-in-sat-no-till",
+      "payload": {
+        "account": "shop",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 500,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 2000000,
+        "name": "",
+        "reason": null,
+        "sat": 2000,
+        "tx": 46,
+        "v": 1
+      },
+      "title": "Shop",
+      "text": "2,000 sat received (£5.00)",
+      "link": "cardapp://payment?account=shop\u0026tx=46"
+    },
+    {
+      "name": "spend",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 25,
+          "priced": false
+        },
+        "kind": "spent",
+        "msat": 100000,
+        "name": "Blue",
+        "reason": null,
+        "sat": 100,
+        "tx": 47,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "100 sat spent (£0.25)",
+      "link": "cardapp://payment?account=b1ee\u0026tx=47"
+    },
+    {
+      "name": "topup-hosting",
+      "payload": {
+        "account": "hosting",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 31,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 123000,
+        "name": "",
+        "reason": null,
+        "sat": 123,
+        "tx": 49,
+        "v": 1
+      },
+      "title": "Hosting",
+      "text": "123 sat received (£0.31)",
+      "link": "cardapp://payment?account=hosting\u0026tx=49"
+    },
+    {
+      "name": "topup-pool-euro",
+      "payload": {
+        "account": "pool",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "EUR",
+          "minor": 28,
+          "priced": false
+        },
+        "kind": "received",
+        "msat": 123000,
+        "name": "",
+        "reason": null,
+        "sat": 123,
+        "tx": 50,
+        "v": 1
+      },
+      "title": "Karto",
+      "text": "123 sat received (€0.28)",
+      "link": "cardapp://payment?account=pool\u0026tx=50"
+    },
+    {
+      "name": "spend-dollar",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": {
+          "currency": "USD",
+          "minor": 27,
+          "priced": false
+        },
+        "kind": "spent",
+        "msat": 100000,
+        "name": "Blue",
+        "reason": null,
+        "sat": 100,
+        "tx": 51,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "100 sat spent ($0.27)",
+      "link": "cardapp://payment?account=b1ee\u0026tx=51"
+    },
+    {
+      "name": "sale-priced-no-currency",
+      "payload": {
+        "account": "shop",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": {
+          "currency": "GBP",
+          "minor": 500,
+          "priced": true
+        },
+        "kind": "received",
+        "msat": 2000000,
+        "name": "Till 1",
+        "reason": null,
+        "sat": 2000,
+        "tx": 52,
+        "v": 1
+      },
+      "title": "Shop · Till 1",
+      "text": "2,000 sat received (priced £5.00)",
+      "link": "cardapp://payment?account=shop\u0026tx=52"
+    },
+    {
+      "name": "spend-no-currency",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 0,
+        "fiat": null,
+        "kind": "spent",
+        "msat": 100000,
+        "name": "Blue",
+        "reason": null,
+        "sat": 100,
+        "tx": 48,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "100 sat spent",
+      "link": "cardapp://payment?account=b1ee\u0026tx=48"
+    },
+    {
+      "name": "refused-daily",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 5000000,
+        "name": "Blue",
+        "reason": "daily",
+        "sat": 5000,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A 5,000 sat spend was refused: over its daily limit",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-per-tap",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 5000000,
+        "name": "Blue",
+        "reason": "per-tap",
+        "sat": 5000,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A 5,000 sat spend was refused: over its per-payment limit",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-funds",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 5000000,
+        "name": "Blue",
+        "reason": "funds",
+        "sat": 5000,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A 5,000 sat spend was refused: not enough money on the card",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-invoice",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 5000000,
+        "name": "Blue",
+        "reason": "invoice",
+        "sat": 5000,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A 5,000 sat spend was refused: the terminal's invoice can't be paid",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-paused",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 0,
+        "name": "Blue",
+        "reason": "paused",
+        "sat": 0,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A tap was refused: spending is paused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-daily-no-amount",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 0,
+        "name": "Blue",
+        "reason": "daily",
+        "sat": 0,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A tap was refused: over its daily limit",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-repeated",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 0,
+        "name": "Blue",
+        "reason": "repeated",
+        "sat": 0,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "A repeated tap was refused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-off",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238400,
+        "card": "b1ee",
+        "count": 1,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 0,
+        "name": "Blue",
+        "reason": "off",
+        "sat": 0,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "The card is off: a tap was refused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-folded",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238420,
+        "card": "b1ee",
+        "count": 3,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 7000000,
+        "name": "Blue",
+        "reason": "funds",
+        "sat": 7000,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "update": true,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "3 spends refused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-folded-taps",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792238405,
+        "card": "b1ee",
+        "count": 2,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 0,
+        "name": "Blue",
+        "reason": "paused",
+        "sat": 0,
+        "tag": "refused-b1ee-1792238400",
+        "tx": null,
+        "update": true,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "2 taps refused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "refused-hour-summary",
+      "payload": {
+        "account": "card:b1ee",
+        "at": 1792241400,
+        "card": "b1ee",
+        "count": 4,
+        "fiat": null,
+        "kind": "refused",
+        "msat": 5000000,
+        "name": "Blue",
+        "reason": "daily",
+        "sat": 5000,
+        "tag": "refused-b1ee-hour-1792242000",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Blue card",
+      "text": "4 spends refused",
+      "link": "cardapp://account?id=b1ee"
+    },
+    {
+      "name": "test",
+      "payload": {
+        "account": "",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": null,
+        "kind": "test",
+        "msat": 0,
+        "name": "",
+        "reason": null,
+        "sat": 0,
+        "tx": null,
+        "v": 1
+      },
+      "title": "Karto",
+      "text": "Alerts work",
+      "link": ""
+    },
+    {
+      "name": "hosting-low-5",
+      "payload": {
+        "account": "hosting",
+        "at": 1792238400,
+        "card": null,
+        "count": 5,
+        "fiat": null,
+        "kind": "hosting",
+        "msat": 1100000,
+        "name": "",
+        "reason": null,
+        "sat": 1100,
+        "tag": "hosting-low",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Hosting",
+      "text": "Covers about 5 days: top it up or move from Pool",
+      "link": "cardapp://account?id=hosting"
+    },
+    {
+      "name": "hosting-low-1",
+      "payload": {
+        "account": "hosting",
+        "at": 1792238400,
+        "card": null,
+        "count": 1,
+        "fiat": null,
+        "kind": "hosting",
+        "msat": 300000,
+        "name": "",
+        "reason": null,
+        "sat": 300,
+        "tag": "hosting-low",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Hosting",
+      "text": "Covers about 1 day: top it up or move from Pool",
+      "link": "cardapp://account?id=hosting"
+    },
+    {
+      "name": "hosting-low-0",
+      "payload": {
+        "account": "hosting",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": null,
+        "kind": "hosting",
+        "msat": 50000,
+        "name": "",
+        "reason": null,
+        "sat": 50,
+        "tag": "hosting-low",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Hosting",
+      "text": "Covers about 0 days: top it up or move from Pool",
+      "link": "cardapp://account?id=hosting"
+    }
+  ]
+}
