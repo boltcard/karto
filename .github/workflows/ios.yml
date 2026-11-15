@@ -42,6 +42,7 @@
 # only the few files it needs, installs only the hash-pinned Python packages of
 # deploy/test/ios-provision-requirements.txt and runs no npm or CocoaPods code; the jobs that run npm's and
 # CocoaPods' scripts are given none.
+# Actions are pinned by commit: the tag beside each is the release that commit was when it was pinned.
 name: iOS
 on:
   push:
@@ -129,8 +130,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
@@ -150,15 +151,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: server/go.mod
           cache-dependency-path: server/go.sum
       - run: make app-deploy-assets
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deploy-assets
           path: app/deploy-assets
@@ -171,7 +172,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: The Mac
         run: |
           sw_vers
@@ -192,7 +193,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/out"
           cp "$RUNNER_TEMP/swift-test.log" "$RUNNER_TEMP/out/" || true
           sudo cat "$RUNNER_TEMP/sshd/sshd.log" > "$RUNNER_TEMP/out/sshd.log" || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: swift-tests
@@ -206,8 +207,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
@@ -234,7 +235,7 @@ jobs:
           udid=${picked%% *}
           xcrun simctl boot "$udid"
           echo "UDID=$udid" >> "$GITHUB_ENV"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: deploy-assets
           path: app/deploy-assets
@@ -330,7 +331,7 @@ jobs:
           cp app/ios/Podfile app/ios/Podfile.lock "$OUT/" 2>/dev/null || true
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | head -20 || true
           cp ~/Library/Logs/DiagnosticReports/Karto* "$OUT/" 2>/dev/null || true
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: sim
@@ -353,8 +354,8 @@ jobs:
       EXPO_PUBLIC_APP_VARIANT: ${{ needs.plan.outputs.app }}
       PROJ: ${{ needs.plan.outputs.app == 'pos' && 'KartoPoS' || 'Karto' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
@@ -366,7 +367,7 @@ jobs:
           sw_vers
           xcodebuild -version
           xcodebuild -showsdks | grep -i iphoneos
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: deploy-assets
           path: app/deploy-assets
@@ -512,14 +513,14 @@ jobs:
           rm .env.local
           tar -C "$(dirname "$app")" -cf "$RUNNER_TEMP/unsigned/diagnostics.tar" Karto.app
           ls -l "$RUNNER_TEMP/unsigned"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.plan.outputs.what == 'signed'
         with:
           name: unsigned-apps
           path: ${{ runner.temp }}/unsigned
           # Deleted by the forget-unsigned job at the run's end; a day at most if that job never runs.
           retention-days: 1
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: device
@@ -537,7 +538,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           sparse-checkout-cone-mode: false
@@ -574,7 +575,7 @@ jobs:
             export PROFILE_NAME='Karto PoS development' IDENTIFIER_NAME='Karto PoS development'
           fi
           BUNDLE_ID=$BUNDLE_ID "$RUNNER_TEMP/venv/bin/python" deploy/test/ios-provision.py "$RUNNER_TEMP/signing"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: unsigned-apps
           path: ${{ runner.temp }}/unsigned
@@ -728,7 +729,7 @@ jobs:
           fi
           security delete-keychain "$kc"
           rm -rf "${s:?}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-apps
           path: ${{ runner.temp }}/out
