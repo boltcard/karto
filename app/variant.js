@@ -5,14 +5,34 @@ const VARIANTS = ['wallet', 'pos'];
 
 /**
  * The two apps' identifiers, one for both platforms: the publisher's reversed domain (whitewolf.tech), then the app.
- * These are the stores'. Every build made now is not a store's, so it carries DEV after them (idOf), and installs beside
- * a store's app. app.json repeats the wallet's (Expo reads that file as it is), and a test holds the two the same.
+ * A release (KARTO_RELEASE=1: deploy/release/android-release.sh, and the stores' builds later) carries them as they
+ * are; every other build carries DEV after them, and installs beside a release. app.json repeats the wallet's .dev
+ * one (Expo reads that file as it is), and a test holds the two the same.
  */
 const IDS = { wallet: 'tech.whitewolf.karto', pos: 'tech.whitewolf.kartopos' };
 const DEV = '.dev';
 
-/** The identifier a build of the variant carries now (wallet when unset). */
-const idOf = (variant) => IDS[variant || 'wallet'] + DEV;
+/** KARTO_RELEASE: '1' for a release, unset (or empty) for any other build. */
+function checkRelease(release) {
+  const r = release || '';
+  if (r !== '' && r !== '1') throw new Error(`KARTO_RELEASE is "${r}": it must be 1 or unset`);
+  return r === '1';
+}
+
+/** The identifier a build of the variant carries (wallet when unset): the store's for a release, else with DEV. */
+const idOf = (variant, release) => IDS[variant || 'wallet'] + (checkRelease(release) ? '' : DEV);
+
+/**
+ * Android's versionCode, from the version (X.Y.Z, each part a plain number below 1000): X*1000000 + Y*1000 + Z, so
+ * it rises whenever the version does and only one number is changed for a release.
+ */
+function versionCode(version) {
+  const m = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$/.exec(version || '');
+  if (!m) throw new Error(`version is "${version}": it must be X.Y.Z, each part a number below 1000`);
+  const code = Number(m[1]) * 1000000 + Number(m[2]) * 1000 + Number(m[3]);
+  if (code < 1) throw new Error('version 0.0.0 has no versionCode: Android needs 1 or more');
+  return code;
+}
 
 /**
  * The plugins Karto PoS leaves out: it carries no server files, runs no background job, sees no app but Karto Wallet,
@@ -23,8 +43,8 @@ const WALLET_ONLY = ['./plugins/withDeployAssets', './plugins/withPosQuery', './
 
 const nameOf = (plugin) => (Array.isArray(plugin) ? plugin[0] : plugin);
 
-/** app.json's `expo` for the variant; the one given is not changed. */
-function forVariant(expo, variant) {
+/** app.json's `expo` for the variant (a release's identifiers when release is '1'); the one given is not changed. */
+function forVariant(expo, variant, release) {
   const v = variant || 'wallet';
   if (!VARIANTS.includes(v)) throw new Error(`APP_VARIANT is "${v}": it must be wallet or pos`);
   if (v === 'wallet') return expo;
@@ -52,7 +72,7 @@ function forVariant(expo, variant) {
     icon: './assets/pos/icon.png',
     android: {
       ...expo.android,
-      package: idOf('pos'),
+      package: idOf('pos', release),
       adaptiveIcon: {
         ...expo.android.adaptiveIcon,
         // The wallet's charcoal behind another drawing: the card held to a till.
@@ -66,7 +86,7 @@ function forVariant(expo, variant) {
     // code; it asks for no Face ID, so it carries no such line.
     ios: {
       ...expo.ios,
-      bundleIdentifier: idOf('pos'),
+      bundleIdentifier: idOf('pos', release),
       infoPlist: {
         NFCReaderUsageDescription: 'Karto PoS reads Bolt Cards to charge them.',
         NSCameraUsageDescription: 'Karto PoS uses the camera to scan the pairing code Karto Wallet shows.',
@@ -82,10 +102,12 @@ function forVariant(expo, variant) {
  * KARTO_STORE unset is the Google-free build; play adds UnifiedPush's embedded FCM distributor, which the card-native
  * module's build.gradle reads for itself. Karto PoS gets no alerts and is built Google-free only.
  */
-function checkStore(variant, store) {
+function checkStore(variant, store, release) {
   const s = store || '';
   if (s !== '' && s !== 'play') throw new Error(`KARTO_STORE is "${s}": it must be play or unset`);
   if (s === 'play' && (variant || 'wallet') !== 'wallet') throw new Error('KARTO_STORE=play is for Karto Wallet: Karto PoS is built Google-free only');
+  // A release is Google-free: Play's build comes with a Play listing.
+  if (s === 'play' && checkRelease(release)) throw new Error('KARTO_RELEASE=1 is Google-free: it is not built with KARTO_STORE=play');
 }
 
-module.exports = { forVariant, VARIANTS, checkStore, IDS, DEV, idOf };
+module.exports = { forVariant, VARIANTS, checkStore, checkRelease, IDS, DEV, idOf, versionCode };

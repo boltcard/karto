@@ -25,7 +25,7 @@ describe('withDeployAssets', () => {
 });
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { addPosQuery } = require('../../plugins/withPosQuery') as { addPosQuery: (manifest: { queries?: unknown[] }) => { queries?: unknown[] } };
+const { addPosQuery } = require('../../plugins/withPosQuery') as { addPosQuery: (manifest: { queries?: unknown[] }, release?: string) => { queries?: unknown[] } };
 
 // Karto Wallet may see one other app, Karto PoS, so that it can check who signed it before handing it a pairing code.
 describe('withPosQuery', () => {
@@ -39,10 +39,13 @@ describe('withPosQuery', () => {
     const once = addPosQuery({});
     expect(addPosQuery(once).queries).toEqual([POS]);
   });
+  it("sees a release's Karto PoS in a release (KARTO_RELEASE=1), and only it", () => {
+    expect(addPosQuery({}, '1').queries).toEqual([{ package: [{ $: { 'android:name': 'tech.whitewolf.kartopos' } }] }]);
+  });
 });
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { addWalletQuery } = require('../../plugins/withWalletQuery') as { addWalletQuery: (manifest: { queries?: unknown[] }) => { queries?: unknown[] } };
+const { addWalletQuery } = require('../../plugins/withWalletQuery') as { addWalletQuery: (manifest: { queries?: unknown[] }, release?: string) => { queries?: unknown[] } };
 
 // Karto PoS may see one other app, Karto Wallet: Android tells an app of updates only to apps it can see, and the
 // wallet's update under the till turned the till's reader mode off.
@@ -55,6 +58,9 @@ describe('withWalletQuery', () => {
   });
   it('is idempotent', () => {
     expect(addWalletQuery(addWalletQuery({})).queries).toEqual([WALLET]);
+  });
+  it("sees a release's Karto Wallet in a release (KARTO_RELEASE=1), and only it", () => {
+    expect(addWalletQuery({}, '1').queries).toEqual([{ package: [{ $: { 'android:name': 'tech.whitewolf.karto' } }] }]);
   });
 });
 

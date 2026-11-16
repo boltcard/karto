@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const appConfig = require('../../app.config.js') as ((o: { config: Expo }) => Expo) & { withDiagnostics: (config: Expo, env: Record<string, string | undefined>) => Expo };
+const appConfig = require('../../app.config.js') as ((o: { config: Expo }) => Expo) & {
+  withDiagnostics: (config: Expo, env: Record<string, string | undefined>) => Expo;
+  withIdentity: (config: Expo, variant?: string, release?: string) => Expo;
+};
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { expo } = require('../../app.json') as { expo: Expo };
 
@@ -67,7 +70,7 @@ describe('the diagnostics app (app.config.js)', () => {
     expect(expo.ios.infoPlist.CFBundleDisplayName).toBeUndefined();
   });
 
-  it('is what Expo is given', () => {
-    expect(appConfig({ config: expo })).toEqual(appConfig.withDiagnostics(expo, process.env));
+  it('is what Expo is given, with the identifiers and versionCode', () => {
+    expect(appConfig({ config: expo })).toEqual(appConfig.withDiagnostics(appConfig.withIdentity(expo, process.env.APP_VARIANT, process.env.KARTO_RELEASE), process.env));
   });
 });

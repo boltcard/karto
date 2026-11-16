@@ -1,6 +1,17 @@
-// Karto Wallet is app.json as it stands; APP_VARIANT=pos makes it Karto PoS (variant.js). KARTO_STORE is checked
-// here and changes nothing in the config: Gradle reads it for itself.
-const { forVariant, checkStore } = require('./variant');
+// Karto Wallet is app.json as it stands; APP_VARIANT=pos makes it Karto PoS (variant.js). KARTO_RELEASE=1 gives
+// either app the store identifiers in place of the .dev ones. Android's versionCode follows app.json's version.
+// KARTO_STORE is checked here and changes nothing in the config: Gradle reads it for itself.
+const { forVariant, checkStore, idOf, versionCode } = require('./variant');
+
+/** The identifiers and Android's versionCode, on either app's config. */
+function withIdentity(config, variant, release) {
+  const id = idOf(variant, release);
+  return {
+    ...config,
+    android: { ...config.android, package: id, versionCode: versionCode(config.version) },
+    ios: { ...config.ios, bundleIdentifier: id },
+  };
+}
 
 // One more variant: the diagnostics app on an iPhone. A build made with EXPO_PUBLIC_DIAG_SSH
 // starts at the diagnostics screen and talks to a throwaway SSH server on the local network
@@ -24,7 +35,9 @@ function withDiagnostics(config, env) {
 }
 
 module.exports = ({ config }) => {
-  checkStore(process.env.APP_VARIANT, process.env.KARTO_STORE);
-  return withDiagnostics(forVariant(config, process.env.APP_VARIANT), process.env);
+  const { APP_VARIANT, KARTO_STORE, KARTO_RELEASE } = process.env;
+  checkStore(APP_VARIANT, KARTO_STORE, KARTO_RELEASE);
+  return withDiagnostics(withIdentity(forVariant(config, APP_VARIANT, KARTO_RELEASE), APP_VARIANT, KARTO_RELEASE), process.env);
 };
 module.exports.withDiagnostics = withDiagnostics;
+module.exports.withIdentity = withIdentity;

@@ -14,11 +14,19 @@ export type StartActivity = (action: string, params: { data: string; packageName
 export type Signer = (packageName: string) => Promise<'same' | 'other' | 'absent'>;
 
 /**
- * Karto PoS's package and its one activity. Both, always: given the package alone, expo-intent-launcher sets no
- * component and the link would go to whichever app claims the scheme. The package is variant.js's idOf('pos') (a
- * test holds them the same), and Expo's prebuild puts MainActivity in the package of that name.
+ * Karto PoS's package: variant.js's idOf('pos'), the store's in a release (EXPO_PUBLIC_KARTO_RELEASE, which
+ * release-apk.sh sets from KARTO_RELEASE, as the config's own setting) and with .dev in any other build. A release
+ * wallet starts a release till, and a .dev wallet a .dev one. Tests hold both the same as variant.js's.
  */
-export const KARTO_POS = { packageName: 'tech.whitewolf.kartopos.dev', className: 'tech.whitewolf.kartopos.dev.MainActivity' } as const;
+export const posPackage = (release: string | undefined): string => (release === '1' ? 'tech.whitewolf.kartopos' : 'tech.whitewolf.kartopos.dev');
+
+/**
+ * Karto PoS's package and its one activity. Both, always: given the package alone, expo-intent-launcher sets no
+ * component and the link would go to whichever app claims the scheme. Expo's prebuild puts MainActivity in the
+ * package of the app's name.
+ */
+const POS = posPackage(process.env.EXPO_PUBLIC_KARTO_RELEASE);
+export const KARTO_POS = { packageName: POS, className: `${POS}.MainActivity` } as const;
 
 /** Intent.FLAG_ACTIVITY_NEW_TASK: Karto PoS opens as itself, not as a page inside Karto Wallet, and the call ends at once. */
 const NEW_TASK = 0x10000000;

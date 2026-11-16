@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { KARTO_POS } from '../wallet/posLaunch';
+import { KARTO_POS, posPackage } from '../wallet/posLaunch';
 
 type Plugin = string | [string, Record<string, unknown>];
 type Expo = {
-  name: string; slug: string; scheme: string; icon: string;
-  android: { package: string; adaptiveIcon: Record<string, string>; permissions?: string[]; blockedPermissions?: string[] };
+  name: string; slug: string; scheme: string; icon: string; version: string;
+  android: { package: string; versionCode?: number; adaptiveIcon: Record<string, string>; permissions?: string[]; blockedPermissions?: string[] };
   ios: { bundleIdentifier: string; supportsTablet: boolean; infoPlist: Record<string, unknown>; entitlements: Record<string, unknown> };
   plugins: Plugin[];
 };
@@ -14,12 +14,21 @@ type Expo = {
 /** app/ */
 const APP = new URL('../../', import.meta.url);
 const require = createRequire(import.meta.url);
-const { forVariant, VARIANTS, checkStore, IDS, idOf } = require('../../variant.js') as {
+const { forVariant, VARIANTS, checkStore, IDS, idOf, versionCode } = require('../../variant.js') as {
   forVariant: (expo: Expo, variant?: string) => Expo; VARIANTS: string[]; checkStore: (variant?: string, store?: string) => void;
-  IDS: Record<'wallet' | 'pos', string>; idOf: (variant?: string) => string;
+  IDS: Record<'wallet' | 'pos', string>; idOf: (variant?: string, release?: string) => string; versionCode: (version: string) => number;
 };
 const appConfig = require('../../app.config.js') as (o: { config: Expo }) => Expo;
 const json = () => (JSON.parse(readFileSync(new URL('app.json', APP), 'utf8')) as { expo: Expo }).expo;
+/** f's answer with exactly these of the build settings set (the others empty), as a build's shell would have them. */
+const withEnv = <T,>(env: Record<string, string>, f: () => T): T => {
+  for (const k of ['APP_VARIANT', 'KARTO_STORE', 'KARTO_RELEASE']) vi.stubEnv(k, env[k] ?? '');
+  try {
+    return f();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+};
 const names = (e: Expo) => e.plugins.map((p) => (Array.isArray(p) ? p[0] : p));
 const plugin = (e: Expo, name: string) => e.plugins.find((p) => (Array.isArray(p) ? p[0] : p) === name);
 
@@ -41,6 +50,33 @@ describe('app.config.js', () => {
     expect([pos.android.package, pos.ios.bundleIdentifier]).toEqual([idOf('pos'), idOf('pos')]);
     // The wallet starts Karto PoS by this name and Expo puts its MainActivity in the package of that name.
     expect(KARTO_POS).toEqual({ packageName: idOf('pos'), className: `${idOf('pos')}.MainActivity` });
+    expect([posPackage(undefined), posPackage(''), posPackage('1')]).toEqual([idOf('pos'), idOf('pos', ''), idOf('pos', '1')]);
+  });
+
+  it('gives a release (KARTO_RELEASE=1) the store identifiers, on both apps and both platforms, and nothing else', () => {
+    expect([idOf('wallet', '1'), idOf('pos', '1')]).toEqual(['tech.whitewolf.karto', 'tech.whitewolf.kartopos']);
+    for (const variant of ['wallet', 'pos']) {
+      const release = withEnv({ APP_VARIANT: variant, KARTO_RELEASE: '1' }, () => appConfig({ config: json() }));
+      const dev = withEnv({ APP_VARIANT: variant }, () => appConfig({ config: json() }));
+      expect([release.android.package, release.ios.bundleIdentifier]).toEqual([idOf(variant, '1'), idOf(variant, '1')]);
+      expect([dev.android.package, dev.ios.bundleIdentifier]).toEqual([idOf(variant), idOf(variant)]);
+      // Only the identifiers differ.
+      expect({ ...release, android: { ...release.android, package: '' }, ios: { ...release.ios, bundleIdentifier: '' } })
+        .toEqual({ ...dev, android: { ...dev.android, package: '' }, ios: { ...dev.ios, bundleIdentifier: '' } });
+    }
+  });
+
+  it('refuses a release setting other than 1, and a release with Play inside it', () => {
+    expect(() => withEnv({ KARTO_RELEASE: 'yes' }, () => appConfig({ config: json() }))).toThrow('KARTO_RELEASE is "yes": it must be 1 or unset');
+    expect(() => withEnv({ KARTO_RELEASE: '1', KARTO_STORE: 'play' }, () => appConfig({ config: json() }))).toThrow('KARTO_RELEASE=1 is Google-free');
+  });
+
+  it("derives Android's versionCode from the version, so it rises with it", () => {
+    expect([versionCode('0.9.0'), versionCode('1.0.0'), versionCode('1.2.3'), versionCode('999.999.999')]).toEqual([9000, 1000000, 1002003, 999999999]);
+    for (const bad of ['1.0', '1.0.0-beta.1', 'v1.0.0', '1.1000.0', '01.0.0', '0.0.0', '']) expect(() => versionCode(bad)).toThrow();
+    expect(appConfig({ config: json() }).android.versionCode).toBe(versionCode(json().version));
+    // npm's version says the same.
+    expect(JSON.parse(readFileSync(new URL('package.json', APP), 'utf8')).version).toBe(json().version);
   });
 
   it('refuses a setting that names no app', () => {

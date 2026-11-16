@@ -4,10 +4,11 @@
 // Only Karto PoS's build has this plugin (variant.js); the wallet sees Karto PoS through withPosQuery.
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const WALLET_PACKAGE = require('../variant').idOf('wallet');
+const { idOf } = require('../variant');
 
 /** The manifest with Karto Wallet's package among its <queries>, once. */
-function addWalletQuery(manifest) {
+function addWalletQuery(manifest, release = process.env.KARTO_RELEASE) {
+  const WALLET_PACKAGE = idOf('wallet', release);
   const queries = manifest.queries ?? [];
   const has = queries.some((q) => (q.package ?? []).some((p) => p.$?.['android:name'] === WALLET_PACKAGE));
   return has ? manifest : { ...manifest, queries: [...queries, { package: [{ $: { 'android:name': WALLET_PACKAGE } }] }] };

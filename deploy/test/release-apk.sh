@@ -21,6 +21,10 @@
 # apart, and a warm one held ~9 GB. CARDAPP_FULL_BUILD=1 builds all four ABIs,
 # without a daemon.
 #
+# KARTO_RELEASE=1 builds a release: the store identifiers in place of the .dev ones (app/variant.js), in the
+# config and, as EXPO_PUBLIC_KARTO_RELEASE, in the bundle (Karto Wallet starts Karto PoS by its identifier).
+# deploy/release/android-release.sh makes releases with it.
+#
 # APP_VARIANT=pos builds Karto PoS in place of Karto Wallet (app/variant.js):
 # the setting goes to the config (APP_VARIANT) and to the bundle
 # (EXPO_PUBLIC_APP_VARIANT), with the commit for its build label, and the
@@ -44,7 +48,9 @@ build_only=${CARDAPP_BUILD_ONLY:-}
 [ "$build_only" = 1 ] || [ "$("$adb" devices | grep -c 'device$')" -eq 1 ] || { echo "connect exactly one phone (adb devices)" >&2; exit 2; }
 variant=${APP_VARIANT:-wallet}
 store=${KARTO_STORE:-}
+release=${KARTO_RELEASE:-}
 export APP_VARIANT="$variant" EXPO_PUBLIC_APP_VARIANT="$variant" KARTO_STORE="$store" EXPO_PUBLIC_KARTO_STORE="$store"
+export KARTO_RELEASE="$release" EXPO_PUBLIC_KARTO_RELEASE="$release"
 if [ "$variant" = pos ]; then
 	EXPO_PUBLIC_BUILD_COMMIT=$(git -C "$root" rev-parse --short HEAD)
 	EXPO_PUBLIC_BUILD_TIME=$(date +%s)
@@ -62,7 +68,7 @@ else
 		abi=$("$adb" shell getprop ro.product.cpu.abi | tr -d '\r')
 	fi
 	set -- --daemon "-Dorg.gradle.daemon.registry.base=$HOME/.gradle/cardapp-daemon" "-PreactNativeArchitectures=$abi"
-	echo "development build for $abi, on a low-priority daemon"
+	echo "$([ "$release" = 1 ] && echo release || echo development) build for $abi, on a low-priority daemon"
 fi
 (cd android && nice -n 19 ionice -c3 ./gradlew "$@" --build-cache :app:createBundleReleaseJsAndAssets --rerun :app:assembleRelease)
 # Gradle signed it with the template's debug key, which everyone has: it is signed again with the project's key

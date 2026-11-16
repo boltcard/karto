@@ -3,10 +3,11 @@
 // this plugin out (variant.js).
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const POS_PACKAGE = require('../variant').idOf('pos');
+const { idOf } = require('../variant');
 
 /** The manifest with Karto PoS's package among its <queries>, once. */
-function addPosQuery(manifest) {
+function addPosQuery(manifest, release = process.env.KARTO_RELEASE) {
+  const POS_PACKAGE = idOf('pos', release);
   const queries = manifest.queries ?? [];
   const has = queries.some((q) => (q.package ?? []).some((p) => p.$?.['android:name'] === POS_PACKAGE));
   return has ? manifest : { ...manifest, queries: [...queries, { package: [{ $: { 'android:name': POS_PACKAGE } }] }] };
