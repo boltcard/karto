@@ -77,8 +77,8 @@ sh "$root/deploy/test/bundle-markers.sh" "$signed" "$variant"
 # For deploy/test/signing-proof.sh alone: both files kept, named by the app, for what it then offers the phone.
 if [ -n "${CARDAPP_KEEP_APKS:-}" ]; then
 	mkdir -p "$CARDAPP_KEEP_APKS"
-	cp "$apk" "$CARDAPP_KEEP_APKS/$variant-old-key.apk"
-	cp "$signed" "$CARDAPP_KEEP_APKS/$variant-new-key.apk"
+	cp "$apk" "$CARDAPP_KEEP_APKS/$variant-debug-key.apk"
+	cp "$signed" "$CARDAPP_KEEP_APKS/$variant-project-key.apk"
 fi
 if [ "$build_only" = 1 ]; then
 	echo "built $root/app/$signed (not installed)"

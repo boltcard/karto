@@ -4,10 +4,9 @@
 # password once, for your backup, and that is for your eyes alone.
 #   sh deploy/signing/make-key.sh
 # It makes an EC P-256 key in a PKCS #12 keystore outside the repository (~/.config/karto/signing/), keeps its
-# password in the desktop's login keyring, makes the lineage that says this key follows the React Native template's
-# debug key (old.keystore here: public, and the key the phones' apps are signed with today), and writes the two
-# public files every build needs into this folder: lineage.bin and signer.sha256. Commit those two. It refuses to
-# run where any of this already exists, and takes back what it made if it cannot finish.
+# password in the desktop's login keyring, and writes the public file every build needs into this folder:
+# signer.sha256, the certificate's SHA-256. Commit it. It refuses to run where any of this already exists, and
+# takes back what it made if it cannot finish.
 #
 # For the test (deploy/test/make-key-test.sh): KARTO_SIGNING_DIR, KARTO_KEYSTORE, and the keyring's four commands
 # KARTO_PASS_CMD, KARTO_PASS_HAS_CMD, KARTO_PASS_SET_CMD, KARTO_PASS_DEL_CMD.
@@ -31,13 +30,10 @@ tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort 
 platform=$(find "$ANDROID_HOME/platforms" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
 stop() { echo "make-key: $*" >&2; exit 1; }
 
-[ -f "$dir/old.keystore" ] || stop "$dir/old.keystore is missing"
 [ -n "${KARTO_PASS_CMD:-}" ] || /usr/bin/python3 -c 'import secretstorage' 2>/dev/null || stop "the system's Python has no secretstorage, which reaches the login keyring: sudo apt install python3-secretstorage, then run this again. Nothing made."
 [ ! -e "$keystore" ] || stop "there is already a signing key at $keystore: nothing made"
 if keyring has 2>/dev/null; then stop "the login keyring already holds a signing password: nothing made"; fi
-for f in lineage.bin signer.sha256; do
-	[ ! -e "$dir/$f" ] || stop "$dir/$f is already there: the key was made before (restore it from your backup): nothing made"
-done
+[ ! -e "$dir/signer.sha256" ] || stop "$dir/signer.sha256 is already there: the key was made before (restore it from your backup): nothing made"
 
 made=
 stored=
@@ -47,7 +43,7 @@ undo() {
 	[ -z "$work" ] || rm -rf "${work:?}"
 	if [ -n "$shown" ]; then echo "make-key: the key is made and in place, but your word that it is backed up was not given. Make the backup before any phone takes this key." >&2; fi
 	[ -n "$made" ] || return 0
-	rm -f "$keystore" "$dir/lineage.bin" "$dir/signer.sha256"
+	rm -f "$keystore" "$dir/signer.sha256"
 	# Only a password this run put there is taken out again.
 	[ -z "$stored" ] || keyring del 2>/dev/null || true
 	echo "make-key: it could not finish, and took back what it had made" >&2
@@ -69,18 +65,10 @@ printf '%s\n' "$pass" | keyring set || stop "the password could not be put in th
 stored=1
 [ "$(keyring get)" = "$pass" ] || stop "the login keyring did not give the password back"
 
-# The old key keeps what the update over today's apps needs and nothing else: their data, and their permissions (every
-# app declares one of its own, and Android refuses an update whose old signer may not share it:
-# INSTALL_FAILED_DUPLICATE_PERMISSION, seen on a Pixel 8 Pro). Rollback is off by default. Once every phone has
-# taken the new key the permission capability can be taken away too: apksigner lineage --set-permission false.
-printf '%s\n' "$pass" | "$tools/apksigner" rotate --out "$dir/lineage.bin" \
-	--old-signer --ks "$dir/old.keystore" --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android \
-	--set-shared-uid false --set-auth false \
-	--new-signer --ks "$keystore" --ks-key-alias karto --ks-pass stdin >/dev/null 2>&1 || stop "apksigner could not make the lineage"
 pin=$(KARTO_NEW_PASS=$pass keytool -list -v -keystore "$keystore" -storepass:env KARTO_NEW_PASS 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ': ' | tr 'A-F' 'a-f')
 [ ${#pin} -eq 64 ] || stop "the new certificate's SHA-256 could not be read"
 echo "$pin" >"$dir/signer.sha256"
-chmod 644 "$dir/lineage.bin" "$dir/signer.sha256"
+chmod 644 "$dir/signer.sha256"
 
 # The whole chain, once, before anyone is told it is made: a manifest-only APK signed as every build will be.
 cat >"$work/AndroidManifest.xml" <<'EOF'
@@ -107,7 +95,7 @@ Copy the file and this password to your own backup now. Without them the install
 apps can never be updated again. The password is also in this desktop's login keyring;
 it is not shown again.
 
-Then commit deploy/signing/lineage.bin and deploy/signing/signer.sha256.
+Then commit deploy/signing/signer.sha256.
 EOF
 while :; do
 	printf '\nWhen your backup is made, type the last four characters of the fingerprint: '

@@ -7,7 +7,7 @@
 /deploy/bin/
 /.venv-icons/
 /.signing-proof/
-# The signing key is never the repository's: only old.keystore (public), lineage.bin and signer.sha256 live here.
+# The signing key is never the repository's: only signer.sha256, its certificate's SHA-256, lives here.
 /deploy/signing/*.p12
 /deploy/signing/*.jks
 # Local tooling and worktrees, never the project's.
@@ -23,6 +23,5 @@
 *.mobileprovision
 __pycache__/
 *.log
-# Keystores: only deploy/signing/old.keystore (the public Android debug key) is kept.
+# Keystores, prebuild's android/app/debug.keystore among them: never kept.
 *.keystore
-!/deploy/signing/old.keystore

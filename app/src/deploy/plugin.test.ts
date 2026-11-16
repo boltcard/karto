@@ -61,9 +61,8 @@ describe('withWalletQuery', () => {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { setMinSdk } = require('../../plugins/withAndroid9') as { setMinSdk: (properties: { type: string; key?: string; value?: string }[]) => { type: string; key?: string; value?: string }[] };
 
-// Karto Wallet needs Android 9 (API 28) or later: below it Android checks the signature made with the public debug
-// key, the first of the apps' signing lineage, so anyone could sign an update that installs over the wallet with its
-// data. Karto PoS keeps Expo's floor (Android 7), so an old phone can be a till.
+// Karto Wallet needs Android 9 (API 28) or later: its check of the app going by Karto PoS's name reads the signers
+// Android reports from 9 on. Karto PoS keeps Expo's floor (Android 7), so an old phone can be a till.
 describe('withAndroid9', () => {
   const FLOOR = { type: 'property', key: 'android.minSdkVersion', value: '28' };
   it("sets Gradle's android.minSdkVersion to 28, beside the other properties", () => {

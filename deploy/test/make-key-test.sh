@@ -1,8 +1,7 @@
 #!/bin/sh
 # deploy/signing/make-key.sh, on the computer, in a temporary folder and with a file standing in for the login
 # keyring: never the real keystore, never the real keyring. Checked: it makes a key and keeps its password where it
-# is told; the lineage runs from the template's debug key to the new key and leaves the old key the two capabilities
-# an update over today's apps needs (their data, their own permissions) and no other; the pinned SHA-256 is the new certificate's; sign-apk.sh signs with what it made; it
+# is told; the pinned SHA-256 is the new certificate's; sign-apk.sh signs with what it made; it
 # waits for the last four characters of the fingerprint, and takes no other answer; and a second run refuses and
 # changes nothing. Run from the repo root: sh deploy/test/make-key-test.sh (make test runs it).
 set -eu
@@ -18,7 +17,6 @@ fail() { echo "make-key-test: FAIL: $*" >&2; exit 1; }
 
 dir=$t/signing
 mkdir "$dir"
-cp "$root/deploy/signing/old.keystore" "$dir/old.keystore"
 # The stand-in keyring: a file.
 export KARTO_SIGNING_DIR="$dir" KARTO_KEYSTORE="$t/home/karto-android.p12"
 export KARTO_PASS_CMD="cat $t/keyring" KARTO_PASS_HAS_CMD="test -s $t/keyring" KARTO_PASS_SET_CMD="cat > $t/keyring" KARTO_PASS_DEL_CMD="rm -f $t/keyring"
@@ -38,7 +36,7 @@ done
 wait $pid && fail "an interrupted run ended as if all was well"
 [ ! -e "$KARTO_KEYSTORE" ] || fail "an interrupted run left the key's file"
 [ ! -e "$t/keyring" ] || fail "an interrupted run left the password in the keyring"
-[ ! -e "$dir/lineage.bin" ] && [ ! -e "$dir/signer.sha256" ] || fail "an interrupted run left the public files"
+[ ! -e "$dir/signer.sha256" ] || fail "an interrupted run left the public files"
 grep -q "took back what it had made" "$t/log0" || fail "an interrupted run didn't say it took things back: $(cat "$t/log0")"
 
 echo "make-key-test: makes the key, and waits for the person's word"
@@ -68,19 +66,10 @@ grep -q "$pass" "$t/log" || fail "the password was not shown for the backup"
 [ "$(grep -c "$pass" "$t/log")" -eq 1 ] || fail "the password was shown more than once"
 [ "$(stat -c %a "$KARTO_KEYSTORE")" = 600 ] || fail "the keystore is not the person's alone"
 [ "$(stat -c %a "$(dirname "$KARTO_KEYSTORE")")" = 700 ] || fail "the keystore's folder is not the person's alone"
-[ "$(stat -c %a "$dir/lineage.bin")$(stat -c %a "$dir/signer.sha256")" = 644644 ] || fail "the two public files are not for all to read"
+[ "$(stat -c %a "$dir/signer.sha256")" = 644 ] || fail "the public file is not for all to read"
 cert=$(keytool -list -v -keystore "$KARTO_KEYSTORE" -storepass "$pass" 2>/dev/null | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr 'A-F' 'a-f')
 [ "$cert" = "$pin" ] || fail "signer.sha256 is not the new certificate's"
 keytool -list -v -keystore "$KARTO_KEYSTORE" -storepass "$pass" 2>/dev/null | grep -q "Signature algorithm name: SHA256withECDSA" || fail "not an EC key signed with SHA-256"
-
-echo "make-key-test: the lineage"
-"$tools/apksigner" lineage --in "$dir/lineage.bin" --print-certs >"$t/lineage"
-grep -q "^Signer #1 in lineage certificate SHA-256 digest: fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c$" "$t/lineage" || fail "the lineage does not start from the debug key"
-grep -q "^Signer #2 in lineage certificate SHA-256 digest: $pin$" "$t/lineage" || fail "the lineage does not end at the new key"
-# The old key's capabilities are the first five lines after its digests: the apps' data and their own permissions,
-# which an update over today's apps needs (without the second Android refuses it: INSTALL_FAILED_DUPLICATE_PERMISSION).
-old=$(sed -n '/^Signer #1 /,/^Signer #2 /p' "$t/lineage" | grep '^Has ' | tr -s ' ' | paste -sd';')
-[ "$old" = "Has installed data capability: true;Has shared UID capability : false;Has permission capability : true;Has rollback capability : false;Has auth capability : false" ] || fail "the old key's capabilities: $old"
 
 echo "make-key-test: sign-apk.sh signs with what it made"
 cat >"$t/AndroidManifest.xml" <<'EOF'
@@ -95,8 +84,8 @@ sh "$root/deploy/signing/sign-apk.sh" "$t/in.apk" "$t/out.apk" >/dev/null || fai
 [ -s "$t/out.apk" ] || fail "no signed APK"
 
 echo "make-key-test: a second run refuses, and changes nothing"
-before=$(sha256sum "$KARTO_KEYSTORE" "$dir/lineage.bin" "$dir/signer.sha256" "$t/keyring")
+before=$(sha256sum "$KARTO_KEYSTORE" "$dir/signer.sha256" "$t/keyring")
 if sh "$root/deploy/signing/make-key.sh" </dev/null >"$t/log2" 2>&1; then fail "it made a second key"; fi
 grep -q "already" "$t/log2" || fail "it didn't say why: $(cat "$t/log2")"
-[ "$before" = "$(sha256sum "$KARTO_KEYSTORE" "$dir/lineage.bin" "$dir/signer.sha256" "$t/keyring")" ] || fail "the second run changed something"
+[ "$before" = "$(sha256sum "$KARTO_KEYSTORE" "$dir/signer.sha256" "$t/keyring")" ] || fail "the second run changed something"
 echo PASS
