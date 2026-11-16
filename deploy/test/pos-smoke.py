@@ -16,7 +16,7 @@ import time
 import xml.etree.ElementTree as ET
 
 ADB = sys.argv[1]
-PACKAGE = 'app.cardapp.pos'
+PACKAGE = 'tech.whitewolf.kartopos.dev'
 CODE = 'a' * 32
 HEADING = 'Pair this phone to take payments'
 

@@ -110,7 +110,7 @@ find(text_is('no VAT'))
 # Any app or web page can open karto:// links: none may reach a screen out of turn.
 for link in ('karto://phrase', 'karto://welcome', 'karto://diagnostics', 'karto://home'):
     step(f'deep link {link}')
-    adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', link, 'app.cardapp')
+    adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', link, 'tech.whitewolf.karto.dev')
     time.sleep(3)
     find(text_is('Your country'))
     assert not any(n.get('text') in ('Your recovery phrase', 'Karto Wallet diagnostics', 'Your server') for n in nodes()), link

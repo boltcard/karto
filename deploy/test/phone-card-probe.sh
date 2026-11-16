@@ -13,8 +13,8 @@ adb="$ANDROID_HOME/platform-tools/adb"
 
 EXPO_PUBLIC_DIAG_CARD=1 sh "$root/deploy/test/release-apk.sh"
 "$adb" logcat -c
-"$adb" shell am force-stop app.cardapp
-"$adb" shell monkey -p app.cardapp -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.karto.dev
+"$adb" shell monkey -p tech.whitewolf.karto.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 echo "hold a blank NTAG 424 DNA card to the back of the phone (5 minutes)..."
 # The results go to stdout and a temporary file (tee /dev/stderr would reopen,
 # and so truncate, a log file stderr is redirected to).

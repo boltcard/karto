@@ -27,8 +27,8 @@ adb="$ANDROID_HOME/platform-tools/adb"
 if [ -n "${RESULT:-}" ]; then mode=result; else mode=1; fi
 EXPO_PUBLIC_DIAG_RECOVERY=$mode sh "$root/deploy/test/release-apk.sh"
 "$adb" logcat -c
-"$adb" shell am force-stop app.cardapp
-"$adb" shell monkey -p app.cardapp -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.karto.dev
+"$adb" shell monkey -p tech.whitewolf.karto.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 if [ "$mode" = result ]; then
 	echo "reading the last check's result, waiting for one that still runs (up to 20 minutes; keep the app open)..."
 else

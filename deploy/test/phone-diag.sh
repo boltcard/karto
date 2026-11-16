@@ -29,8 +29,8 @@ blob=$(docker exec "$name" cut -d' ' -f2 /config/ssh_host_keys/ssh_host_ed25519_
 
 EXPO_PUBLIC_DIAG_SSH="127.0.0.1:12222:debian:$blob:$seed" sh "$root/deploy/test/release-apk.sh"
 "$adb" logcat -c
-"$adb" shell am force-stop app.cardapp
-"$adb" shell monkey -p app.cardapp -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.karto.dev
+"$adb" shell monkey -p tech.whitewolf.karto.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 echo "waiting for the phone's results..."
 sh "$root/deploy/test/diag-wait.sh" 180 | tee "$out"
 grep -q '"fail":0' "$out"

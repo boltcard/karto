@@ -16,8 +16,8 @@ adb="$ANDROID_HOME/platform-tools/adb"
 
 EXPO_PUBLIC_DIAG_CONNECTION=1 sh "$root/deploy/test/release-apk.sh"
 "$adb" logcat -c
-"$adb" shell am force-stop app.cardapp
-"$adb" shell monkey -p app.cardapp -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.karto.dev
+"$adb" shell monkey -p tech.whitewolf.karto.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 echo "waiting for the phone's results..."
 out=$(mktemp)
 trap 'rm -f "$out"' EXIT

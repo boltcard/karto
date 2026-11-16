@@ -12,9 +12,11 @@ Both apps are built from one Expo (React Native) project, for Android and iPhone
 recovery phrase, the money and the cards' keys stay on the person's phone and server. Server orders carry the
 project's LNVPS referral code (`LNVPS_REF_CODE` in `app/src/lnvps/client.ts`); a fork can change or remove it.
 
-`card-app` was the project's working name. It stays where renaming would break existing installs: the server's
-install folder (`~/card-app`), its Docker project, the Android package id (`app.cardapp`) and the URL scheme
-(`cardapp`). `tech.whitewolf` is the prefix of the iPhone bundle ids.
+`card-app` was the project's working name. It stays where renaming would break existing servers: the server's
+install folder (`~/card-app`) and its Docker project. The apps are published by White Wolf Technology
+(whitewolf.tech): Karto Wallet is `tech.whitewolf.karto` and Karto PoS `tech.whitewolf.kartopos` on both platforms,
+with `.dev` after them on every build that isn't a store's (`app/variant.js`). Their link schemes are `karto://` and
+`kartopos://`.
 
 ## Layout
 

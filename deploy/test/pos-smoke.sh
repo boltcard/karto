@@ -13,7 +13,7 @@ adb="$ANDROID_HOME/platform-tools/adb"
 [ "$("$adb" devices | grep -c 'device$')" -eq 1 ] || { echo "connect exactly one phone with USB debugging on (adb devices)" >&2; exit 2; }
 # Checks the APK has no Play Services and holds Karto PoS's code alone, too.
 APP_VARIANT=pos sh "$root/deploy/test/release-apk.sh"
-"$adb" shell am force-stop app.cardapp.pos
-"$adb" shell pm clear app.cardapp.pos >/dev/null
-"$adb" shell monkey -p app.cardapp.pos -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.kartopos.dev
+"$adb" shell pm clear tech.whitewolf.kartopos.dev >/dev/null
+"$adb" shell monkey -p tech.whitewolf.kartopos.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 python3 "$root/deploy/test/pos-smoke.py" "$adb"

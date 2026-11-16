@@ -11,7 +11,7 @@ adb="$ANDROID_HOME/platform-tools/adb"
 [ "$("$adb" devices | grep -c 'device$')" -eq 1 ] || { echo "connect exactly one phone with USB debugging on (adb devices)" >&2; exit 2; }
 # Checks the APK has no Play Services, too.
 sh "$root/deploy/test/release-apk.sh"
-"$adb" shell am force-stop app.cardapp
-"$adb" shell pm clear app.cardapp >/dev/null
-"$adb" shell monkey -p app.cardapp -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+"$adb" shell am force-stop tech.whitewolf.karto.dev
+"$adb" shell pm clear tech.whitewolf.karto.dev >/dev/null
+"$adb" shell monkey -p tech.whitewolf.karto.dev -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 python3 "$root/deploy/test/phone-smoke.py" "$adb"
