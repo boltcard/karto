@@ -34,7 +34,7 @@ describe('app.json', () => {
   it('is Karto under its icon, and keeps every name an installed app and the phone scripts rely on', () => {
     expect(expo.name).toBe('Karto');
     expect(expo.slug).toBe('card-app');
-    expect(expo.scheme).toBe('cardapp');
+    expect(expo.scheme).toBe('karto');
     expect(expo.android.package).toBe('tech.whitewolf.karto.dev');
   });
 

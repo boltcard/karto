@@ -22,7 +22,7 @@ describe('readLink', () => {
 
   it('takes nothing else as a link', () => {
     for (const text of [
-      '', 'hello', `https://${HOST}/pair?host=${HOST}&code=${CODE}`, `cardapp://pair?host=${HOST}&code=${CODE}`, `KARTOPOS://pair?host=${HOST}&code=${CODE}`,
+      '', 'hello', `https://${HOST}/pair?host=${HOST}&code=${CODE}`, `karto://pair?host=${HOST}&code=${CODE}`, `KARTOPOS://pair?host=${HOST}&code=${CODE}`,
       `kartopos://pair`, `kartopos://pair?host=${HOST}`, `kartopos://pair?code=${CODE}`, `kartopos://server`, `kartopos://server?code=${CODE}`,
       `kartopos://till?host=${HOST}`, `kartopos://pair/x?host=${HOST}&code=${CODE}`,
       // A part more than once, or one that isn't the link's.

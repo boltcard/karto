@@ -41,7 +41,7 @@ class AlertWordsTest {
   fun aHostingAlertOpensHostingOnTheReceivedChannelUnderOneTag() {
     val a = alert("hosting-low-5")
     assertEquals("alerts-received", a.channel)
-    assertEquals("cardapp://account?id=hosting", a.link)
+    assertEquals("karto://account?id=hosting", a.link)
     // Each day's replaces the last.
     assertEquals("hosting-low", a.tag)
     assertFalse(ownTap(a, 60_000))
@@ -49,11 +49,11 @@ class AlertWordsTest {
 
   @Test
   fun aPaymentOpensItsPageAndARefusalItsCard() {
-    assertEquals("cardapp://payment?account=b1ee&tx=41", alert("topup-card").link)
-    assertEquals("cardapp://payment?account=pool&tx=42", alert("topup-pool").link)
-    assertEquals("cardapp://payment?account=shop&tx=45", alert("sale-priced").link)
-    assertEquals("cardapp://payment?account=b1ee&tx=47", alert("spend").link)
-    assertEquals("cardapp://account?id=b1ee", alert("refused-daily").link)
+    assertEquals("karto://payment?account=b1ee&tx=41", alert("topup-card").link)
+    assertEquals("karto://payment?account=pool&tx=42", alert("topup-pool").link)
+    assertEquals("karto://payment?account=shop&tx=45", alert("sale-priced").link)
+    assertEquals("karto://payment?account=b1ee&tx=47", alert("spend").link)
+    assertEquals("karto://account?id=b1ee", alert("refused-daily").link)
     // No payment to open: the app opens.
     assertNull(alert("test").link)
   }

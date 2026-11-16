@@ -44,7 +44,7 @@ export function accountButtons(a: AccountKind, moneyOff: boolean): AccountButton
   return actions.map((action) => ({ action, ...BUTTONS[action], main: action === (pays ? 'pay' : 'top-up'), off: action === 'pay' ? payOff : moneyOff && NEEDS_CARDD.includes(action) }));
 }
 
-/** An account id a cardapp:// link may name: pool, hosting, shop or a card's id; '' for anything else. */
+/** An account id a karto:// link may name: pool, hosting, shop or a card's id; '' for anything else. */
 export const accountId = (param: string | undefined): string => (/^(pool|hosting|shop|[0-9a-f]{32})$/.test(param ?? '') ? param! : '');
 
 /** The name of an account that isn't a card; null for a card, which has its own. */

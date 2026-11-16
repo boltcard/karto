@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { holdPress, isHoldPress } from './holdPress';
 
-// A link (cardapp://card?…) can open the hold screen; only a press in the app lets it open Apple's sheet by itself.
+// A link (karto://card?…) can open the hold screen; only a press in the app lets it open Apple's sheet by itself.
 describe('the press that leads to the hold screen', () => {
   const bytes = (b: number) => () => new Uint8Array(16).fill(b);
 

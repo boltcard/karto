@@ -122,7 +122,7 @@ export type HoldParams = { op: Op; id?: string; name: string; randomUid: boolean
 
 /**
  * What the screen reads from its link, once, when it opens. Null: a wipe with no card to wipe, which only a
- * cardapp:// link can ask for; the screen goes to the wallet. randomUid is the name screen's switch, for an add
+ * karto:// link can ask for; the screen goes to the wallet. randomUid is the name screen's switch, for an add
  * alone: a finished add never turns the hiding on, as the first hold applied the person's choice before the
  * server knew the card.
  */

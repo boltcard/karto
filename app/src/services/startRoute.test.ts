@@ -38,7 +38,7 @@ describe('startRoute', () => {
     expect(startRoute({ diagnostics: false, hasPhrase: true, state: { ...s, country: 'GBR', step: 'done' } })).toBe('/home');
   });
 
-  // Every screen is reachable by a cardapp:// deep link: each one only opens in the state it belongs to.
+  // Every screen is reachable by a karto:// deep link: each one only opens in the state it belongs to.
   describe('routeAllowed', () => {
     const ctx = (hasPhrase: boolean, state: typeof s | null, diagnostics = false) => ({ diagnostics, hasPhrase, state });
     it('never offers a new phrase once there is one', () => {

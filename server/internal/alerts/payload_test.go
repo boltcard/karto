@@ -385,11 +385,11 @@ type vectorCase struct {
 func phoneLink(p map[string]any) string {
 	kind, _ := p["kind"].(string)
 	if kind == "hosting" {
-		return "cardapp://account?id=hosting"
+		return "karto://account?id=hosting"
 	}
 	if kind == "refused" {
 		if card, ok := p["card"].(string); ok && card != "" {
-			return "cardapp://account?id=" + url.QueryEscape(card)
+			return "karto://account?id=" + url.QueryEscape(card)
 		}
 		return ""
 	}
@@ -399,7 +399,7 @@ func phoneLink(p map[string]any) string {
 	if !ok || acct == "" {
 		return ""
 	}
-	return fmt.Sprintf("cardapp://payment?account=%s&tx=%d", url.QueryEscape(acct), int64(tx))
+	return fmt.Sprintf("karto://payment?account=%s&tx=%d", url.QueryEscape(acct), int64(tx))
 }
 
 // testvectors/alerts.json is what cardd sends for each scenario and the words

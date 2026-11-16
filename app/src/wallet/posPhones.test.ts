@@ -205,7 +205,7 @@ describe('posError', () => {
   });
 });
 
-// The pages themselves, not only the row that opens them: a link (cardapp://pos-add) reaches a page whatever Settings shows.
+// The pages themselves, not only the row that opens them: a link (karto://pos-add) reaches a page whatever Settings shows.
 describe('posGate', () => {
   it("stops the shop's pages on a server that may not be the person's, in the notice's own words", () => {
     expect(posGate({ keyNotice: { kind: 'mismatch', text: "This server's SSH key isn't the one LNVPS published. Stop using it." } })).toEqual({

@@ -1,5 +1,5 @@
 // The scanner's result, from the scan screen to Send out: in memory, never a
-// route parameter (every screen can be opened by a cardapp:// link).
+// route parameter (every screen can be opened by a karto:// link).
 let scanned: string | null = null;
 
 export const scanSlot = {

@@ -72,7 +72,7 @@ describe('app.config.js', () => {
     // No sitemap: the router's own _sitemap screen is in every build unless it is turned off, any app can open it by
     // a link, and on a phone it throws (found on the Pixel 8 Pro: kartopos://_sitemap closed Karto PoS).
     expect(plugin(forVariant(json(), 'pos'), 'expo-router')).toEqual(['expo-router', { root: 'src/pos-app', sitemap: false }]);
-    // The wallet has no sitemap either: cardapp://_sitemap closed it the same way (seen on the Pixel 8 Pro).
+    // The wallet has no sitemap either: karto://_sitemap closed it the same way (seen on the Pixel 8 Pro).
     expect(plugin(json(), 'expo-router')).toEqual(['expo-router', { sitemap: false }]);
   });
 

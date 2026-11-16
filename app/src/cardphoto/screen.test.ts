@@ -8,11 +8,11 @@ describe('the photo screen', () => {
   it('goes back to the wallet from the add step, and back to the account page from More', () => {
     expect(finishTo(true, true)).toBe('wallet');
     expect(finishTo(false, true)).toBe('back');
-    // Opened cold by a cardapp:// link, there is nothing to go back to.
+    // Opened cold by a karto:// link, there is nothing to go back to.
     expect(finishTo(false, false)).toBe('wallet');
   });
 
-  // A cardapp:// link can open it with any id.
+  // A karto:// link can open it with any id.
   it("opens only for a card's id", () => {
     expect(validCardId(ID)).toBe(true);
     for (const bad of [undefined, '', 'A'.repeat(32), 'a'.repeat(31), `${'a'.repeat(32)}/x`, 'pool']) expect(validCardId(bad)).toBe(false);

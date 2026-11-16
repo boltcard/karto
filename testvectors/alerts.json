@@ -22,7 +22,7 @@
       },
       "title": "Blue card",
       "text": "123 sat received (£0.31)",
-      "link": "cardapp://payment?account=b1ee\u0026tx=41"
+      "link": "karto://payment?account=b1ee\u0026tx=41"
     },
     {
       "name": "topup-pool",
@@ -46,7 +46,7 @@
       },
       "title": "Karto",
       "text": "123 sat received (£0.31)",
-      "link": "cardapp://payment?account=pool\u0026tx=42"
+      "link": "karto://payment?account=pool\u0026tx=42"
     },
     {
       "name": "topup-card-unnamed-no-currency",
@@ -66,7 +66,7 @@
       },
       "title": "Card",
       "text": "1,234,567 sat received",
-      "link": "cardapp://payment?account=b1ee\u0026tx=43"
+      "link": "karto://payment?account=b1ee\u0026tx=43"
     },
     {
       "name": "topup-card-yen",
@@ -90,7 +90,7 @@
       },
       "title": "Blue card",
       "text": "123 sat received (¥55)",
-      "link": "cardapp://payment?account=b1ee\u0026tx=44"
+      "link": "karto://payment?account=b1ee\u0026tx=44"
     },
     {
       "name": "sale-priced",
@@ -114,7 +114,7 @@
       },
       "title": "Shop · Till 1",
       "text": "2,000 sat received (priced £5.00)",
-      "link": "cardapp://payment?account=shop\u0026tx=45"
+      "link": "karto://payment?account=shop\u0026tx=45"
     },
     {
       "name": "sale-in-sat-no-till",
@@ -138,7 +138,7 @@
       },
       "title": "Shop",
       "text": "2,000 sat received (£5.00)",
-      "link": "cardapp://payment?account=shop\u0026tx=46"
+      "link": "karto://payment?account=shop\u0026tx=46"
     },
     {
       "name": "spend",
@@ -162,7 +162,7 @@
       },
       "title": "Blue card",
       "text": "100 sat spent (£0.25)",
-      "link": "cardapp://payment?account=b1ee\u0026tx=47"
+      "link": "karto://payment?account=b1ee\u0026tx=47"
     },
     {
       "name": "topup-hosting",
@@ -186,7 +186,7 @@
       },
       "title": "Hosting",
       "text": "123 sat received (£0.31)",
-      "link": "cardapp://payment?account=hosting\u0026tx=49"
+      "link": "karto://payment?account=hosting\u0026tx=49"
     },
     {
       "name": "topup-pool-euro",
@@ -210,7 +210,7 @@
       },
       "title": "Karto",
       "text": "123 sat received (€0.28)",
-      "link": "cardapp://payment?account=pool\u0026tx=50"
+      "link": "karto://payment?account=pool\u0026tx=50"
     },
     {
       "name": "spend-dollar",
@@ -234,7 +234,7 @@
       },
       "title": "Blue card",
       "text": "100 sat spent ($0.27)",
-      "link": "cardapp://payment?account=b1ee\u0026tx=51"
+      "link": "karto://payment?account=b1ee\u0026tx=51"
     },
     {
       "name": "sale-priced-no-currency",
@@ -258,7 +258,7 @@
       },
       "title": "Shop · Till 1",
       "text": "2,000 sat received (priced £5.00)",
-      "link": "cardapp://payment?account=shop\u0026tx=52"
+      "link": "karto://payment?account=shop\u0026tx=52"
     },
     {
       "name": "spend-no-currency",
@@ -278,7 +278,7 @@
       },
       "title": "Blue card",
       "text": "100 sat spent",
-      "link": "cardapp://payment?account=b1ee\u0026tx=48"
+      "link": "karto://payment?account=b1ee\u0026tx=48"
     },
     {
       "name": "refused-daily",
@@ -299,7 +299,7 @@
       },
       "title": "Blue card",
       "text": "A 5,000 sat spend was refused: over its daily limit",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-per-tap",
@@ -320,7 +320,7 @@
       },
       "title": "Blue card",
       "text": "A 5,000 sat spend was refused: over its per-payment limit",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-funds",
@@ -341,7 +341,7 @@
       },
       "title": "Blue card",
       "text": "A 5,000 sat spend was refused: not enough money on the card",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-invoice",
@@ -362,7 +362,7 @@
       },
       "title": "Blue card",
       "text": "A 5,000 sat spend was refused: the terminal's invoice can't be paid",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-paused",
@@ -383,7 +383,7 @@
       },
       "title": "Blue card",
       "text": "A tap was refused: spending is paused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-daily-no-amount",
@@ -404,7 +404,7 @@
       },
       "title": "Blue card",
       "text": "A tap was refused: over its daily limit",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-repeated",
@@ -425,7 +425,7 @@
       },
       "title": "Blue card",
       "text": "A repeated tap was refused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-off",
@@ -446,7 +446,7 @@
       },
       "title": "Blue card",
       "text": "The card is off: a tap was refused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-folded",
@@ -468,7 +468,7 @@
       },
       "title": "Blue card",
       "text": "3 spends refused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-folded-taps",
@@ -490,7 +490,7 @@
       },
       "title": "Blue card",
       "text": "2 taps refused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "refused-hour-summary",
@@ -511,7 +511,7 @@
       },
       "title": "Blue card",
       "text": "4 spends refused",
-      "link": "cardapp://account?id=b1ee"
+      "link": "karto://account?id=b1ee"
     },
     {
       "name": "test",
@@ -552,7 +552,7 @@
       },
       "title": "Hosting",
       "text": "Covers about 5 days: top it up or move from Pool",
-      "link": "cardapp://account?id=hosting"
+      "link": "karto://account?id=hosting"
     },
     {
       "name": "hosting-low-1",
@@ -573,7 +573,7 @@
       },
       "title": "Hosting",
       "text": "Covers about 1 day: top it up or move from Pool",
-      "link": "cardapp://account?id=hosting"
+      "link": "karto://account?id=hosting"
     },
     {
       "name": "hosting-low-0",
@@ -594,7 +594,7 @@
       },
       "title": "Hosting",
       "text": "Covers about 0 days: top it up or move from Pool",
-      "link": "cardapp://account?id=hosting"
+      "link": "karto://account?id=hosting"
     }
   ]
 }

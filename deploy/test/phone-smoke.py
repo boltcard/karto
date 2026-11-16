@@ -107,8 +107,8 @@ find(lambda n: (n.get('text') or '').startswith('Continue with') or n.get('text'
 # Each country's row ends with the VAT LNVPS is expected to charge: most of the first eight charge none.
 find(text_is('no VAT'))
 
-# Any app or web page can open cardapp:// links: none may reach a screen out of turn.
-for link in ('cardapp://phrase', 'cardapp://welcome', 'cardapp://diagnostics', 'cardapp://home'):
+# Any app or web page can open karto:// links: none may reach a screen out of turn.
+for link in ('karto://phrase', 'karto://welcome', 'karto://diagnostics', 'karto://home'):
     step(f'deep link {link}')
     adb('shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', link, 'app.cardapp')
     time.sleep(3)

@@ -30,7 +30,7 @@ internal object AlertWords {
   val FALLBACK = Alert("Karto", "New activity", CHANNEL_RECEIVED, "activity", null, null, false)
 
   /** Karto Wallet's link scheme (app.json): only the wallet takes alerts. */
-  private const val SCHEME = "cardapp"
+  private const val SCHEME = "karto"
 
   // The currencies cardd prices in, as app/src/money/fiat.ts writes them: symbol and decimals.
   private val CURRENCIES = mapOf(

@@ -3,7 +3,7 @@
     "name": "Karto",
     "slug": "card-app",
     "version": "1.0.0",
-    "scheme": "cardapp",
+    "scheme": "karto",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

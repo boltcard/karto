@@ -1,5 +1,5 @@
 // Which screen the app opens on, and which screens may open at all: every
-// screen is reachable by a cardapp:// deep link, so each one only opens in
+// screen is reachable by a karto:// deep link, so each one only opens in
 // the state it belongs to.
 import type { OnboardingState } from '../onboarding/machine';
 

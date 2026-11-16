@@ -8,7 +8,7 @@ import { isGatewayError } from '../money/requests';
 import type { ServerWatch } from '../services/serverWatch';
 import { settingsPlace } from './take';
 
-/** A card's id, as a cardapp:// link may name one (as /account checks). */
+/** A card's id, as a karto:// link may name one (as /account checks). */
 export const validCardId = (id: string | undefined): id is string => /^[0-9a-f]{32}$/.test(id ?? '');
 
 /** The photo screen as Add card's last step, after an add ('add') or after adding a card back ('adopt'); null from More. */
@@ -66,7 +66,7 @@ export const photoSwipe = (o: { step: PhotoStep; busy: 'asking' | 'saving' | 're
 
 /**
  * The add step ends at the wallet, as the card flow did; from More, back to the
- * account page, or to the wallet when a cardapp:// link opened it cold (nothing to go back to).
+ * account page, or to the wallet when a karto:// link opened it cold (nothing to go back to).
  */
 export const finishTo = (fromAdd: boolean, canGoBack: boolean): 'wallet' | 'back' => (fromAdd || !canGoBack ? 'wallet' : 'back');
 

@@ -65,7 +65,7 @@ describe('accountButtons', () => {
   });
 });
 
-// The account a cardapp:// link names, and the three that aren't cards.
+// The account a karto:// link names, and the three that aren't cards.
 describe('accountId and fixedName', () => {
   it('takes pool, hosting, shop and a card id, and nothing else', () => {
     for (const id of ['pool', 'hosting', 'shop', '0123456789abcdef0123456789abcdef']) expect(accountId(id)).toBe(id);

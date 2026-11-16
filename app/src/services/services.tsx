@@ -335,7 +335,7 @@ export async function routeContext(sv: Services): Promise<RouteContext> {
 }
 
 /**
- * Every screen can be opened by a cardapp:// deep link. A screen calls this
+ * Every screen can be opened by a karto:// deep link. A screen calls this
  * first and renders nothing until it returns true; in any other state the app
  * goes where startRoute says instead, and to the start, which says why, if
  * the phone can't be read.

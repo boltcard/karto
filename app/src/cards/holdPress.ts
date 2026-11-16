@@ -1,5 +1,5 @@
 // The press that leads to the hold screen. On an iPhone it
-// is what lets that screen open Apple's sheet by itself. A link can open the screen too (cardapp://card?…), from
+// is what lets that screen open Apple's sheet by itself. A link can open the screen too (karto://card?…), from
 // another app or a web page, and a link is not a press: the screen then shows its button and waits for one.
 //
 // So each way into the hold screen from inside the app makes a token as it navigates and sends it as the screen's
