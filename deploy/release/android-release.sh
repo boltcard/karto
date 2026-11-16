@@ -17,19 +17,19 @@
 #
 # A release installs beside the .dev builds, as another app. To prove that a release updates over the one before:
 # install the draft's arm64-v8a wallet on a test phone, raise app.json's version by hand (not committed), run
-# --local, adb install -r its wallet over the first (the data kept), and put app.json back.
+# --local, install its wallet over the first with adb install -r (the data kept), and put app.json back.
 set -eu
 REPO=boltcard/karto
 root=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$root"
 # shellcheck source=/dev/null # checked on its own
 . "$root/deploy/test/android-env.sh"
-tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
 t0=$(date +%s)
 step() { echo "[$(date +%H:%M:%S) +$(($(date +%s) - t0))s] $*"; }
 stop() { echo "android-release: $*" >&2; exit 1; }
 check_only=
 is_local=
+[ $# -le 1 ] || stop "usage: android-release.sh [--check | --local]"
 case "${1:-}" in
 '') ;;
 --check) check_only=1 ;;
@@ -42,14 +42,17 @@ step "what may be released"
 # would put into the bundle (a diagnostics build's among them), nor another key or pin for the signing.
 for f in app/.env*; do [ ! -e "$f" ] || stop "$f is there: Expo would build it into the bundle. Move it away first"; done
 for v in $(env | sed -n 's/^\(EXPO_PUBLIC_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+# CI among them: with it set, Expo keeps Metro's cache between bundles, and an EXPO_PUBLIC_ value inlined into an
+# earlier build's bundle (KARTO_RELEASE's, APP_VARIANT's) could come back in this one.
 unset CI KARTO_SIGNING_DIR KARTO_KEYSTORE KARTO_PASS_CMD KARTO_STORE CARDAPP_FULL_BUILD CARDAPP_KEEP_APKS APP_VARIANT KARTO_RELEASE CARDAPP_ABI
 sha=$(git rev-parse HEAD)
 version=$(node -p "require('./app/app.json').expo.version")
 code=$(node -p "require('./app/variant.js').versionCode('$version')") || stop "app.json's version $version is not X.Y.Z"
 tag=v$version
 if [ -z "$is_local" ]; then
-	case "$(git remote get-url origin)" in
-	"https://github.com/$REPO" | "https://github.com/$REPO.git" | "git@github.com:$REPO.git") ;;
+	# As written in .git/config (get-url would apply a url.insteadOf).
+	case "$(git config --get remote.origin.url)" in
+	"https://github.com/$REPO" | "https://github.com/$REPO.git" | "git@github.com:$REPO" | "git@github.com:$REPO.git" | "ssh://git@github.com/$REPO" | "ssh://git@github.com/$REPO.git") ;;
 	*) stop "origin is not github.com/$REPO" ;;
 	esac
 	[ "$(gh api "repos/$REPO" --jq .permissions.push 2>/dev/null)" = true ] || stop "gh cannot push to $REPO (gh auth status)"
@@ -58,7 +61,9 @@ if [ -z "$is_local" ]; then
 	[ "$sha" = "$(git rev-parse origin/main)" ] || stop "HEAD is not origin/main: a release is made from main as it is on GitHub"
 	[ -z "$(git tag -l "$tag")" ] || stop "the tag $tag is already here: raise app.json's version"
 	[ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || stop "the tag $tag is already on GitHub: raise app.json's version"
-	if gh release view "$tag" -R "$REPO" >/dev/null 2>&1; then stop "a release $tag is already on GitHub (a draft too): delete it or raise app.json's version"; fi
+	# Every release's tag, drafts' too: a failed call stops here, never reads as "none".
+	releases=$(gh api "repos/$REPO/releases" --paginate --jq '.[].tag_name') || stop "could not list $REPO's releases"
+	! printf '%s\n' "$releases" | grep -qxF "$tag" || stop "a release $tag is already on GitHub (a draft too): delete it or raise app.json's version"
 fi
 pin=$(git show HEAD:deploy/signing/signer.sha256 | tr -d ': \t\r\n' | tr 'A-F' 'a-f')
 [ ${#pin} -eq 64 ] || stop "deploy/signing/signer.sha256 does not hold a SHA-256"
@@ -66,6 +71,7 @@ echo "release $tag (versionCode $code) of $sha, signed by ${pin%"${pin#?????????
 [ -z "$check_only" ] || { echo "android-release: ready"; exit 0; }
 
 if [ -n "$is_local" ]; then out=$root/.release/local; else out=$root/.release/$tag; fi
+tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
 rm -rf "${out:?}"
 mkdir -p "$out"
 
@@ -77,7 +83,8 @@ EXPO_PUBLIC_BUILD_TIME=$(git log -1 --format=%ct)
 export EXPO_PUBLIC_BUILD_COMMIT EXPO_PUBLIC_BUILD_TIME
 
 for app in wallet pos; do
-	# Each app's native project made afresh, once: nothing of a build before this release stays in it.
+	# Each app's native project made afresh, once: no android/ of a build before this release is used (Gradle's
+	# build cache still is, by its inputs' hashes).
 	rm -f app/android/.prebuild-inputs
 	for abi in arm64-v8a armeabi-v7a; do
 		step "Karto $app for $abi: build, sign, check (deploy/test/release-apk.sh)"
@@ -91,18 +98,22 @@ idof() { node -p "require('./app/variant.js').idOf('$1', '1')"; }
 for app in wallet pos; do
 	pkg=$(idof "$app")
 	other=$(idof "$([ "$app" = wallet ] && echo pos || echo wallet)")
+	floor=$([ "$app" = wallet ] && echo 28 || echo 24)
 	for abi in arm64-v8a armeabi-v7a; do
 		f=$out/karto-$app-$tag-$abi.apk
 		badging=$("$tools/aapt2" dump badging "$f")
-		echo "$badging" | grep -q "^package: name='$pkg' versionCode='$code' versionName='$version' " || stop "$f: not $pkg $version ($code): $(echo "$badging" | head -1)"
-		[ "$(echo "$badging" | sed -n "s/^native-code: //p")" = "'$abi'" ] || stop "$f: native code is not $abi's alone"
+		printf '%s\n' "$badging" | grep -qF "package: name='$pkg' versionCode='$code' versionName='$version' " || stop "$f: not $pkg $version ($code): $(printf '%s\n' "$badging" | head -1)"
+		[ "$(printf '%s\n' "$badging" | sed -n "s/^native-code: //p")" = "'$abi'" ] || stop "$f: native code is not $abi's alone"
+		[ "$(printf '%s\n' "$badging" | sed -n "s/^minSdkVersion://p")" = "'$floor'" ] || stop "$f: its Android floor is not API $floor"
 		verified=$("$tools/apksigner" verify -v --print-certs --min-sdk-version 24 "$f") || stop "$f does not verify"
-		echo "$verified" | grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true' || stop "$f: not signed by scheme v2"
-		echo "$verified" | grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true' || stop "$f: not signed by scheme v3"
-		[ "$(echo "$verified" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" = "$pin" ] || stop "$f: its signer is not the project's"
+		printf '%s\n' "$verified" | grep -qxF 'Verified using v2 scheme (APK Signature Scheme v2): true' || stop "$f: not signed by scheme v2"
+		printf '%s\n' "$verified" | grep -qxF 'Verified using v3 scheme (APK Signature Scheme v3): true' || stop "$f: not signed by scheme v3"
+		[ "$(printf '%s\n' "$verified" | sed -n 's/^Signer #[0-9]* certificate SHA-256 digest: //p')" = "$pin" ] || stop "$f: its signer is not the project's"
 		"$tools/zipalign" -c 4 "$f" || stop "$f is not aligned"
-		# The other app of the release, which this one may see: never a .dev one.
-		"$tools/aapt2" dump xmltree --file AndroidManifest.xml "$f" | grep -q "android:name(0x01010003)=\"$other\" " || stop "$f: does not see $other"
+		# The other app of the release, which this one may see, and never a .dev one.
+		manifest=$("$tools/aapt2" dump xmltree --file AndroidManifest.xml "$f")
+		printf '%s\n' "$manifest" | grep -qF "android:name(0x01010003)=\"$other\" " || stop "$f: does not see $other"
+		! printf '%s\n' "$manifest" | grep -qF "$other.dev" || stop "$f: names $other.dev, a development build"
 		echo "$f: $pkg $version ($code), $abi, signed by the project's key"
 	done
 done
@@ -110,7 +121,12 @@ done
 step "SHA256SUMS and the notes"
 (cd "$out" && sha256sum ./*.apk | sed 's| \./| |' >SHA256SUMS)
 fingerprint=$(echo "$pin" | sed 's/../&:/g; s/:$//' | tr 'a-f' 'A-F')
-cat >"$out/notes.md" <<EOF
+if [ -n "$is_local" ]; then
+	printf '**A local build, never a release:** from the checkout as it was, not checked against GitHub.\n\n' >"$out/notes.md"
+else
+	: >"$out/notes.md"
+fi
+cat >>"$out/notes.md" <<EOF
 **Beta.** Karto Wallet and Karto PoS handle real bitcoin. Use amounts you can afford to lose while the apps are in beta.
 
 | File | App | Android | Phones |
@@ -122,13 +138,13 @@ cat >"$out/notes.md" <<EOF
 
 Version $version (versionCode $code), built from $sha. Google-free: no Google Play services. Alerts with the app closed need the ntfy app (UnifiedPush).
 
-**Check what you downloaded.** Every APK is signed by the project's key, whose certificate's SHA-256 is:
+**Check what you downloaded.** Every APK is signed by the project's key alone. \`apksigner verify --print-certs <file>.apk\` must show one signer, with
 
 \`\`\`
-$fingerprint
+Signer #1 certificate SHA-256 digest: $pin
 \`\`\`
 
-\`apksigner verify --print-certs <file>.apk\` shows it as the one signer, and \`sha256sum -c SHA256SUMS\` checks the files. An app signed by any other key can't update these, and these can't update it.
+(the same certificate as \`$fingerprint\`, as keytool and Android's settings write it), and \`sha256sum -c SHA256SUMS\` checks the files. An app signed by any other key can't update these, and these can't update it.
 
 Updates: install the next release's APK over this one. With Obtainium, add this repository, allow pre-releases, and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
 EOF

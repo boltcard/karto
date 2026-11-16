@@ -2,6 +2,7 @@ test:
 	sh deploy/test/sign-apk-test.sh
 	sh deploy/test/make-key-test.sh
 	sh deploy/test/play-gms-test.sh
+	sh deploy/test/android-release-test.sh
 	cd server && go vet ./... && go test ./...
 	cd app && ([ -d node_modules ] || npm ci) && npm test && npm run typecheck
 
@@ -13,7 +14,7 @@ cardd-linux:
 
 # Shellcheck, then the real phoenixd + cardd + Caddy + ntfy stack in Docker.
 deploy-test:
-	docker run --rm -v "$$PWD/deploy:/mnt:ro" koalaman/shellcheck:v0.11.0 /mnt/install.sh /mnt/cardd-ctl /mnt/server-version.sh /mnt/test/stack-test.sh /mnt/test/sshd-test.sh /mnt/test/phone-diag.sh /mnt/test/android-env.sh /mnt/test/no-gms.sh /mnt/test/play-gms.sh /mnt/test/play-gms-test.sh /mnt/test/phone-smoke.sh /mnt/test/phone-card-probe.sh /mnt/test/phone-backup-probe.sh /mnt/test/phone-recovery-check.sh /mnt/test/install-system-test.sh /mnt/test/recovery-check-test.sh /mnt/test/release-apk.sh /mnt/test/prebuild.sh /mnt/test/diag-wait.sh /mnt/test/phone-photo-probe.sh /mnt/test/phone-connection-probe.sh /mnt/test/stack-pos.sh /mnt/test/bundle-markers.sh /mnt/test/pos-smoke.sh /mnt/test/sign-apk-test.sh /mnt/test/make-key-test.sh /mnt/signing/sign-apk.sh /mnt/signing/make-key.sh /mnt/test/signing-proof.sh /mnt/test/ssh-drop-test.sh /mnt/test/ios-swift-test.sh /mnt/test/ios-prebuild-check.sh /mnt/test/sshd-mac.sh /mnt/test/iphone-diag.sh /mnt/test/diag-login-key.sh /mnt/release/android-release.sh
+	docker run --rm -v "$$PWD/deploy:/mnt:ro" koalaman/shellcheck:v0.11.0 /mnt/install.sh /mnt/cardd-ctl /mnt/server-version.sh /mnt/test/stack-test.sh /mnt/test/sshd-test.sh /mnt/test/phone-diag.sh /mnt/test/android-env.sh /mnt/test/no-gms.sh /mnt/test/play-gms.sh /mnt/test/play-gms-test.sh /mnt/test/phone-smoke.sh /mnt/test/phone-card-probe.sh /mnt/test/phone-backup-probe.sh /mnt/test/phone-recovery-check.sh /mnt/test/install-system-test.sh /mnt/test/recovery-check-test.sh /mnt/test/release-apk.sh /mnt/test/prebuild.sh /mnt/test/diag-wait.sh /mnt/test/phone-photo-probe.sh /mnt/test/phone-connection-probe.sh /mnt/test/stack-pos.sh /mnt/test/bundle-markers.sh /mnt/test/pos-smoke.sh /mnt/test/sign-apk-test.sh /mnt/test/make-key-test.sh /mnt/signing/sign-apk.sh /mnt/signing/make-key.sh /mnt/test/signing-proof.sh /mnt/test/ssh-drop-test.sh /mnt/test/ios-swift-test.sh /mnt/test/ios-prebuild-check.sh /mnt/test/sshd-mac.sh /mnt/test/iphone-diag.sh /mnt/test/diag-login-key.sh /mnt/release/android-release.sh /mnt/test/android-release-test.sh
 	sh deploy/test/install-system-test.sh
 	sh deploy/test/recovery-check-test.sh
 	sh deploy/test/stack-test.sh

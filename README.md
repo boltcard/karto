@@ -28,9 +28,9 @@ Google Play services. **They are beta, and they handle real bitcoin**: use amoun
   `armeabi-v7a` for older 32-bit ones; the same for `karto-pos`. Karto Wallet needs Android 9 or later, Karto PoS
   Android 7.
 - **Check it:** every release APK is signed by the project's key alone. `apksigner verify --print-certs` must show
-  one signer whose certificate SHA-256 is
-  `55:4F:26:72:BB:B9:E8:EF:70:18:87:42:11:00:4B:6D:D7:92:5A:A6:70:6D:7B:AF:64:DF:89:54:51:7B:F7:84`
-  (`deploy/signing/signer.sha256`), and `sha256sum -c SHA256SUMS` checks the downloads.
+  one signer, `Signer #1 certificate SHA-256 digest:
+  554f2672bbb9e8ef7018874211004b6dd7925aa6706d7baf64df8954517bf784` (`deploy/signing/signer.sha256`; keytool and
+  Android's settings write it `55:4F:26:…:7B:F7:84`), and `sha256sum -c SHA256SUMS` checks the downloads.
 - **Updates:** install the next release's APK over the one you have. With Obtainium: add this repository, allow
   pre-releases, and filter by `karto-wallet` or `karto-pos` (one release holds both apps).
 - **Alerts** with the app closed need the ntfy app (UnifiedPush) on a phone without Google Play services' push.

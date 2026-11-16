@@ -71,6 +71,12 @@ describe('app.config.js', () => {
     expect(() => withEnv({ KARTO_RELEASE: '1', KARTO_STORE: 'play' }, () => appConfig({ config: json() }))).toThrow('KARTO_RELEASE=1 is Google-free');
   });
 
+  it("names the project's signing certificate in the README as signer.sha256 holds it", () => {
+    const pin = readFileSync(new URL('../deploy/signing/signer.sha256', APP), 'utf8').trim();
+    expect(pin).toMatch(/^[0-9a-f]{64}$/);
+    expect(readFileSync(new URL('../README.md', APP), 'utf8').replace(/\s+/g, ' ')).toContain(`Signer #1 certificate SHA-256 digest: ${pin}`);
+  });
+
   it("derives Android's versionCode from the version, so it rises with it", () => {
     expect([versionCode('0.9.0'), versionCode('1.0.0'), versionCode('1.2.3'), versionCode('999.999.999')]).toEqual([9000, 1000000, 1002003, 999999999]);
     for (const bad of ['1.0', '1.0.0-beta.1', 'v1.0.0', '1.1000.0', '01.0.0', '0.0.0', '']) expect(() => versionCode(bad)).toThrow();
