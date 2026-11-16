@@ -14,10 +14,32 @@ project's LNVPS referral code (`LNVPS_REF_CODE` in `app/src/lnvps/client.ts`); a
 
 `card-app` was the project's working name. It stays where renaming would break existing servers: the server's
 install folder (`~/card-app`) and its Docker project. The apps are published by White Wolf Technology
-(whitewolf.tech): Karto Wallet is `tech.whitewolf.karto` and Karto PoS `tech.whitewolf.kartopos` on both platforms,
-and every build made today carries `.dev` after them (`app/variant.js`); the store identifiers come with the
-release work. Their link schemes are `karto://` and
-`kartopos://`.
+(whitewolf.tech): Karto Wallet is `tech.whitewolf.karto` and Karto PoS `tech.whitewolf.kartopos` on both platforms.
+Releases carry these; every other build carries `.dev` after them (`app/variant.js`), and installs beside a release
+as another app. Their link schemes are `karto://` and `kartopos://`.
+
+## Releases
+
+Android releases are on this repository's
+[Releases page](https://github.com/boltcard/karto/releases): signed APKs of Karto Wallet and Karto PoS, without
+Google Play services. **They are beta, and they handle real bitcoin**: use amounts you can afford to lose.
+
+- **Which file:** `karto-wallet-vX.Y.Z-arm64-v8a.apk` for nearly every phone of the last eight years,
+  `armeabi-v7a` for older 32-bit ones; the same for `karto-pos`. Karto Wallet needs Android 9 or later, Karto PoS
+  Android 7.
+- **Check it:** every release APK is signed by the project's key alone. `apksigner verify --print-certs` must show
+  one signer whose certificate SHA-256 is
+  `55:4F:26:72:BB:B9:E8:EF:70:18:87:42:11:00:4B:6D:D7:92:5A:A6:70:6D:7B:AF:64:DF:89:54:51:7B:F7:84`
+  (`deploy/signing/signer.sha256`), and `sha256sum -c SHA256SUMS` checks the downloads.
+- **Updates:** install the next release's APK over the one you have. With Obtainium: add this repository, allow
+  pre-releases, and filter by `karto-wallet` or `karto-pos` (one release holds both apps).
+- **Alerts** with the app closed need the ntfy app (UnifiedPush) on a phone without Google Play services' push.
+- A release and a `.dev` build are two apps: each claims `karto://` links (Android asks which), and a release
+  wallet pairs with a release till, a `.dev` wallet with a `.dev` one.
+
+Releases are made by `deploy/release/android-release.sh` on the computer that holds the signing key: it builds the
+four APKs from `main` as it is on GitHub, checks each, and makes a draft that a maintainer publishes. The version
+is `app/app.json`'s; Android's version code follows it.
 
 ## Layout
 

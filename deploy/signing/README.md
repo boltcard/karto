@@ -1,8 +1,9 @@
 # deploy/signing/
 
-How the two Android apps, Karto Wallet (`tech.whitewolf.karto.dev`) and Karto
-PoS (`tech.whitewolf.kartopos.dev`), are signed, and what you can build without
-the project's private key.
+How the two Android apps, Karto Wallet and Karto PoS, are signed, and what you
+can build without the project's private key. Releases (`tech.whitewolf.karto`,
+`tech.whitewolf.kartopos`: `deploy/release/android-release.sh`) and every other
+build (the same with `.dev`) are signed the same way, by the same key.
 
 ## Why the apps are signed again
 
@@ -102,7 +103,8 @@ prompt.
 ## What the wallet's check does
 
 Karto Wallet's **Karto PoS is on this phone** starts the app named
-`tech.whitewolf.kartopos.dev` with a pairing link only when that app is signed
+`tech.whitewolf.kartopos` (a release's) or `tech.whitewolf.kartopos.dev` (any
+other build's), as the wallet itself is, with a pairing link only when that app is signed
 with exactly the certificates the wallet itself is signed with now
 (`app/modules/card-native/android/.../Signers.kt`, `app/src/wallet/posLaunch.ts`).
 Otherwise it says the app is not signed as the wallet is and hands over

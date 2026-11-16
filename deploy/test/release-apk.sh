@@ -52,8 +52,9 @@ release=${KARTO_RELEASE:-}
 export APP_VARIANT="$variant" EXPO_PUBLIC_APP_VARIANT="$variant" KARTO_STORE="$store" EXPO_PUBLIC_KARTO_STORE="$store"
 export KARTO_RELEASE="$release" EXPO_PUBLIC_KARTO_RELEASE="$release"
 if [ "$variant" = pos ]; then
-	EXPO_PUBLIC_BUILD_COMMIT=$(git -C "$root" rev-parse --short HEAD)
-	EXPO_PUBLIC_BUILD_TIME=$(date +%s)
+	# Kept when given (a release gives the commit's own time, the same for every APK of it).
+	EXPO_PUBLIC_BUILD_COMMIT=${EXPO_PUBLIC_BUILD_COMMIT:-$(git -C "$root" rev-parse --short HEAD)}
+	EXPO_PUBLIC_BUILD_TIME=${EXPO_PUBLIC_BUILD_TIME:-$(date +%s)}
 	export EXPO_PUBLIC_BUILD_COMMIT EXPO_PUBLIC_BUILD_TIME
 fi
 cd "$root/app"

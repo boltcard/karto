@@ -7,6 +7,8 @@
 /deploy/bin/
 /.venv-icons/
 /.signing-proof/
+# Android releases as deploy/release/android-release.sh makes them.
+/.release/
 # The signing key is never the repository's: only signer.sha256, its certificate's SHA-256, lives here.
 /deploy/signing/*.p12
 /deploy/signing/*.jks
