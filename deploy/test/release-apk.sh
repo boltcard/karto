@@ -9,7 +9,8 @@
 # unchanged native modules aren't compiled again. EXPO_PUBLIC_* in the
 # environment go into the bundle. The APK is signed with the project's own
 # key before it is checked (no Play Services) and installed: this is the one
-# script that installs an APK, and it installs no other. Run from anywhere.
+# script that installs an APK (signing-proof.sh apart, on a test phone), and it
+# installs no other. Run from anywhere.
 #
 # A development build: native code for the phone's own ABI only, and a Gradle
 # daemon of its own. The daemon is started here under nice and ionice, so it
@@ -25,7 +26,7 @@
 # (EXPO_PUBLIC_APP_VARIANT), with the commit for its build label, and the
 # bundle is checked to hold its own app and none of the other's.
 #
-# KARTO_STORE=play builds Karto Wallet for the Play Store: the card-native module's
+# KARTO_STORE=play builds Karto Wallet as the Play Store's will be: the card-native module's
 # build.gradle adds UnifiedPush's embedded FCM distributor, the bundle is told
 # (EXPO_PUBLIC_KARTO_STORE), and play-gms.sh checks it in place of no-gms.sh.
 # Same package and key, so it installs over the wallet. Karto PoS is built

@@ -37,7 +37,11 @@ trap 'exit 130' INT TERM HUP
 [ -x "$tools/apksigner" ] || stop "no apksigner under $ANDROID_HOME/build-tools"
 [ -f "$dir/signer.sha256" ] || stop "$dir/signer.sha256 is missing: deploy/signing/make-key.sh writes it, once, and it is committed"
 [ -f "$keystore" ] || stop "no signing key at $keystore: it is made once by deploy/signing/make-key.sh, on the one computer that builds for a phone, and restored there from its backup"
-said=$out.signing.$$.said
+[ -d "$(dirname "$out")" ] || stop "no folder for the output at $(dirname "$out")"
+tmp=$out.signing.$$
+clean() { rm -f "$tmp" "$tmp.idsig" "$tmp.said" "$out.idsig"; }
+trap clean EXIT
+said=$tmp.said
 pass=$(password 2>"$said") || pass=
 why=$(tail -1 "$said" 2>/dev/null || true)
 rm -f "$said"
@@ -45,9 +49,6 @@ rm -f "$said"
 pin=$(hex <"$dir/signer.sha256")
 [ ${#pin} -eq 64 ] || stop "$dir/signer.sha256 does not hold a SHA-256"
 
-tmp=$out.signing.$$
-clean() { rm -f "$tmp" "$tmp.idsig" "$tmp.said" "$out.idsig"; }
-trap clean EXIT
 # The password goes in on standard input: never on a command line or in the environment.
 printf '%s\n' "$pass" | "$tools/apksigner" sign --ks "$keystore" --ks-key-alias karto --ks-pass stdin \
 	--v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --v4-signing-enabled false \

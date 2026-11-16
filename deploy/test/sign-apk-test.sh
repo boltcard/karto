@@ -53,7 +53,8 @@ for floor in 24 28; do
 	"$tools/apksigner" verify -v --print-certs --min-sdk-version 24 "$t/out.apk" >"$t/verify"
 	grep -q '^Verified using v2 scheme (APK Signature Scheme v2): true' "$t/verify" || fail "minSdk $floor: not verified by scheme v2"
 	grep -q '^Verified using v3 scheme (APK Signature Scheme v3): true' "$t/verify" || fail "minSdk $floor: not verified by scheme v3"
-	grep -q '^Verified using v1 scheme (JAR signing): false' "$t/verify" || fail "minSdk $floor: signed by v1 too"
+	# No v1 (JAR) signature: read from the file, since apksigner reports v1 as false at API 24 even when it is there.
+	if unzip -l "$t/out.apk" | grep -Eq 'META-INF/.*\.(SF|RSA|EC|DSA)$'; then fail "minSdk $floor: signed by v1 too"; fi
 	[ "$(grep -c 'certificate SHA-256 digest' "$t/verify")" -eq 1 ] || fail "minSdk $floor: more than one signer"
 	grep -q "^Signer #1 certificate SHA-256 digest: $(cat "$dir/signer.sha256")$" "$t/verify" || fail "minSdk $floor: the signer is not the key"
 	"$tools/zipalign" -c 4 "$t/out.apk" || fail "minSdk $floor: not aligned"

@@ -67,8 +67,9 @@ It stops, leaving no output file, when:
 - the signed APK does not verify, is not signed by schemes v2 and v3, or its
   signer is not the pinned one.
 
-`deploy/test/release-apk.sh` is the one script that installs an APK on a phone,
-and it installs only what `sign-apk.sh` produced. `make phone-install`,
+`deploy/test/release-apk.sh` is the one script that installs an APK on a phone
+(apart from `signing-proof.sh`, on a test phone), and it installs only what
+`sign-apk.sh` produced. `make phone-install`,
 `make pos-install`, `make phone-smoke`, `make pos-smoke`, `make phone-diag` and
 the `make phone-*-probe` targets all go through it. So without a signing key
 none of them installs anything.
@@ -111,7 +112,7 @@ Android's own `PackageManager.checkSignatures` is not used. From Android 11,
 when two apps' signers differ and either has a signing history, it compares the
 *oldest* certificate of the history, which anyone can make the public debug
 key: it would call a stranger's app a match. Android reports an app's current
-signers from Android 9, which is one reason Karto Wallet installs from 9 only
+signers from Android 9, which is why Karto Wallet installs from 9 only
 (`app/plugins/withAndroid9.js`).
 
 The check compares the two apps with each other; no fingerprint is compiled

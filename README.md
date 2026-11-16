@@ -15,7 +15,8 @@ project's LNVPS referral code (`LNVPS_REF_CODE` in `app/src/lnvps/client.ts`); a
 `card-app` was the project's working name. It stays where renaming would break existing servers: the server's
 install folder (`~/card-app`) and its Docker project. The apps are published by White Wolf Technology
 (whitewolf.tech): Karto Wallet is `tech.whitewolf.karto` and Karto PoS `tech.whitewolf.kartopos` on both platforms,
-with `.dev` after them on every build that isn't a store's (`app/variant.js`). Their link schemes are `karto://` and
+and every build made today carries `.dev` after them (`app/variant.js`); the store identifiers come with the
+release work. Their link schemes are `karto://` and
 `kartopos://`.
 
 ## Layout

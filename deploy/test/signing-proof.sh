@@ -27,7 +27,10 @@ stop() { echo "signing-proof: $*" >&2; exit 1; }
 ANDROID_SERIAL=$("$adb" devices | sed -n 's/\tdevice$//p')
 export ANDROID_SERIAL
 model=$("$adb" shell getprop ro.product.model | tr -d '\r')
-if [ "$("$adb" shell getprop ro.kernel.qemu | tr -d '\r')" != 1 ] && [ "$model" != "${SIGNING_PROOF_MODEL:-}" ]; then
+qemu=$("$adb" shell getprop ro.kernel.qemu | tr -d '\r')
+# A model that can't be read is no test phone: an adb hiccup must not let this through.
+[ -n "$model" ] || stop "could not read the phone's model: nothing done"
+if [ "$qemu" != 1 ] && { [ -z "${SIGNING_PROOF_MODEL:-}" ] || [ "$model" != "$SIGNING_PROOF_MODEL" ]; }; then
 	stop "this is a $model, not an emulator: name a test phone with SIGNING_PROOF_MODEL='<its model>' to run on it. Nothing done"
 fi
 for f in wallet-debug-key wallet-project-key pos-debug-key pos-project-key; do
