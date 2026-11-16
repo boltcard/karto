@@ -9,7 +9,7 @@ import { NTFY } from './alertsView';
 import { alertsSupported, checkOnOpen, readPhone, register, turnOff, type AlertsNative } from './register';
 
 const NTFY_URL = 'https://vm-1.lnvps.cloud:8443';
-const OWN = 'app.cardapp';
+const OWN = 'tech.whitewolf.karto.dev';
 const KEYS = { p256dh: 'BPk', auth: 'aGk' };
 const ntfyEndpoint = (topic = 'upAbC123', origin = NTFY_URL): PushEndpoint => ({ endpoint: `${origin}/${topic}?up=1`, ...KEYS });
 const FCM: PushEndpoint = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc:def', ...KEYS };

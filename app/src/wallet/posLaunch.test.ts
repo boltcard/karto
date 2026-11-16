@@ -19,7 +19,7 @@ describe('openKartoPos', () => {
     expect(started).toBe(0);
     expect(await openKartoPos({ start, signer: signer('same') }, LINK)).toBe('opened');
     expect(started).toBe(1);
-    expect(asked).toEqual(['app.cardapp.pos', 'app.cardapp.pos', 'app.cardapp.pos']);
+    expect(asked).toEqual(['tech.whitewolf.kartopos.dev', 'tech.whitewolf.kartopos.dev', 'tech.whitewolf.kartopos.dev']);
     // A check that fails, or says anything else, is no proof.
     const broken: Signer = async () => Promise.reject(new Error('no context'));
     expect(await openKartoPos({ start, signer: broken }, LINK)).toBe('failed');
@@ -32,15 +32,15 @@ describe('openKartoPos', () => {
     const start: StartActivity = async (action, params) => void started.push([action, params]);
     expect(await openKartoPos({ start, signer: same }, LINK)).toBe('opened');
     expect(started).toEqual([
-      ['android.intent.action.VIEW', { data: LINK, packageName: 'app.cardapp.pos', className: 'app.cardapp.pos.MainActivity', flags: 0x10000000 }],
+      ['android.intent.action.VIEW', { data: LINK, packageName: 'tech.whitewolf.kartopos.dev', className: 'tech.whitewolf.kartopos.dev.MainActivity', flags: 0x10000000 }],
     ]);
     // Both names, always: with the package alone the launcher sends a link any app could claim.
-    expect(KARTO_POS).toEqual({ packageName: 'app.cardapp.pos', className: 'app.cardapp.pos.MainActivity' });
+    expect(KARTO_POS).toEqual({ packageName: 'tech.whitewolf.kartopos.dev', className: 'tech.whitewolf.kartopos.dev.MainActivity' });
   });
 
   it("says so when Karto PoS isn't on the phone, and when it is but didn't open", async () => {
     const missing: StartActivity = async () => {
-      throw new Error('Unable to find explicit activity class {app.cardapp.pos/app.cardapp.pos.MainActivity}; have you declared this activity in your AndroidManifest.xml, or does your intent not match its declared <intent-filter>?');
+      throw new Error('Unable to find explicit activity class {tech.whitewolf.kartopos.dev/tech.whitewolf.kartopos.dev.MainActivity}; have you declared this activity in your AndroidManifest.xml, or does your intent not match its declared <intent-filter>?');
     };
     expect(await openKartoPos({ start: missing, signer: same }, LINK)).toBe('not-installed');
     const coded: StartActivity = async () => {

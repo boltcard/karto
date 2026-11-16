@@ -4,6 +4,17 @@
 const VARIANTS = ['wallet', 'pos'];
 
 /**
+ * The two apps' identifiers, one for both platforms: the publisher's reversed domain (whitewolf.tech), then the app.
+ * These are the stores'. Every build made now is not a store's, so it carries DEV after them (idOf), and installs beside
+ * a store's app. app.json repeats the wallet's (Expo reads that file as it is), and a test holds the two the same.
+ */
+const IDS = { wallet: 'tech.whitewolf.karto', pos: 'tech.whitewolf.kartopos' };
+const DEV = '.dev';
+
+/** The identifier a build of the variant carries now (wallet when unset). */
+const idOf = (variant) => IDS[variant || 'wallet'] + DEV;
+
+/**
  * The plugins Karto PoS leaves out: it carries no server files, runs no background job, sees no app but Karto Wallet,
  * is never a card, gets no alerts (its till shows Paid), and installs from Android 7 up, where the wallet needs
  * Android 9 (withAndroid9).
@@ -41,7 +52,7 @@ function forVariant(expo, variant) {
     icon: './assets/pos/icon.png',
     android: {
       ...expo.android,
-      package: 'app.cardapp.pos',
+      package: idOf('pos'),
       adaptiveIcon: {
         ...expo.android.adaptiveIcon,
         // The wallet's charcoal behind another drawing: the card held to a till.
@@ -51,12 +62,11 @@ function forVariant(expo, variant) {
       // The Paid buzz. NFC and the camera are the card-native module's own, in both apps.
       permissions: ['android.permission.VIBRATE'],
     },
-    // Its own iPhone app: tech.whitewolf.kartopos is the store
-    // identifier, meant for Android too, and .dev marks builds that aren't the store's. It reads cards
-    // and scans the wallet's pairing code; it asks for no Face ID, so it carries no such line.
+    // Its own iPhone app, under the same identifier as on Android. It reads cards and scans the wallet's pairing
+    // code; it asks for no Face ID, so it carries no such line.
     ios: {
       ...expo.ios,
-      bundleIdentifier: 'tech.whitewolf.kartopos.dev',
+      bundleIdentifier: idOf('pos'),
       infoPlist: {
         NFCReaderUsageDescription: 'Karto PoS reads Bolt Cards to charge them.',
         NSCameraUsageDescription: 'Karto PoS uses the camera to scan the pairing code Karto Wallet shows.',
@@ -78,4 +88,4 @@ function checkStore(variant, store) {
   if (s === 'play' && (variant || 'wallet') !== 'wallet') throw new Error('KARTO_STORE=play is for Karto Wallet: Karto PoS is built Google-free only');
 }
 
-module.exports = { forVariant, VARIANTS, checkStore };
+module.exports = { forVariant, VARIANTS, checkStore, IDS, DEV, idOf };

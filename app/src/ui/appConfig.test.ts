@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { KARTO_POS } from '../wallet/posLaunch';
 
 type Plugin = string | [string, Record<string, unknown>];
 type Expo = {
@@ -13,8 +14,9 @@ type Expo = {
 /** app/ */
 const APP = new URL('../../', import.meta.url);
 const require = createRequire(import.meta.url);
-const { forVariant, VARIANTS, checkStore } = require('../../variant.js') as {
+const { forVariant, VARIANTS, checkStore, IDS, idOf } = require('../../variant.js') as {
   forVariant: (expo: Expo, variant?: string) => Expo; VARIANTS: string[]; checkStore: (variant?: string, store?: string) => void;
+  IDS: Record<'wallet' | 'pos', string>; idOf: (variant?: string) => string;
 };
 const appConfig = require('../../app.config.js') as (o: { config: Expo }) => Expo;
 const json = () => (JSON.parse(readFileSync(new URL('app.json', APP), 'utf8')) as { expo: Expo }).expo;
@@ -30,13 +32,24 @@ describe('app.config.js', () => {
     expect(VARIANTS).toEqual(['wallet', 'pos']);
   });
 
+  it("names both apps by the publisher's identifiers, with .dev on every build made now, the same on both platforms", () => {
+    expect(IDS).toEqual({ wallet: 'tech.whitewolf.karto', pos: 'tech.whitewolf.kartopos' });
+    expect([idOf(), idOf('wallet'), idOf('pos')]).toEqual(['tech.whitewolf.karto.dev', 'tech.whitewolf.karto.dev', 'tech.whitewolf.kartopos.dev']);
+    // app.json repeats the wallet's, which Expo reads as it is.
+    expect([json().android.package, json().ios.bundleIdentifier]).toEqual([idOf('wallet'), idOf('wallet')]);
+    const pos = forVariant(json(), 'pos');
+    expect([pos.android.package, pos.ios.bundleIdentifier]).toEqual([idOf('pos'), idOf('pos')]);
+    // The wallet starts Karto PoS by this name and Expo puts its MainActivity in the package of that name.
+    expect(KARTO_POS).toEqual({ packageName: idOf('pos'), className: `${idOf('pos')}.MainActivity` });
+  });
+
   it('refuses a setting that names no app', () => {
     expect(() => forVariant(json(), 'till')).toThrow('APP_VARIANT is "till": it must be wallet or pos');
   });
 
   it("gives Karto PoS its own name, link scheme, package and slug, so it installs beside Karto Wallet", () => {
     const pos = forVariant(json(), 'pos');
-    expect([pos.name, pos.slug, pos.scheme, pos.android.package]).toEqual(['Karto PoS', 'karto-pos', 'kartopos', 'app.cardapp.pos']);
+    expect([pos.name, pos.slug, pos.scheme, pos.android.package]).toEqual(['Karto PoS', 'karto-pos', 'kartopos', 'tech.whitewolf.kartopos.dev']);
     expect(pos.android.package).not.toBe(json().android.package);
   });
 

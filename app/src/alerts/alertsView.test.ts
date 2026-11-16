@@ -18,7 +18,7 @@ const said = (o: Partial<AlertsInput> = {}) => {
 };
 
 const FCM = { transport: 'fcm' as const, origin: 'https://fcm.googleapis.com' };
-const PLAY: Partial<AlertsInput> = { server: { ...ON, endpoint: { ...ENDPOINT, ...FCM } }, distributors: [], distributor: 'app.cardapp', play: true, ntfyExempt: null, endpointOrigin: FCM.origin };
+const PLAY: Partial<AlertsInput> = { server: { ...ON, endpoint: { ...ENDPOINT, ...FCM } }, distributors: [], distributor: 'tech.whitewolf.karto.dev', play: true, ntfyExempt: null, endpointOrigin: FCM.origin };
 
 // The status in words, each with what the page offers.
 describe('alertsView', () => {

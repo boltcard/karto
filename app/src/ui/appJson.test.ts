@@ -35,7 +35,7 @@ describe('app.json', () => {
     expect(expo.name).toBe('Karto');
     expect(expo.slug).toBe('card-app');
     expect(expo.scheme).toBe('cardapp');
-    expect(expo.android.package).toBe('app.cardapp');
+    expect(expo.android.package).toBe('tech.whitewolf.karto.dev');
   });
 
   it('follows the phone between light and dark', () => {

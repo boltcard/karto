@@ -29,7 +29,7 @@ const { addPosQuery } = require('../../plugins/withPosQuery') as { addPosQuery: 
 
 // Karto Wallet may see one other app, Karto PoS, so that it can check who signed it before handing it a pairing code.
 describe('withPosQuery', () => {
-  const POS = { package: [{ $: { 'android:name': 'app.cardapp.pos' } }] };
+  const POS = { package: [{ $: { 'android:name': 'tech.whitewolf.kartopos.dev' } }] };
   it("lets the app see Karto PoS's package, beside what it could see already", () => {
     const https = { intent: [{ action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }] }] };
     expect(addPosQuery({ queries: [https] }).queries).toEqual([https, POS]);
@@ -47,7 +47,7 @@ const { addWalletQuery } = require('../../plugins/withWalletQuery') as { addWall
 // Karto PoS may see one other app, Karto Wallet: Android tells an app of updates only to apps it can see, and the
 // wallet's update under the till turned the till's reader mode off.
 describe('withWalletQuery', () => {
-  const WALLET = { package: [{ $: { 'android:name': 'app.cardapp' } }] };
+  const WALLET = { package: [{ $: { 'android:name': 'tech.whitewolf.karto.dev' } }] };
   it("lets the app see Karto Wallet's package, beside what it could see already", () => {
     const https = { intent: [{ action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }] }] };
     expect(addWalletQuery({ queries: [https] }).queries).toEqual([https, WALLET]);
@@ -156,7 +156,7 @@ describe('withAlerts', () => {
 
   it('declares the service, not exported, with the permission and ntfy, beside what was there', () => {
     const internet = { $: { 'android:name': 'android.permission.INTERNET' } };
-    const pos = { package: [{ $: { 'android:name': 'app.cardapp.pos' } }] };
+    const pos = { package: [{ $: { 'android:name': 'tech.whitewolf.kartopos.dev' } }] };
     const card = { $: { 'android:name': 'app.cardapp.cardnative.PhoneCardService' } };
     const main = { $: { 'android:name': '.MainActivity' } };
     const out = addAlerts({ 'uses-permission': [internet], queries: [pos], application: [{ $: { 'android:name': '.MainApplication' }, service: [card], activity: [main] }] });
@@ -199,7 +199,7 @@ describe('withNoPush', () => {
   it("marks the connector's receiver, service, activity, the wake lock and the distributor queries for removal, beside what was there", () => {
     const internet = { $: { 'android:name': 'android.permission.INTERNET' } };
     const https = { $: {}, action: [{ $: { 'android:name': 'android.intent.action.VIEW' } }] };
-    const wallet = { package: [{ $: { 'android:name': 'app.cardapp' } }] };
+    const wallet = { package: [{ $: { 'android:name': 'tech.whitewolf.karto.dev' } }] };
     const main = { $: { 'android:name': '.MainActivity' } };
     const out = removePush({
       $: { 'xmlns:android': 'http://schemas.android.com/apk/res/android' },
@@ -243,7 +243,7 @@ const { linkOnce } = require('../../plugins/withLinkOnce') as { linkOnce: (kotli
 // Karto PoS's links act (they pair the phone), so a link opens the app once: Android's copy of it is cleared when
 // it remakes the activity, and a link that arrives while the app is starting replaces the one it started with.
 describe('withLinkOnce', () => {
-  const MAIN = `package app.cardapp.pos
+  const MAIN = `package tech.whitewolf.kartopos.dev
 import expo.modules.splashscreen.SplashScreenManager
 
 import android.os.Build

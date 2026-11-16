@@ -43,7 +43,7 @@ describe("the app's iPhone settings (app.json)", () => {
   });
 
   it('leaves Android as it was', () => {
-    expect(expo.android.package).toBe('app.cardapp');
+    expect(expo.android.package).toBe('tech.whitewolf.karto.dev');
   });
 });
 

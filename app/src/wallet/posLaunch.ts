@@ -15,9 +15,10 @@ export type Signer = (packageName: string) => Promise<'same' | 'other' | 'absent
 
 /**
  * Karto PoS's package and its one activity. Both, always: given the package alone, expo-intent-launcher sets no
- * component and the link would go to whichever app claims the scheme.
+ * component and the link would go to whichever app claims the scheme. The package is variant.js's idOf('pos') (a
+ * test holds them the same), and Expo's prebuild puts MainActivity in the package of that name.
  */
-export const KARTO_POS = { packageName: 'app.cardapp.pos', className: 'app.cardapp.pos.MainActivity' } as const;
+export const KARTO_POS = { packageName: 'tech.whitewolf.kartopos.dev', className: 'tech.whitewolf.kartopos.dev.MainActivity' } as const;
 
 /** Intent.FLAG_ACTIVITY_NEW_TASK: Karto PoS opens as itself, not as a page inside Karto Wallet, and the call ends at once. */
 const NEW_TASK = 0x10000000;

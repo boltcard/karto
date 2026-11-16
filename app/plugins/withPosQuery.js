@@ -3,7 +3,7 @@
 // this plugin out (variant.js).
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const POS_PACKAGE = 'app.cardapp.pos';
+const POS_PACKAGE = require('../variant').idOf('pos');
 
 /** The manifest with Karto PoS's package among its <queries>, once. */
 function addPosQuery(manifest) {

@@ -12,7 +12,7 @@ import { CarddError, type PushState } from '../../cardd/client';
 import type { PushEndpoint } from '../../native/api';
 
 const NTFY_URL = 'https://karto.example:8443';
-const OWN = 'app.cardapp';
+const OWN = 'tech.whitewolf.karto.dev';
 const ENDPOINT: NonNullable<PushState['endpoint']> = { transport: 'unifiedpush', origin: NTFY_URL, createdAt: 1_790_000_000, deliveredAt: null, failedAt: null, failure: '', failures: 0 };
 const ON: PushState = { vapidPublicKey: 'BEl6', ntfy: NTFY_URL, endpoint: ENDPOINT };
 const OFF: PushState = { ...ON, endpoint: null };
