@@ -107,7 +107,7 @@ const { addPhoneCard } = require('../../plugins/withPhoneCard') as { addPhoneCar
 // a till, so Karto PoS can never be a card though the module's code is in both apps.
 describe('withPhoneCard', () => {
   const SERVICE = {
-    $: { 'android:name': 'app.cardapp.cardnative.PhoneCardService', 'android:exported': 'true', 'android:permission': 'android.permission.BIND_NFC_SERVICE' },
+    $: { 'android:name': 'tech.whitewolf.karto.cardnative.PhoneCardService', 'android:exported': 'true', 'android:permission': 'android.permission.BIND_NFC_SERVICE' },
     'intent-filter': [{ action: [{ $: { 'android:name': 'android.nfc.cardemulation.action.HOST_APDU_SERVICE' } }] }],
     'meta-data': [{ $: { 'android:name': 'android.nfc.cardemulation.host_apdu_service', 'android:resource': '@xml/phone_card_apdu' } }],
   };
@@ -148,7 +148,7 @@ const { addAlerts } = require('../../plugins/withAlerts') as { addAlerts: (manif
 // connector hands alerts to, the permission Android 13 asks before one shows, and ntfy among the apps it sees.
 describe('withAlerts', () => {
   const SERVICE = {
-    $: { 'android:name': 'app.cardapp.cardnative.AlertService', 'android:exported': 'false' },
+    $: { 'android:name': 'tech.whitewolf.karto.cardnative.AlertService', 'android:exported': 'false' },
     'intent-filter': [{ action: [{ $: { 'android:name': 'org.unifiedpush.android.connector.PUSH_EVENT' } }] }],
   };
   const NOTIFY = { $: { 'android:name': 'android.permission.POST_NOTIFICATIONS' } };
@@ -157,7 +157,7 @@ describe('withAlerts', () => {
   it('declares the service, not exported, with the permission and ntfy, beside what was there', () => {
     const internet = { $: { 'android:name': 'android.permission.INTERNET' } };
     const pos = { package: [{ $: { 'android:name': 'tech.whitewolf.kartopos.dev' } }] };
-    const card = { $: { 'android:name': 'app.cardapp.cardnative.PhoneCardService' } };
+    const card = { $: { 'android:name': 'tech.whitewolf.karto.cardnative.PhoneCardService' } };
     const main = { $: { 'android:name': '.MainActivity' } };
     const out = addAlerts({ 'uses-permission': [internet], queries: [pos], application: [{ $: { 'android:name': '.MainApplication' }, service: [card], activity: [main] }] });
     expect(out['uses-permission']).toEqual([internet, NOTIFY]);

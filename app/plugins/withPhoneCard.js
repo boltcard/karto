@@ -5,7 +5,7 @@
 // (variant.js), so it never declares the service and can never be a card.
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const SERVICE = 'app.cardapp.cardnative.PhoneCardService';
+const SERVICE = 'tech.whitewolf.karto.cardnative.PhoneCardService';
 const HCE = 'android.hardware.nfc.hce';
 const VIBRATE = 'android.permission.VIBRATE';
 

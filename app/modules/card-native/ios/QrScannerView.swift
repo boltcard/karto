@@ -54,7 +54,7 @@ private final class QrCamera: NSObject, AVCaptureMetadataOutputObjectsDelegate {
   /// On the main thread: the text of a QR code in view. Called for every frame that shows one.
   var onCode: ((String) -> Void)?
 
-  private let queue = DispatchQueue(label: "app.cardapp.scan.camera")
+  private let queue = DispatchQueue(label: "tech.whitewolf.karto.scan.camera")
   /// Only on `queue`.
   private var configured = false
 

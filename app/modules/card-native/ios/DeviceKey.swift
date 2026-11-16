@@ -15,7 +15,7 @@ import Security
 /// The key outlives the app on an iPhone (the Keychain keeps it when the app is deleted). Nothing here deletes
 /// it by itself: the app asks, in removeWallet.
 enum DeviceKey {
-  static let queue = DispatchQueue(label: "app.cardapp.device-key")
+  static let queue = DispatchQueue(label: "tech.whitewolf.karto.device-key")
   private static let tag = Data("card-app-device-key".utf8)
 
   static func noKey() -> Exception {

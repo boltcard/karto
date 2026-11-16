@@ -5,7 +5,7 @@
   ],
   "android": {
     "modules": [
-      "app.cardapp.cardnative.CardNativeModule"
+      "tech.whitewolf.karto.cardnative.CardNativeModule"
     ]
   },
   "apple": {

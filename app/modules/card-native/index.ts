@@ -1,4 +1,4 @@
-// The card-native Expo module (android/src/main/java/app/cardapp/cardnative).
+// The card-native Expo module (android/src/main/java/tech/whitewolf/karto/cardnative).
 import { requireNativeModule } from 'expo';
 import type { AlertsNativeApi, CardNativeApi } from '../../src/native/api';
 import type { CardNfcApi } from '../../src/native/nfc';

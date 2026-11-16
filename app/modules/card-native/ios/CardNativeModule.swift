@@ -19,7 +19,7 @@ public final class CardNativeModule: Module {
 
   // SSH calls can run for minutes (an install step, the 11 MB upload): a queue of their own, several at once,
   // so signing and the card reader never wait behind them, nor one command behind another.
-  private let sshQueue = DispatchQueue(label: "app.cardapp.ssh", qos: .userInitiated, attributes: .concurrent)
+  private let sshQueue = DispatchQueue(label: "tech.whitewolf.karto.ssh", qos: .userInitiated, attributes: .concurrent)
 
   private static func exception(_ name: String, _ words: String, _ code: String) -> Exception {
     Exception(name: name, description: words, code: code)

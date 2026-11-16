@@ -16,7 +16,7 @@ final class NfcReader: NSObject, CardReader, NFCTagReaderSessionDelegate {
     case miFare(NFCMiFareTag)
   }
 
-  let queue = DispatchQueue(label: "app.cardapp.nfc")
+  let queue = DispatchQueue(label: "tech.whitewolf.karto.nfc")
   /// Whom to report to. The module owns both.
   weak var rules: CardLogic.CardSession?
 

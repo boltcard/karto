@@ -3,11 +3,11 @@ plugins {
   id 'expo-module-gradle-plugin'
 }
 
-group = 'app.cardapp.cardnative'
+group = 'tech.whitewolf.karto.cardnative'
 version = '0.1.0'
 
 android {
-  namespace "app.cardapp.cardnative"
+  namespace "tech.whitewolf.karto.cardnative"
   defaultConfig {
     versionCode 1
     versionName "0.1.0"

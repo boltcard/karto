@@ -5,7 +5,7 @@
 // leaves this plugin out (variant.js), so it never gets alerts.
 const { withAndroidManifest } = require('expo/config-plugins');
 
-const SERVICE = 'app.cardapp.cardnative.AlertService';
+const SERVICE = 'tech.whitewolf.karto.cardnative.AlertService';
 const NOTIFY = 'android.permission.POST_NOTIFICATIONS';
 const NTFY = 'io.heckel.ntfy';
 

@@ -111,7 +111,7 @@ describe('app.config.js', () => {
   it("declares the phone's card service in Karto Wallet's build alone", () => {
     expect(names(json())).toContain('./plugins/withPhoneCard');
     expect(names(forVariant(json(), 'pos'))).not.toContain('./plugins/withPhoneCard');
-    expect(readFileSync(new URL('plugins/withPhoneCard.js', APP), 'utf8')).toContain('app.cardapp.cardnative.PhoneCardService');
+    expect(readFileSync(new URL('plugins/withPhoneCard.js', APP), 'utf8')).toContain('tech.whitewolf.karto.cardnative.PhoneCardService');
     // The module's own manifest, which is merged into both apps, names no service.
     expect(readFileSync(new URL('modules/card-native/android/src/main/AndroidManifest.xml', APP), 'utf8')).not.toMatch(/<service|nfc\.hce/);
   });
@@ -121,7 +121,7 @@ describe('app.config.js', () => {
   it("declares the alerts' service in Karto Wallet's build alone", () => {
     expect(names(json())).toContain('./plugins/withAlerts');
     expect(names(forVariant(json(), 'pos'))).not.toContain('./plugins/withAlerts');
-    expect(readFileSync(new URL('plugins/withAlerts.js', APP), 'utf8')).toContain('app.cardapp.cardnative.AlertService');
+    expect(readFileSync(new URL('plugins/withAlerts.js', APP), 'utf8')).toContain('tech.whitewolf.karto.cardnative.AlertService');
   });
 
   it('may vibrate, and blocks the storage permissions as the wallet does', () => {

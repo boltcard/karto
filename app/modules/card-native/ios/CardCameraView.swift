@@ -149,9 +149,9 @@ private final class CardCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDe
   /// On the main thread, once: why the camera cannot start, or has stopped.
   var onError: ((String) -> Void)?
 
-  private let cameraQueue = DispatchQueue(label: "app.cardapp.photo.camera")
-  private let frameQueue = DispatchQueue(label: "app.cardapp.photo.frames")
-  private let shotQueue = DispatchQueue(label: "app.cardapp.photo.shot", qos: .userInitiated)
+  private let cameraQueue = DispatchQueue(label: "tech.whitewolf.karto.photo.camera")
+  private let frameQueue = DispatchQueue(label: "tech.whitewolf.karto.photo.frames")
+  private let shotQueue = DispatchQueue(label: "tech.whitewolf.karto.photo.shot", qos: .userInitiated)
   private let lock = NSLock()
   private var looking = Look()
   private let shots = ShotGate<Shot>()
