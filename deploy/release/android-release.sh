@@ -4,6 +4,8 @@
 # checkout of main as it is on GitHub:
 #   sh deploy/release/android-release.sh           build, check, and make the draft
 #   sh deploy/release/android-release.sh --check   only say whether a release can be made now
+#   sh deploy/release/android-release.sh --local   build and check from this checkout as it is, in .release/local/,
+#                                                  for trying a change or an update on a test phone: never published
 #
 # The version is app.json's (X.Y.Z; Android's versionCode follows it, app/variant.js), the tag v<version>. Four
 # APKs, each built, signed and checked by deploy/test/release-apk.sh with KARTO_RELEASE=1 (the store identifiers,
@@ -14,8 +16,8 @@
 # Nothing is pushed: GitHub makes the tag, at this commit, when the draft is published.
 #
 # A release installs beside the .dev builds, as another app. To prove that a release updates over the one before:
-# install this draft's arm64-v8a wallet on a test phone, raise app.json's version by hand (not committed), run
-# KARTO_RELEASE=1 make phone-install (it installs over, keeping the data), and put app.json back.
+# install the draft's arm64-v8a wallet on a test phone, raise app.json's version by hand (not committed), run
+# --local, adb install -r its wallet over the first (the data kept), and put app.json back.
 set -eu
 REPO=boltcard/karto
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -27,10 +29,12 @@ t0=$(date +%s)
 step() { echo "[$(date +%H:%M:%S) +$(($(date +%s) - t0))s] $*"; }
 stop() { echo "android-release: $*" >&2; exit 1; }
 check_only=
+is_local=
 case "${1:-}" in
 '') ;;
 --check) check_only=1 ;;
-*) stop "usage: android-release.sh [--check]" ;;
+--local) is_local=1 ;;
+*) stop "usage: android-release.sh [--check | --local]" ;;
 esac
 
 step "what may be released"
@@ -39,27 +43,29 @@ step "what may be released"
 for f in app/.env*; do [ ! -e "$f" ] || stop "$f is there: Expo would build it into the bundle. Move it away first"; done
 for v in $(env | sed -n 's/^\(EXPO_PUBLIC_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 unset CI KARTO_SIGNING_DIR KARTO_KEYSTORE KARTO_PASS_CMD KARTO_STORE CARDAPP_FULL_BUILD CARDAPP_KEEP_APKS APP_VARIANT KARTO_RELEASE CARDAPP_ABI
-case "$(git remote get-url origin)" in
-"https://github.com/$REPO" | "https://github.com/$REPO.git" | "git@github.com:$REPO.git") ;;
-*) stop "origin is not github.com/$REPO" ;;
-esac
-[ "$(gh api "repos/$REPO" --jq .permissions.push 2>/dev/null)" = true ] || stop "gh cannot push to $REPO (gh auth status)"
-git fetch -q origin main
-[ -z "$(git status --porcelain)" ] || stop "the checkout has changes or files git doesn't know: commit or move them first"
 sha=$(git rev-parse HEAD)
-[ "$sha" = "$(git rev-parse origin/main)" ] || stop "HEAD is not origin/main: a release is made from main as it is on GitHub"
 version=$(node -p "require('./app/app.json').expo.version")
 code=$(node -p "require('./app/variant.js').versionCode('$version')") || stop "app.json's version $version is not X.Y.Z"
 tag=v$version
-[ -z "$(git tag -l "$tag")" ] || stop "the tag $tag is already here: raise app.json's version"
-[ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || stop "the tag $tag is already on GitHub: raise app.json's version"
-if gh release view "$tag" -R "$REPO" >/dev/null 2>&1; then stop "a release $tag is already on GitHub (a draft too): delete it or raise app.json's version"; fi
+if [ -z "$is_local" ]; then
+	case "$(git remote get-url origin)" in
+	"https://github.com/$REPO" | "https://github.com/$REPO.git" | "git@github.com:$REPO.git") ;;
+	*) stop "origin is not github.com/$REPO" ;;
+	esac
+	[ "$(gh api "repos/$REPO" --jq .permissions.push 2>/dev/null)" = true ] || stop "gh cannot push to $REPO (gh auth status)"
+	git fetch -q origin main
+	[ -z "$(git status --porcelain)" ] || stop "the checkout has changes or files git doesn't know: commit or move them first"
+	[ "$sha" = "$(git rev-parse origin/main)" ] || stop "HEAD is not origin/main: a release is made from main as it is on GitHub"
+	[ -z "$(git tag -l "$tag")" ] || stop "the tag $tag is already here: raise app.json's version"
+	[ -z "$(git ls-remote --tags origin "refs/tags/$tag")" ] || stop "the tag $tag is already on GitHub: raise app.json's version"
+	if gh release view "$tag" -R "$REPO" >/dev/null 2>&1; then stop "a release $tag is already on GitHub (a draft too): delete it or raise app.json's version"; fi
+fi
 pin=$(git show HEAD:deploy/signing/signer.sha256 | tr -d ': \t\r\n' | tr 'A-F' 'a-f')
 [ ${#pin} -eq 64 ] || stop "deploy/signing/signer.sha256 does not hold a SHA-256"
 echo "release $tag (versionCode $code) of $sha, signed by ${pin%"${pin#????????????????}"}…"
 [ -z "$check_only" ] || { echo "android-release: ready"; exit 0; }
 
-out=$root/.release/$tag
+if [ -n "$is_local" ]; then out=$root/.release/local; else out=$root/.release/$tag; fi
 rm -rf "${out:?}"
 mkdir -p "$out"
 
@@ -126,6 +132,11 @@ $fingerprint
 
 Updates: install the next release's APK over this one. With Obtainium, add this repository, allow pre-releases, and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
 EOF
+
+if [ -n "$is_local" ]; then
+	step "done: $out (a local build: never to be published)"
+	exit 0
+fi
 
 step "nothing changed while it built"
 [ -z "$(git status --porcelain)" ] || stop "the checkout changed during the build: no draft made"
