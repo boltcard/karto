@@ -34,10 +34,13 @@
 # server's login key: a last job deletes that artifact however the sign job ends, so it can be downloaded only
 # while the run lasts (or for a day, the artifact's own limit, if GitHub never gets to that job).
 #
-# Who can reach those secrets. They are the repository's, so GitHub hands them to a workflow on any branch:
-# whoever may push here can read them, with this file or with one of their own. So keep the six secrets in an
-# environment that only chosen branches may use, and name it on the one job that reads them (sign), before more
-# than one person has push access. Workflows started from a fork's pull request are given no secrets, and this
+# Who can reach those secrets. A repository's secrets are handed to a workflow on any branch: whoever may push
+# here could read them, with this file or with one of their own. So the six secrets are kept in the environment
+# ios-signing (Settings → Environments), which only main and ios-* branches may use, and the one job that reads
+# them (sign) names it; none is a repository secret. On GitHub's free plan an environment's secrets and branch
+# rules work only in a public repository (docs.github.com, "Deployments and environments"), so this needs the
+# repository public. A fork that wants signed builds makes its own ios-signing. Workflows started from a fork's
+# pull request are given no secrets, and this
 # one does not run on pull requests at all. Within this file: only the sign job is given a secret; it checks out
 # only the few files it needs, installs only the hash-pinned Python packages of
 # deploy/test/ios-provision-requirements.txt and runs no npm or CocoaPods code; the jobs that run npm's and
@@ -535,6 +538,8 @@ jobs:
   sign:
     needs: [plan, device]
     if: needs.plan.outputs.what == 'signed'
+    # The six secrets are the ios-signing environment's, not the repository's: only this job names it.
+    environment: ios-signing
     runs-on: macos-26
     timeout-minutes: 15
     steps:
