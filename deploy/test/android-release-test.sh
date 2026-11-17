@@ -14,7 +14,8 @@ trap 'exit 130' INT TERM HUP
 fail() { echo "android-release-test: FAIL: $*" >&2; exit 1; }
 
 git init -q --bare "$t/origin.git"
-git clone -q "$root" "$t/repo"
+# No tags: the repository's own (v0.9.0 and on) would refuse the version a clean main is checked at.
+git clone -q --no-tags "$root" "$t/repo"
 cd "$t/repo"
 git push -q "$t/origin.git" HEAD:refs/heads/main
 git remote set-url origin https://github.com/boltcard/karto.git
