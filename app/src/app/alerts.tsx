@@ -8,7 +8,7 @@ import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Linking, StyleSheet, View } from 'react-native';
-import { NTFY, noPushApi, ntfySteps, registerError, type Step } from '../alerts/alertsView';
+import { NOT_ON_YET, NTFY, noPushApi, ntfySteps, registerError, type Step } from '../alerts/alertsView';
 import { OFFER } from '../alerts/offer';
 import { alertsSupported, register, routeOf, turnOff, type RegisterDeps } from '../alerts/register';
 import { isPlayBuild } from '../alerts/store';
@@ -131,13 +131,15 @@ export default function Alerts() {
   const on = v.status === 'on-ntfy' || v.status === 'on-play' || v.status === 'late-battery' || v.status === 'failing' || v.status === 'needs-permission';
   return (
     <Screen title="Alerts" back>
-      {/* At the end of setup, the question until alerts are on; an "Off" line before they ever were says nothing. */}
-      {setup && !on && <Body>{OFFER.text}</Body>}
+      {/* At the end of setup, the question until alerts are on, unless a turn on went to another ntfy server (the why
+          says what happened); an "Off" line before they ever were says nothing. */}
+      {setup && !on && v.status !== 'needs-ntfy-server' && <Body>{OFFER.text}</Body>}
       {!(setup && (loading || v.status === 'off')) && (
         <ListGroup>
           <ListRow icon="bell" name="Alerts" line={loading && !alerts.error ? 'Checking…' : v.line} tone={loading ? 'none' : v.tone} />
         </ListGroup>
       )}
+      {v.why && <Body>{v.why}</Body>}
       {v.note && <Body muted>{v.note}</Body>}
       {alerts.error !== null && (
         noPushApi(alerts.error) ? (
@@ -157,6 +159,7 @@ export default function Alerts() {
       {/* What a press just did, beside its button: a test alert's, or why alerts didn't turn on or off. */}
       {said && (said.error ? <ErrorText>{said.text}</ErrorText> : <Body>{said.text}</Body>)}
       {on && !setup && <Button title="Turn off" kind="secondary" onPress={() => void off()} disabled={busy !== null} />}
+      {setup && v.status === 'needs-ntfy-server' && <Body muted>{NOT_ON_YET}</Body>}
       {setup && (on ? <Button title="Open the wallet" onPress={toWallet} /> : <Button title={OFFER.no} kind="secondary" onPress={toWallet} disabled={busy !== null} />)}
     </Screen>
   );

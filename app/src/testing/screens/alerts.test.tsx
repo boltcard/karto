@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NTFY } from '../../alerts/alertsView';
+import { NOT_ON_YET, NTFY, otherServerWhy } from '../../alerts/alertsView';
 import { OFFER } from '../../alerts/offer';
 import Alerts from '../../app/alerts';
 import { CarddError, type PushState } from '../../cardd/client';
@@ -146,10 +146,11 @@ describe('Settings → Alerts', () => {
     expect(Clipboard.setStringAsync).toHaveBeenCalledWith(NTFY_URL);
   });
 
-  it("says ntfy's server must be set first when ntfy gave an endpoint elsewhere", async () => {
+  it("says ntfy is set to another server, which, and what to do, when ntfy gave an endpoint elsewhere", async () => {
     server.state = OFF;
     phone.kept = at('https://ntfy.sh');
-    await shown("Set ntfy's server first");
+    await shown('ntfy is set to another server');
+    expect(screen.getByText(otherServerWhy('ntfy.sh'))).toBeTruthy();
     expect(screen.getByText(NTFY_URL)).toBeTruthy();
     expect(buttons()).toEqual(['Copy', 'Open ntfy', 'Done, turn on']);
   });
@@ -213,7 +214,8 @@ describe('Settings → Alerts', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Turn on alerts' }));
     const done = await screen.findByRole('button', { name: 'Done, turn on' }, WAIT);
     await act(async () => fireEvent.click(done));
-    await screen.findByText("Set ntfy's server first", undefined, WAIT);
+    await screen.findByText('ntfy is set to another server', undefined, WAIT);
+    expect(screen.getByText(otherServerWhy('ntfy.sh'))).toBeTruthy();
     expect(screen.getByText(NTFY_URL)).toBeTruthy();
     expect(cardd.setPush).not.toHaveBeenCalled();
   });
@@ -267,6 +269,22 @@ describe('Settings → Alerts', () => {
       expect(screen.queryByText(OFFER.text)).toBeNull();
       fireEvent.click(screen.getByRole('button', { name: 'Open the wallet' }));
       expect(router.back).toHaveBeenCalledTimes(1);
+    });
+
+    it('after Done, turn on lands on another server, says why and that alerts are not on yet, without the opening question', async () => {
+      phone.gives = at('https://ntfy.sh', 'upZz');
+      render(<Alerts />);
+      await screen.findByText(OFFER.text, undefined, WAIT);
+      await waitFor(() => expect((screen.getByRole('button', { name: 'Turn on alerts' }) as HTMLButtonElement).disabled).toBe(false), WAIT);
+      fireEvent.click(screen.getByRole('button', { name: 'Turn on alerts' }));
+      const done = await screen.findByRole('button', { name: 'Done, turn on' }, WAIT);
+      await act(async () => fireEvent.click(done));
+      await screen.findByText('ntfy is set to another server', undefined, WAIT);
+      expect(screen.getByText(otherServerWhy('ntfy.sh'))).toBeTruthy();
+      expect(screen.queryByText(OFFER.text)).toBeNull();
+      expect(screen.getByText(NOT_ON_YET)).toBeTruthy();
+      expect(NOT_ON_YET).toBe("Alerts aren't on yet. You can finish this later in Settings → Alerts.");
+      expect(buttons()).toEqual(['Copy', 'Open ntfy', 'Done, turn on', 'Not now']);
     });
 
     it("asks with ntfy's steps when there is no ntfy, and Not now", async () => {

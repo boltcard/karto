@@ -44,6 +44,9 @@ export type AlertsView = { status: AlertsStatus; line: string; tone: RowTone; st
 export const otherServerWhy = (host: string) =>
   `ntfy put Karto's alerts on ${host}, its default server. Karto's alerts go through your own server's ntfy: set ntfy's default server to the address below, then press Done, turn on. Leave it set afterwards: ntfy uses its default server whenever Karto asks it again.`;
 
+/** At the end of set-up, where alerts didn't turn on: the person may leave them for later. */
+export const NOT_ON_YET = "Alerts aren't on yet. You can finish this later in Settings → Alerts.";
+
 /** The host (and port, other than the default) of an origin, or "another server" where it isn't a URL. */
 const hostOf = (origin: string | null) => {
   const o = origin === null ? null : originOf(origin);
