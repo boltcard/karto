@@ -126,6 +126,11 @@ describe('another ntfy server', () => {
     expect(view({ server: ON, endpointOrigin: 'https://ntfy.whitewolf.tech' })).toMatchObject({ status: 'needs-ntfy-server', why: otherServerWhy('ntfy.whitewolf.tech') });
   });
 
+  // Google's push in use, ntfy installed later: alerts still come through Google's, so they are On.
+  it("stays On through Google's push when ntfy is installed afterwards", () => {
+    expect(view({ ...PLAY, distributors: [NTFY], distributor: null, ntfyExempt: true })).toMatchObject({ status: 'on-play', line: 'On', why: null });
+  });
+
   it('says another server where the phone has no readable origin', () => {
     expect(view({ server: OFF, endpointOrigin: 'not a url' }).why).toBe(otherServerWhy('another server'));
   });

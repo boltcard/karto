@@ -116,7 +116,8 @@ export function alertsView(s: AlertsInput): AlertsView {
   if (ep && s.endpointOrigin !== null) {
     // The phone's registration went to another ntfy server (its default set back, say): alerts to the older one the
     // server has would stop when it next re-registers, so it isn't On.
-    if (route?.ntfy && ntfy !== '' && !sameOrigin(s.endpointOrigin, ntfy)) return otherServer();
+    // Only an ntfy endpoint: Google's push in use stays On whatever is installed later.
+    if (route?.ntfy && ep.transport !== 'fcm' && ntfy !== '' && !sameOrigin(s.endpointOrigin, ntfy)) return otherServer();
     if (!s.allowed) return said('needs-permission', "Allow notifications in Android's settings", 'warn');
     if (ep.failures > 0) return said('failing', `Last alert didn't arrive: ${ep.failure}`, 'error', { canTest: true });
     if (ep.transport === 'fcm') return said('on-play', 'On', 'ok', { canTest: true });
