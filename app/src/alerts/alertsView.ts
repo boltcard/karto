@@ -31,8 +31,24 @@ export type AlertsInput = {
   endpointOrigin: string | null;
 };
 
-/** note: the Play build's one line about Google, on its own path. tone: the Settings row's colour. */
-export type AlertsView = { status: AlertsStatus; line: string; tone: RowTone; steps: Step[]; canTest: boolean; note: string | null };
+/**
+ * note: the Play build's one line about Google, on its own path. tone: the Settings row's colour. why: what went
+ * wrong and what to do, where the line alone doesn't say it (ntfy on another server).
+ */
+export type AlertsView = { status: AlertsStatus; line: string; tone: RowTone; steps: Step[]; canTest: boolean; note: string | null; why: string | null };
+
+/**
+ * ntfy put the registration on another ntfy server, its default (host: that server's, or "another server"). Every
+ * registration Karto makes is fresh and goes to ntfy's default as it is then (register.ts), so the default stays set.
+ */
+export const otherServerWhy = (host: string) =>
+  `ntfy put Karto's alerts on ${host}, its default server. Karto's alerts go through your own server's ntfy: set ntfy's default server to the address below, then press Done, turn on. Leave it set afterwards: ntfy uses its default server whenever Karto asks it again.`;
+
+/** The host (and port, other than the default) of an origin, or "another server" where it isn't a URL. */
+const hostOf = (origin: string | null) => {
+  const o = origin === null ? null : originOf(origin);
+  return o ? new URL(o).host : 'another server';
+};
 
 const INSTALL: Step = {
   n: 1, text: 'Install ntfy',
@@ -89,11 +105,15 @@ export function alertsView(s: AlertsInput): AlertsView {
   const note = route?.transport === 'fcm' ? PLAY_NOTE : null;
   const ntfy = s.server?.ntfy ?? '';
   const ep = s.server?.endpoint ?? null;
-  const said = (status: AlertsStatus, line: string, tone: RowTone, o: { steps?: Step[]; canTest?: boolean } = {}): AlertsView =>
-    ({ status, line, tone, steps: o.steps ?? [], canTest: o.canTest ?? false, note });
+  const said = (status: AlertsStatus, line: string, tone: RowTone, o: { steps?: Step[]; canTest?: boolean; why?: string } = {}): AlertsView =>
+    ({ status, line, tone, steps: o.steps ?? [], canTest: o.canTest ?? false, note, why: o.why ?? null });
+  const otherServer = () => said('needs-ntfy-server', 'ntfy is set to another server', 'warn', { steps: ntfySteps(ntfy, s.ntfyExempt), why: otherServerWhy(hostOf(s.endpointOrigin)) });
 
   // On: the server has an endpoint and the phone still has the registration it came from.
   if (ep && s.endpointOrigin !== null) {
+    // The phone's registration went to another ntfy server (its default set back, say): alerts to the older one the
+    // server has would stop when it next re-registers, so it isn't On.
+    if (route?.ntfy && ntfy !== '' && !sameOrigin(s.endpointOrigin, ntfy)) return otherServer();
     if (!s.allowed) return said('needs-permission', "Allow notifications in Android's settings", 'warn');
     if (ep.failures > 0) return said('failing', `Last alert didn't arrive: ${ep.failure}`, 'error', { canTest: true });
     if (ep.transport === 'fcm') return said('on-play', 'On', 'ok', { canTest: true });
@@ -106,7 +126,7 @@ export function alertsView(s: AlertsInput): AlertsView {
   if (!route) return said('needs-distributor', 'Needs the ntfy app', 'warn', { steps: ntfy ? [INSTALL, ...ntfySteps(ntfy, s.ntfyExempt)] : [INSTALL, BATTERY] });
   // ntfy handed back an endpoint off the server's own ntfy (its default server is another): the step again.
   if (route.ntfy && ntfy !== '' && s.endpointOrigin !== null && !sameOrigin(s.endpointOrigin, ntfy)) {
-    return said('needs-ntfy-server', "Set ntfy's server first", 'warn', { steps: ntfySteps(ntfy, s.ntfyExempt) });
+    return otherServer();
   }
   return said('off', 'Off', 'none');
 }

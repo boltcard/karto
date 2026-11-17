@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PushState } from '../cardd/client';
 import { CarddError } from '../cardd/client';
-import { alertsRow, alertsView, NTFY, ntfySteps, registerError, sameOrigin, type AlertsInput } from './alertsView';
+import { alertsRow, alertsView, NTFY, ntfySteps, otherServerWhy, registerError, sameOrigin, type AlertsInput } from './alertsView';
 
 const NTFY_URL = 'https://vm-1.lnvps.cloud:8443';
 const ENDPOINT: NonNullable<PushState['endpoint']> = {
@@ -29,8 +29,8 @@ describe('alertsView', () => {
     expect(said({ server: OFF, distributors: [], distributor: null, ntfyExempt: null, endpointOrigin: null })).toEqual({
       status: 'needs-distributor', line: 'Needs the ntfy app', canTest: false, steps: [1, 2, 3],
     });
-    expect(said({ server: OFF, endpointOrigin: 'https://ntfy.sh' })).toEqual({ status: 'needs-ntfy-server', line: "Set ntfy's server first", canTest: false, steps: [2] });
-    expect(said({ server: OFF, endpointOrigin: 'https://ntfy.sh', ntfyExempt: false })).toEqual({ status: 'needs-ntfy-server', line: "Set ntfy's server first", canTest: false, steps: [2, 3] });
+    expect(said({ server: OFF, endpointOrigin: 'https://ntfy.sh' })).toEqual({ status: 'needs-ntfy-server', line: 'ntfy is set to another server', canTest: false, steps: [2] });
+    expect(said({ server: OFF, endpointOrigin: 'https://ntfy.sh', ntfyExempt: false })).toEqual({ status: 'needs-ntfy-server', line: 'ntfy is set to another server', canTest: false, steps: [2, 3] });
     expect(said({ allowed: false })).toEqual({ status: 'needs-permission', line: "Allow notifications in Android's settings", canTest: false, steps: [] });
     expect(said({ ntfyExempt: false })).toEqual({ status: 'late-battery', line: "Alerts may be late: ntfy isn't exempt from battery saving", canTest: true, steps: [3] });
     expect(said({ server: { ...ON, endpoint: { ...ENDPOINT, failures: 2, failedAt: 1_790_000_100, failure: 'HTTP 410 Gone' } } })).toEqual({
@@ -107,12 +107,42 @@ describe('alertsView', () => {
   });
 });
 
+// ntfy put the phone's registration on another ntfy server (its default): the view says which, and what to do.
+describe('another ntfy server', () => {
+  it('names the server ntfy used, and says to set its default to the server\'s and leave it', () => {
+    const v = view({ server: OFF, endpointOrigin: 'https://ntfy.whitewolf.tech' });
+    expect(v).toMatchObject({ status: 'needs-ntfy-server', line: 'ntfy is set to another server', why: otherServerWhy('ntfy.whitewolf.tech') });
+    expect(otherServerWhy('ntfy.whitewolf.tech')).toBe(
+      "ntfy put Karto's alerts on ntfy.whitewolf.tech, its default server. Karto's alerts go through your own server's ntfy: set ntfy's default server to the address below, then press Done, turn on. Leave it set afterwards: ntfy uses its default server whenever Karto asks it again.",
+    );
+  });
+
+  it('names a port other than 443, and none for 443', () => {
+    expect(view({ server: OFF, endpointOrigin: 'https://ntfy.example:8443' }).why).toBe(otherServerWhy('ntfy.example:8443'));
+    expect(view({ server: OFF, endpointOrigin: 'https://ntfy.example:443' }).why).toBe(otherServerWhy('ntfy.example'));
+  });
+
+  it("isn't On while the phone's registration is on another server, though the server still has an older one", () => {
+    expect(view({ server: ON, endpointOrigin: 'https://ntfy.whitewolf.tech' })).toMatchObject({ status: 'needs-ntfy-server', why: otherServerWhy('ntfy.whitewolf.tech') });
+  });
+
+  it('says another server where the phone has no readable origin', () => {
+    expect(view({ server: OFF, endpointOrigin: 'not a url' }).why).toBe(otherServerWhy('another server'));
+  });
+
+  it('has no why for any other status', () => {
+    for (const o of [{}, PLAY, { server: OFF, endpointOrigin: null }, { distributors: [], distributor: null, ntfyExempt: null, server: OFF, endpointOrigin: null }, { allowed: false }, { ntfyExempt: false }]) {
+      expect(view(o).why).toBeNull();
+    }
+  });
+});
+
 describe('registerError', () => {
   it("says why alerts didn't turn on where the status line doesn't", () => {
     expect(registerError({ ok: false, why: 'server', detail: 'HTTP 500' }, 'ntfy')).toBe("Couldn't turn on alerts: HTTP 500");
     expect(registerError({ ok: false, why: 'timeout' }, 'ntfy')).toBe("ntfy didn't answer. Open ntfy, then try again.");
     expect(registerError({ ok: false, why: 'timeout', detail: 'network' }, 'fcm')).toBe("Google's push didn't answer (network). Try again.");
-    // The status line says these: Needs the ntfy app, Set ntfy's server first, Allow notifications.
+    // The status line says these: Needs the ntfy app, ntfy is set to another server, Allow notifications.
     for (const why of ['no-distributor', 'ntfy-sh', 'permission'] as const) expect(registerError({ ok: false, why }, 'ntfy')).toBeNull();
     expect(registerError({ ok: true }, 'ntfy')).toBeNull();
   });
