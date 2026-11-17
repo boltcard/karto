@@ -42,6 +42,7 @@ const WAITING_TEXT: Record<Waiting, string> = {
   reconnect: 'Your server isn’t answering yet. Trying again…',
   pay_days: 'Getting the invoice for the days chosen…',
   lnvps_busy: 'LNVPS is busy. Asking for the invoice again in a minute…',
+  mailtm_busy: "mail.tm, the inbox for LNVPS's email, is busy. Trying again in a minute…",
 };
 
 /**

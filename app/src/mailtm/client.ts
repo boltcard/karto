@@ -86,17 +86,23 @@ export class MailTmClient {
   }
 
   /**
-   * Creates the inbox if it does not exist yet, then logs in. Safe to repeat:
-   * an existing inbox (422) is fine as long as the derived password works.
+   * Logs in to the inbox, creating it first only if the login is refused (401): set-up opens it on every poll, so an
+   * inbox that exists costs one request. Safe to repeat: an existing inbox (422) is fine as long as the derived
+   * password works.
    */
   async open(address: string, password: string): Promise<string> {
+    const login = () => this.call<{ token: string }>('POST', '/token', { body: { address, password } });
+    try {
+      return (await login()).token;
+    } catch (e) {
+      if (!(e instanceof MailTmError && e.status === 401)) throw e;
+    }
     try {
       await this.call('POST', '/accounts', { body: { address, password } });
     } catch (e) {
       if (!(e instanceof MailTmError && e.status === 422)) throw e;
     }
-    const { token } = await this.call<{ token: string }>('POST', '/token', { body: { address, password } });
-    return token;
+    return (await login()).token;
   }
 
   /**

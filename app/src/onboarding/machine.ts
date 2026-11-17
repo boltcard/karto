@@ -10,7 +10,7 @@ import { CarddError, isRevoked, type CarddClient } from '../cardd/client';
 import type { DerivedKeys } from '../keys/derive';
 import { bolt11ExpiresAtMs, isNetworkFailure, LnurlHttpError, type FetchFn } from '../lightning/lightning';
 import { getVmOrNull, LnvpsClient, LnvpsError, vatGuard, type Vm } from '../lnvps/client';
-import { MailTmClient, MAX_VERIFY_LINKS } from '../mailtm/client';
+import { MailTmClient, MailTmError, MAX_VERIFY_LINKS } from '../mailtm/client';
 import { keyId } from '../cardd/deviceauth';
 import { hexToBytes } from '@noble/hashes/utils.js';
 import { bundleSha } from '../deploy/bundle';
@@ -39,7 +39,7 @@ export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
 export type Waiting =
   | 'email' | 'payment' | 'order_expiring' | 'boot' | 'host_keys' | 'health' | 'network' | 'old_unreachable'
   | 'choose_vm' | 'choose_backup' | 'confirm_older' | 'choose_where' | 'confirm_retire' | 'old_vm_starting' | 'confirm_reinstall'
-  | 'confirm_expired' | 'old_payment' | 'recovery_check' | 'reconnect' | 'pay_days' | 'lnvps_busy';
+  | 'confirm_expired' | 'old_payment' | 'recovery_check' | 'reconnect' | 'pay_days' | 'lnvps_busy' | 'mailtm_busy';
 export type ErrorKind = 'retry' | 'fatal' | 'wrong_phrase';
 
 /**
@@ -131,6 +131,8 @@ export type OnboardingState = {
   emailLinksOpened?: { link: string; at: number }[];
   /** After LNVPS answered 429: nothing is opened before this (ms). */
   emailBusyUntil?: number;
+  /** After mail.tm answered 429: mail.tm is asked nothing before this (ms). */
+  mailtmBusyUntil?: number;
   sshKeyId?: number;
   vmId?: number;
   /** When LNVPS deletes the order if it is still unpaid (ms, LNVPS's clock): the pay screen's countdown. */
@@ -411,12 +413,33 @@ const LINK_REFUSED = [400, 404, 410];
 const OPENED_PASS_OVER_MS = 10 * 60 * 1000;
 /** After a 429 nothing is opened for this long: LNVPS's limit (10 a minute) may count the requests it rejects. */
 export const EMAIL_BUSY_WAIT_MS = 60 * 1000;
+/** After mail.tm's 429 it is asked nothing for this long, as LNVPS after its own. */
+export const MAILTM_BUSY_WAIT_MS = 60 * 1000;
 
+/**
+ * The email step: mail.tm's rate limit (429), at any of its calls, is a wait of a minute that the step sits out by
+ * itself, from the latest state (the address kept), never an error.
+ */
 async function email(s: OnboardingState, d: Deps): Promise<OnboardingState> {
-  const address = s.mailtmAddress ?? `${d.keys.mailtmName}@${await d.mailtm.domain()}`;
+  if (s.mailtmBusyUntil !== undefined && d.now() < s.mailtmBusyUntil) return { ...s, waiting: 'mailtm_busy' };
+  let current: OnboardingState = { ...s, mailtmBusyUntil: undefined };
+  try {
+    return await emailNow(current, d, (x) => (current = x));
+  } catch (e) {
+    if (e instanceof MailTmError && e.status === 429) return { ...current, mailtmBusyUntil: d.now() + MAILTM_BUSY_WAIT_MS, waiting: 'mailtm_busy' };
+    throw e;
+  }
+}
+
+/** The email step's work; kept: told each state worth keeping, for a 429's wait to start from. */
+async function emailNow(s: OnboardingState, d: Deps, kept: (s: OnboardingState) => void): Promise<OnboardingState> {
+  if (!s.mailtmAddress) {
+    s = { ...s, mailtmAddress: `${d.keys.mailtmName}@${await d.mailtm.domain()}` };
+    kept(s);
+  }
+  const address = s.mailtmAddress!;
   // Open the inbox before setting it on the account, so the email can't arrive first.
   const token = await d.mailtm.open(address, d.keys.mailtmPassword);
-  s = { ...s, mailtmAddress: address };
   await d.checkpoint(s);
   let account = await d.lnvps.getAccount();
   if (account.email !== address) {

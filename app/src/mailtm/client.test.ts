@@ -30,6 +30,16 @@ describe('MailTmClient', () => {
     await expect(client.open('f6ygjrifabn6ne2s@uberip.com', 'other')).rejects.toThrow('401');
   });
 
+  // Each poll opens the inbox: one that exists costs one request, so polling doesn't add to mail.tm's rate limit.
+  it('logs in to an existing inbox with one request, and makes a new one only when the login is refused', async () => {
+    const { fake, client } = setup();
+    await client.open('x@uberip.com', 'pw');
+    expect(fake.http.requests.map((r) => `${r.method} ${new URL(r.url).pathname}`)).toEqual(['POST /token', 'POST /accounts', 'POST /token']);
+    fake.http.requests.length = 0;
+    await client.open('x@uberip.com', 'pw');
+    expect(fake.http.requests.map((r) => `${r.method} ${new URL(r.url).pathname}`)).toEqual(['POST /token']);
+  });
+
   it('finds the verification link in text or HTML, and nothing before it arrives', async () => {
     const { fake, client } = setup();
     const token = await client.open('x@uberip.com', 'pw');

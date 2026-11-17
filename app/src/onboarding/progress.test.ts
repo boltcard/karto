@@ -46,6 +46,10 @@ describe('progress', () => {
     expect(statusLine({ ...s, step: 'boot', error: { kind: 'retry', message: 'boom' } })).toBe('boom');
   });
 
+  it("says mail.tm is busy and that it tries again by itself", () => {
+    expect(statusLine({ ...initialState('GBR'), step: 'email', waiting: 'mailtm_busy' })).toBe("mail.tm, the inbox for LNVPS's email, is busy. Trying again in a minute…");
+  });
+
   it('says it is waiting for the network, not that something broke', () => {
     expect(statusLine({ ...initialState('GBR'), waiting: 'network' })).toBe('The phone can’t reach the internet right now. Trying again…');
     // Since trust on first use, boot waits for the server's SSH to answer, not for LNVPS.

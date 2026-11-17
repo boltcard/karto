@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   advance, verifyHostKey, DEFAULT_PAY_DAYS, HOST_KEY_WAIT_MS, initialState, INVOICE_RENEW_BEFORE_MS, MAX_PAY_DAYS, NEWER_BACKUP, OLD_VM_SSH_WAIT_MS, PAY_DAY_PRESETS, reconcileDevice,
-  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, paySat,
+  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, MAILTM_BUSY_WAIT_MS, paySat,
   type ChosenBackup, type OnboardingState, type Rebuild, type RetireRecord, type ServerHost, type Waiting,
 } from './machine';
 import { statusLine } from './progress';
@@ -3104,5 +3104,36 @@ describe('a connection that drops under the install or pairing', () => {
     }
     expect(s.step).toBe('done');
     expect(seen).toEqual([['pair', 1, false, undefined], ['pair', 2, false, undefined], ['pair', 1, true, undefined], ['pair', 2, true, undefined]]);
+  });
+});
+
+// mail.tm's rate limit (429) at any of its calls is a wait, never an error: a minute, then the step carries on.
+describe('mail.tm busy', () => {
+  it.each(['GET /domains', 'POST /accounts', 'POST /token', 'GET /messages', 'GET /messages/{id}'] as const)(
+    'waits a minute after mail.tm answers 429 to %s, showing no error',
+    async (call) => {
+      const t = world();
+      t.mail.busy.add(call);
+      let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'mailtm_busy');
+      expect(s).toMatchObject({ step: 'email', waiting: 'mailtm_busy', mailtmBusyUntil: t.w.nowMs + MAILTM_BUSY_WAIT_MS });
+      expect(s.error).toBeUndefined();
+      const asked = t.mail.http.requests.length;
+      t.w.nowMs += 55_000;
+      s = await advance(s, t.deps);
+      expect(s).toMatchObject({ step: 'email', waiting: 'mailtm_busy' });
+      expect(t.mail.http.requests).toHaveLength(asked);
+      t.mail.busy.delete(call);
+      t.w.nowMs += 5_000;
+      s = await drive(s, t, (x) => x.step === 'order');
+      expect(s.step).toBe('order');
+      expect(s.mailtmBusyUntil).toBeUndefined();
+    },
+  );
+
+  it('keeps the address saved before the 429', async () => {
+    const t = world();
+    t.mail.busy.add('POST /accounts');
+    const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'mailtm_busy');
+    expect(s.mailtmAddress).toBe(`${t.deps.keys.mailtmName}@uberip.com`);
   });
 });
