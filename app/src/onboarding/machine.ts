@@ -9,7 +9,7 @@ import type { BackupFiles, ServerLatest, SnapshotSummary } from '../backup/backu
 import { CarddError, isRevoked, type CarddClient } from '../cardd/client';
 import type { DerivedKeys } from '../keys/derive';
 import { bolt11ExpiresAtMs, isNetworkFailure, LnurlHttpError, type FetchFn } from '../lightning/lightning';
-import { getVmOrNull, LnvpsClient, LnvpsError, vatGuard, type Vm } from '../lnvps/client';
+import { getVmOrNull, LnvpsClient, LnvpsError, vatGuard, type Account, type Vm } from '../lnvps/client';
 import { MailTmClient, MailTmError, MAX_VERIFY_LINKS } from '../mailtm/client';
 import { keyId } from '../cardd/deviceauth';
 import { hexToBytes } from '@noble/hashes/utils.js';
@@ -386,8 +386,12 @@ function classify(e: unknown, s: OnboardingState): { kind: ErrorKind; message: s
         'If it keeps happening, the server was set up with another recovery phrase.',
     };
   }
+  if (e instanceof MailTmError) return { kind: 'retry', message: e.plain ?? MAILTM_FAILED(e.status) };
   return { kind: 'retry', message: e instanceof Error ? e.message : String(e) };
 }
+
+/** A mail.tm failure (other than its rate limit, which is waited out) in words. */
+export const MAILTM_FAILED = (status: number) => `mail.tm, the inbox for LNVPS's email, didn't answer as it should (HTTP ${status}). Try again in a little while.`;
 
 async function country(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   if (!s.country) throw new StepError('fatal', 'Choose a country first');
@@ -417,22 +421,31 @@ export const EMAIL_BUSY_WAIT_MS = 60 * 1000;
 export const MAILTM_BUSY_WAIT_MS = 60 * 1000;
 
 /**
- * The email step: mail.tm's rate limit (429), at any of its calls, is a wait of a minute that the step sits out by
- * itself, from the latest state (the address kept), never an error.
+ * The email step. An account LNVPS already has with this phrase's address, verified (a restore, or set-up started
+ * over), needs nothing of mail.tm: the address's name is the phrase's, whatever mail.tm's domain was then. Otherwise
+ * mail.tm's rate limit (429), at any of its calls, is a wait of a minute that the step sits out by itself, from the
+ * latest state (the address kept), never an error.
  */
 async function email(s: OnboardingState, d: Deps): Promise<OnboardingState> {
+  const account = await d.lnvps.getAccount();
+  if (account.email_verified && account.email && phrasesAddress(account.email, d.keys.mailtmName)) {
+    return { ...s, mailtmAddress: account.email, mailtmBusyUntil: undefined, emailLinksRefused: undefined, emailLinksOpened: undefined, emailBusyUntil: undefined, step: 'order' };
+  }
   if (s.mailtmBusyUntil !== undefined && d.now() < s.mailtmBusyUntil) return { ...s, waiting: 'mailtm_busy' };
   let current: OnboardingState = { ...s, mailtmBusyUntil: undefined };
   try {
-    return await emailNow(current, d, (x) => (current = x));
+    return await emailNow(current, d, account, (x) => (current = x));
   } catch (e) {
     if (e instanceof MailTmError && e.status === 429) return { ...current, mailtmBusyUntil: d.now() + MAILTM_BUSY_WAIT_MS, waiting: 'mailtm_busy' };
     throw e;
   }
 }
 
-/** The email step's work; kept: told each state worth keeping, for a 429's wait to start from. */
-async function emailNow(s: OnboardingState, d: Deps, kept: (s: OnboardingState) => void): Promise<OnboardingState> {
+/** Whether an email address is this phrase's mail.tm inbox: its name (before the last @) is the phrase's, in any case. */
+const phrasesAddress = (email: string, name: string) => email.slice(0, email.lastIndexOf('@')).toLowerCase() === name.toLowerCase();
+
+/** The email step's work, from the account as read; kept: told each state worth keeping, for a 429's wait to start from. */
+async function emailNow(s: OnboardingState, d: Deps, read: Account, kept: (s: OnboardingState) => void): Promise<OnboardingState> {
   if (!s.mailtmAddress) {
     s = { ...s, mailtmAddress: `${d.keys.mailtmName}@${await d.mailtm.domain()}` };
     kept(s);
@@ -441,7 +454,7 @@ async function emailNow(s: OnboardingState, d: Deps, kept: (s: OnboardingState) 
   // Open the inbox before setting it on the account, so the email can't arrive first.
   const token = await d.mailtm.open(address, d.keys.mailtmPassword);
   await d.checkpoint(s);
-  let account = await d.lnvps.getAccount();
+  let account = read;
   if (account.email !== address) {
     await d.lnvps.updateAccount({ email: address });
     return { ...s, waiting: 'email' };

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   advance, verifyHostKey, DEFAULT_PAY_DAYS, HOST_KEY_WAIT_MS, initialState, INVOICE_RENEW_BEFORE_MS, MAX_PAY_DAYS, NEWER_BACKUP, OLD_VM_SSH_WAIT_MS, PAY_DAY_PRESETS, reconcileDevice,
-  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, MAILTM_BUSY_WAIT_MS, paySat,
+  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, MAILTM_BUSY_WAIT_MS, MAILTM_FAILED, paySat,
   type ChosenBackup, type OnboardingState, type Rebuild, type RetireRecord, type ServerHost, type Waiting,
 } from './machine';
 import { statusLine } from './progress';
@@ -729,14 +729,15 @@ describe('onboarding', () => {
   it('keeps progress saved inside a step when the step then fails', async () => {
     const t = world();
     let s = await advance(initialState('GBR'), t.deps);
-    const real = t.deps.lnvps.getAccount.bind(t.deps.lnvps);
+    // The account is read before the inbox is opened; setting the address on it comes after the checkpoint.
+    const real = t.deps.lnvps.updateAccount.bind(t.deps.lnvps);
     let fail = true;
-    t.deps.lnvps.getAccount = async () => {
+    t.deps.lnvps.updateAccount = async (patch) => {
       if (fail) {
         fail = false;
         throw new Error('network down');
       }
-      return real();
+      return real(patch);
     };
     s = await advance(s, t.deps);
     expect(s.error?.kind).toBe('retry');
@@ -3135,5 +3136,64 @@ describe('mail.tm busy', () => {
     t.mail.busy.add('POST /accounts');
     const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'mailtm_busy');
     expect(s.mailtmAddress).toBe(`${t.deps.keys.mailtmName}@uberip.com`);
+  });
+});
+
+// A restore, or set-up started over: LNVPS has this phrase's address verified already, so mail.tm isn't needed.
+describe('email step with an address LNVPS already verified', () => {
+  const verified = (t: World, email: string, email_verified = true) => (t.lnvps.account = { ...t.lnvps.account, email, email_verified });
+
+  it("asks mail.tm nothing when LNVPS already has this phrase's address, verified", async () => {
+    const t = world();
+    const email = `${t.deps.keys.mailtmName}@old-domain.example`;
+    verified(t, email);
+    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order');
+    expect(s.step).toBe('order');
+    expect(t.mail.http.requests).toEqual([]);
+    expect(s.mailtmAddress).toBe(email);
+    expect(t.lnvps.account.email).toBe(email);
+  });
+
+  it('even when mail.tm is busy', async () => {
+    const t = world();
+    verified(t, `${t.deps.keys.mailtmName.toUpperCase()}@old-domain.example`);
+    t.mail.busy.add('GET /domains');
+    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order' || x.waiting === 'mailtm_busy');
+    expect(s.step).toBe('order');
+  });
+
+  it('goes the usual way when the verified address has another name', async () => {
+    const t = world();
+    verified(t, 'someone-else@uberip.com');
+    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order');
+    expect(s.step).toBe('order');
+    expect(t.mail.http.requests.length).toBeGreaterThan(0);
+    expect(t.lnvps.account.email).toBe(`${t.deps.keys.mailtmName}@uberip.com`);
+  });
+
+  it("goes the usual way when the address is the phrase's but unverified", async () => {
+    const t = world();
+    verified(t, `${t.deps.keys.mailtmName}@uberip.com`, false);
+    // Its email was set before, so LNVPS sends none now: the step looks in the inbox and waits.
+    const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email');
+    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
+    expect(t.mail.http.requests.length).toBeGreaterThan(0);
+  });
+});
+
+describe('mail.tm failures in words', () => {
+  it('says a mail.tm failure in words, not as the request', async () => {
+    const t = world();
+    t.mail.fails.set('POST /token', 503);
+    const s = await drive(initialState('GBR'), t);
+    expect(s).toMatchObject({ step: 'email', error: { kind: 'retry', message: MAILTM_FAILED(503) } });
+    expect(MAILTM_FAILED(503)).toBe("mail.tm, the inbox for LNVPS's email, didn't answer as it should (HTTP 503). Try again in a little while.");
+  });
+
+  it('says plainly when mail.tm has no inbox domain to give', async () => {
+    const t = world();
+    t.mail.domains = [];
+    const s = await drive(initialState('GBR'), t);
+    expect(s.error?.message).toBe('mail.tm has no public inbox domain right now. Try again in a little while.');
   });
 });

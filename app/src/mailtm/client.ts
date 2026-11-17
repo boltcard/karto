@@ -54,8 +54,9 @@ export type VerificationScan = {
   spent: string[];
 };
 
+/** plain: the failure in words for the person, where the status alone doesn't say it. */
 export class MailTmError extends Error {
-  constructor(readonly status: number, message: string) {
+  constructor(readonly status: number, message: string, readonly plain?: string) {
     super(message);
   }
 }
@@ -81,7 +82,7 @@ export class MailTmClient {
   async domain(): Promise<string> {
     const { 'hydra:member': domains } = await this.call<{ 'hydra:member': { domain: string; isActive: boolean; isPrivate: boolean }[] }>('GET', '/domains');
     const d = domains.find((x) => x.isActive && !x.isPrivate);
-    if (!d) throw new MailTmError(503, 'mail.tm has no public domain right now');
+    if (!d) throw new MailTmError(503, 'mail.tm has no public domain right now', 'mail.tm has no public inbox domain right now. Try again in a little while.');
     return d.domain;
   }
 

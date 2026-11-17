@@ -3,6 +3,8 @@ import { FakeHttp, HttpError, json, type Handler } from './http';
 
 const API = 'https://api.mail.tm';
 
+export type MailTmCall = 'GET /domains' | 'POST /accounts' | 'POST /token' | 'GET /messages' | 'GET /messages/{id}';
+
 export class FakeMailTm {
   readonly http = new FakeHttp();
   domains = [{ domain: 'uberip.com', isActive: true, isPrivate: false }];
@@ -10,7 +12,9 @@ export class FakeMailTm {
   /** Set: DELETE /messages/{id} answers 500. */
   deleteFails = false;
   /** The calls that answer 429 (mail.tm's rate limit) while named here. */
-  readonly busy = new Set<'GET /domains' | 'POST /accounts' | 'POST /token' | 'GET /messages' | 'GET /messages/{id}'>();
+  readonly busy = new Set<MailTmCall>();
+  /** The calls that answer with this status (503, say) while named here. */
+  readonly fails = new Map<MailTmCall, number>();
   private nextMessage = 1;
 
   constructor() {
@@ -19,7 +23,9 @@ export class FakeMailTm {
     const h = {
       on: (method: string, pattern: string | RegExp, handler: Handler, name?: string) => {
         http.on(method, pattern, (req) => {
-          if (name && this.busy.has(name as never)) throw new HttpError(429, 'Too Many Requests');
+          if (name && this.busy.has(name as MailTmCall)) throw new HttpError(429, 'Too Many Requests');
+          const fail = name ? this.fails.get(name as MailTmCall) : undefined;
+          if (fail) throw new HttpError(fail, 'failed');
           return handler(req);
         });
         return h;
