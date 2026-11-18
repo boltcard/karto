@@ -22,13 +22,19 @@
 # [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
 # The Mac builds start alongside the Linux checks, not after them (macOS minutes cost nothing in a public
 # repository, and a build is about four minutes sooner); signing waits for both, so nothing that failed the checks
-# is signed. The device build compiles the pods' C and Objective-C through ccache, whose cache is kept between
-# runs: one cache for each Xcode, app and set of packages (package-lock.json and Podfile.lock), saved once by the
-# first run that misses it and never added to after, so a change of packages starts a cache afresh rather than
+# is signed (with both apps, one app's build failing skips the signing of both). The device build compiles the
+# pods' C and Objective-C through ccache, whose cache is kept between runs: one cache for each Xcode, app and set
+# of packages (package-lock.json and Podfile.lock), saved once by the first run that misses it (and saw ccache
+# compile something) and never added to after, so a change of packages starts a cache afresh rather than
 # carrying entries the old packages' scripts could have written. GitHub lets a branch read its own caches and
-# main's, never another branch's, so a build from main only ever uses a cache main made. So the first build on
-# main after a change of packages or Xcode is a cold one (as is a branch's first, unless main has a cache), and
-# GitHub drops a cache nobody has used for 7 days. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
+# main's, never another branch's: a build from main reads only caches saved by runs on main. That is weaker than
+# it sounds: any code a run on main executes (npm's and CocoaPods' scripts among it, here and in test.yml) can
+# reach the runner's cache token and save under the key of the packages it came with, and what it saved would
+# be compiled into the app. It is the same trust the build already gives those packages, whose code is in the
+# app anyway; the form's fresh builds without the cache altogether (nothing restored, saved or compiled through
+# ccache), for a build that must owe nothing to an earlier run. The first build on main after a change of
+# packages or Xcode is a cold one (as is a branch's first, unless main has a cache), and GitHub drops a cache
+# nobody has used for 7 days. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
 # team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM), IPHONE_UDID (the one iPhone
 # the development profile is made for, exactly as Apple shows it: a secret, not a variable, because a step's log
 # shows its variables in clear) and IPA_PASSPHRASE (a random one, e.g. openssl rand -base64 32: the sealed apps
@@ -76,6 +82,10 @@ on:
         description: 'For signed: the line deploy/test/iphone-diag.sh line prints (HOST:PORT:USER:HOSTKEYBLOB of the test SSH server on the local network); empty for no diagnostics app'
         type: string
         default: ''
+      fresh:
+        description: 'For device and signed: build without the C/Objective-C cache (nothing restored, saved or compiled through ccache)'
+        type: boolean
+        default: false
 concurrency:
   group: ios
   cancel-in-progress: true
@@ -359,7 +369,7 @@ jobs:
           retention-days: 7
 
   # For a real iPhone: the iphoneos SDK, arm64, no signing. It proves the device-only code compiles and links
-  # (the Secure Enclave branch of the phone's key). One compile gives both apps: the wallet is built, then built
+  # (the Secure Enclave branch of the phone's key). One compile gives the wallet and the diagnostics app: the wallet is built, then built
   # again as the diagnostics app, in the same project and the same place, so only the JavaScript and the app's
   # own few files are done twice. This job has run npm's and CocoaPods' scripts, so it is given no secret.
   device:
@@ -379,6 +389,8 @@ jobs:
       APP_VARIANT: ${{ matrix.app }}
       EXPO_PUBLIC_APP_VARIANT: ${{ matrix.app }}
       PROJ: ${{ matrix.app == 'pos' && 'KartoPoS' || 'Karto' }}
+      # 'true' when the form asked for a build without the cache (a push never does).
+      FRESH: ${{ inputs.fresh == true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -445,10 +457,13 @@ jobs:
           ls -d "$PROJ.xcworkspace"
       # Restored if there is one for this Xcode, app, package-lock.json and Podfile.lock (the pods as installed,
       # those fetched from CocoaPods' own servers too, so it comes after pod install); else saved at the job's
-      # end, once the job has passed. No restore-keys: a cache is never carried over to another set of packages.
-      # v3 is bumped by hand to throw every cache away (a build setting changed without a package changing; v1's
-      # were saved empty, v2's knew the compiler by its file's time).
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # end (the last step), once the job has passed and ccache has compiled something. No restore-keys: a cache
+      # is never carried over to another set of packages. v3 is bumped by hand to throw every cache away (a build
+      # setting changed without a package changing; v1's were saved empty, v2's knew the compiler by its file's
+      # time).
+      - id: ccache
+        if: env.FRESH != 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.COMPILE_CACHE_DIR }}
           key: ccache-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
@@ -456,10 +471,15 @@ jobs:
         working-directory: app
         run: |
           ccache --zero-stats > /dev/null
+          # Explicit modules off, said rather than left to Xcode: it turns them off for a compiler it doesn't know,
+          # and the wrappers are one. Off in a fresh build too, so the two build alike.
+          compilers=(CLANG_ENABLE_EXPLICIT_MODULES=NO)
+          [ "$FRESH" = true ] || compilers+=(CC="$CACHED_CC" CXX="$CACHED_CXX")
+          echo "XCODE_COMPILERS=${compilers[*]}" >> "$GITHUB_ENV"
           status=0
           xcodebuild -workspace "ios/$PROJ.xcworkspace" -scheme "$PROJ" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
-            -skipPackagePluginValidation -skipMacroValidation CC="$CACHED_CC" CXX="$CACHED_CXX" \
+            -skipPackagePluginValidation -skipMacroValidation "${compilers[@]}" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-$APP_VARIANT.log" 2>&1 || status=$?
           echo "== errors, and warnings in our own files"
           grep -nE '(error:|fatal error|ld: |Undefined symbols|duplicate symbol|warning: .*(CardNative|CardSsh|CardLogic|DeviceKey|NfcReader|QrScannerView|CardCameraView|withDeployAssets))' "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400 | head -150 || echo "none"
@@ -467,9 +487,11 @@ jobs:
           tail -25 "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400
           echo "== ccache: hits are files not compiled again"
           ccache --show-stats || true
-          # pod install setting the wrappers proves nothing if Xcode then compiles past them: count the calls.
+          # Giving Xcode the wrappers proves nothing if it then compiles past them: count the calls. None, and no
+          # cache is saved (an empty one would be kept, never replaced, until the key changes).
           calls=$(ccache --print-stats | awk -F'\t' '$1 ~ /^(direct_cache_hit|preprocessed_cache_hit|cache_miss)$/ { n += $2 } END { print n + 0 }' || echo 0)
-          [ "${calls:-0}" -gt 0 ] || echo "::warning title=ccache::no compile went through ccache: this build was not cached"
+          echo "COMPILE_CALLS=${calls:-0}" >> "$GITHUB_ENV"
+          [ "$FRESH" = true ] || [ "${calls:-0}" -gt 0 ] || echo "::warning title=ccache::no compile went through ccache: this build was not cached"
           exit "$status"
       - name: What is in the wallet
         if: env.APP_VARIANT == 'wallet'
@@ -557,7 +579,8 @@ jobs:
           status=0
           xcodebuild -workspace ios/Karto.xcworkspace -scheme Karto -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
-            -skipPackagePluginValidation -skipMacroValidation CC="$CACHED_CC" CXX="$CACHED_CXX" \
+            -skipPackagePluginValidation -skipMacroValidation \
+            $XCODE_COMPILERS \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-diagnostics.log" 2>&1 || status=$?
           # What is said above, checked by the run itself before a line of the log is shown: no file this job
           # keeps holds the seed. (A build log lists each script step's settings; the simulator run's log, with
@@ -596,6 +619,13 @@ jobs:
           name: device-${{ matrix.app }}
           path: ${{ runner.temp }}/out
           retention-days: 7
+      # The cache saved, at the end and only once all of the above has passed: when it was missed, ccache did
+      # compile something, and the build used it (not fresh).
+      - if: env.FRESH != 'true' && steps.ccache.outputs.cache-hit != 'true' && env.COMPILE_CALLS != '' && env.COMPILE_CALLS != '0'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.COMPILE_CACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
   # At Apple, the certificate, the iPhone, the identifier and the profile; then the built apps signed for the one
   # iPhone. A job of its own, with only the files it needs checked out and only hash-pinned Python packages
