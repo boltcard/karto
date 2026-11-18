@@ -379,9 +379,6 @@ jobs:
       APP_VARIANT: ${{ matrix.app }}
       EXPO_PUBLIC_APP_VARIANT: ${{ matrix.app }}
       PROJ: ${{ matrix.app == 'pos' && 'KartoPoS' || 'Karto' }}
-      # pod install sets the pods' compilers to React Native's ccache wrappers (scripts/xcode/ccache-clang.sh,
-      # with its ccache.conf). Swift is not cached, nor is anything when ccache is not on the Mac.
-      USE_CCACHE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -400,8 +397,25 @@ jobs:
         run: |
           command -v ccache > /dev/null || HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet ccache
           ccache --version | head -1
-          # Its cache is ccache's default folder (the wrappers' ccache.conf names none), as ccache itself says.
-          echo "CCACHE_FOLDER=$(ccache --get-config cache_dir)" >> "$GITHUB_ENV"
+          dir=$(ccache --get-config cache_dir)
+          echo "CCACHE_FOLDER=$dir" >> "$GITHUB_ENV"
+          # The compilers Xcode is given (CC and CXX on its command line, so every project's targets take them):
+          # each a script with everything written into it, since Xcode hands a compiler none of the job's
+          # variables and none of its build settings. (React Native's own wrappers, which pod install sets with
+          # USE_CCACHE=1, read the ccache to run from a build setting, so they ran clang alone, uncached.) The
+          # settings are React Native's ccache.conf, made for Xcode's builds (scripts/xcode/ccache.conf).
+          # Swift is not cached.
+          w="$RUNNER_TEMP/ccache-bin"
+          mkdir -p "$w"
+          for c in clang clang++; do
+            printf '#!/bin/sh\nexport CCACHE_DIR=%s CCACHE_CONFIGPATH=%s\nexec %s %s "$@"\n' \
+              "$dir" "$GITHUB_WORKSPACE/app/node_modules/react-native/scripts/xcode/ccache.conf" \
+              "$(command -v ccache)" "$(xcrun -f "$c")" > "$w/ccache-$c"
+            chmod +x "$w/ccache-$c"
+          done
+          cat "$w/ccache-clang"
+          echo "CCACHE_CC=$w/ccache-clang" >> "$GITHUB_ENV"
+          echo "CCACHE_CXX=$w/ccache-clang++" >> "$GITHUB_ENV"
           # A new Xcode compiles differently: a cache of its own (see the top of this file).
           echo "XCODE_ID=$(xcodebuild -version | shasum -a 256 | cut -c1-16)" >> "$GITHUB_ENV"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -425,16 +439,15 @@ jobs:
         run: |
           pod install 2>&1 | tee "$OUT/pod-install.log"
           ls -d "$PROJ.xcworkspace"
-          # Says whether the pods compile through ccache (React Native's [Ccache] lines).
-          grep -F '[Ccache]' "$OUT/pod-install.log" || echo "no [Ccache] line: compiling without ccache"
       # Restored if there is one for this Xcode, app, package-lock.json and Podfile.lock (the pods as installed,
       # those fetched from CocoaPods' own servers too, so it comes after pod install); else saved at the job's
       # end, once the job has passed. No restore-keys: a cache is never carried over to another set of packages.
-      # v1 is bumped by hand to throw every cache away (a build setting changed without a package changing).
+      # v2 is bumped by hand to throw every cache away (a build setting changed without a package changing; v1's
+      # were saved empty).
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.CCACHE_FOLDER }}
-          key: ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
+          key: ccache-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
       - name: Build the app for a device, unsigned
         working-directory: app
         run: |
@@ -442,7 +455,7 @@ jobs:
           status=0
           xcodebuild -workspace "ios/$PROJ.xcworkspace" -scheme "$PROJ" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
-            -skipPackagePluginValidation -skipMacroValidation \
+            -skipPackagePluginValidation -skipMacroValidation CC="$CCACHE_CC" CXX="$CCACHE_CXX" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-$APP_VARIANT.log" 2>&1 || status=$?
           echo "== errors, and warnings in our own files"
           grep -nE '(error:|fatal error|ld: |Undefined symbols|duplicate symbol|warning: .*(CardNative|CardSsh|CardLogic|DeviceKey|NfcReader|QrScannerView|CardCameraView|withDeployAssets))' "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400 | head -150 || echo "none"
@@ -540,7 +553,7 @@ jobs:
           status=0
           xcodebuild -workspace ios/Karto.xcworkspace -scheme Karto -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
-            -skipPackagePluginValidation -skipMacroValidation \
+            -skipPackagePluginValidation -skipMacroValidation CC="$CCACHE_CC" CXX="$CCACHE_CXX" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build > "$OUT/xcodebuild-diagnostics.log" 2>&1 || status=$?
           # What is said above, checked by the run itself before a line of the log is shown: no file this job
           # keeps holds the seed. (A build log lists each script step's settings; the simulator run's log, with
