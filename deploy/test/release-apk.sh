@@ -71,6 +71,20 @@ else
 	set -- --daemon "-Dorg.gradle.daemon.registry.base=$HOME/.gradle/cardapp-daemon" "-PreactNativeArchitectures=$abi"
 	echo "$([ "$release" = 1 ] && echo release || echo development) build for $abi, on a low-priority daemon"
 fi
+# The native modules' C++ (Reanimated, Worklets, expo-modules-core, Screens, Gesture Handler: about 19 CPU-minutes
+# for each APK) is compiled through ccache when it is on the computer: Gradle's build cache does not keep CMake's
+# work, and npm ci deletes it with node_modules. CMake takes its compiler launcher from these two variables
+# (CMake 3.17 and later) when it first configures a module's .cxx folder: ccache-launcher.sh, which makes the
+# precompiled headers most of those files use cacheable, with the sloppiness ccache asks for them (pch_defines,
+# time_macros; the headers' times, which npm ci changes). The paths under the checkout reach the compiler
+# relative to it (CCACHE_BASEDIR), and the build folder is not hashed (CCACHE_NOHASHDIR: it differs in every
+# worktree and only the debug info names it, which the release build strips from the libraries), so a release, a
+# new worktree's first build and the other app share what was compiled before.
+if command -v ccache > /dev/null; then
+	launcher="$root/deploy/test/ccache-launcher.sh"
+	export CMAKE_C_COMPILER_LAUNCHER="$launcher" CMAKE_CXX_COMPILER_LAUNCHER="$launcher" CCACHE_BASEDIR="$root" CCACHE_NOHASHDIR=1
+	export CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime
+fi
 (cd android && nice -n 19 ionice -c3 ./gradlew "$@" --build-cache :app:createBundleReleaseJsAndAssets --rerun :app:assembleRelease)
 # Gradle signed it with the template's debug key, which everyone has: it is signed again with the project's key
 # (deploy/signing/sign-apk.sh), and that file is the one checked and installed. Without the key nothing is installed.
