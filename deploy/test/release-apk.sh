@@ -84,14 +84,16 @@ fi
 # work, and npm ci deletes it with node_modules. CMake takes its compiler launcher from these two variables
 # (CMake 3.17 and later) when it first configures a module's .cxx folder: ccache-launcher.sh, which makes the
 # precompiled headers most of those files use cacheable, with the sloppiness ccache asks for them (pch_defines,
-# time_macros; the headers' times, which npm ci changes). The paths under the checkout reach the compiler
-# relative to it (CCACHE_BASEDIR), and the build folder is not hashed (CCACHE_NOHASHDIR: it differs in every
-# worktree and only the debug info names it, which the release build strips from the libraries), so a release, a
-# new worktree's first build and the other app share what was compiled before.
+# time_macros; the headers' times, which npm ci changes). The compiler is known by what clang -v says, not by its
+# file's time, which an NDK installed afresh (as CI's is) changes. Paths stay absolute and the build folder is
+# hashed, ccache's defaults: a precompiled header holds the absolute paths of the checkout it was made in, so
+# one from another worktree's build would fail this one's. A checkout's releases and builds share what it
+# compiled before, the other app among them.
 if command -v ccache > /dev/null; then
 	launcher="$root/deploy/test/ccache-launcher.sh"
-	export CMAKE_C_COMPILER_LAUNCHER="$launcher" CMAKE_CXX_COMPILER_LAUNCHER="$launcher" CCACHE_BASEDIR="$root" CCACHE_NOHASHDIR=1
+	export CMAKE_C_COMPILER_LAUNCHER="$launcher" CMAKE_CXX_COMPILER_LAUNCHER="$launcher"
 	export CCACHE_SLOPPINESS=pch_defines,time_macros,include_file_mtime,include_file_ctime
+	export CCACHE_COMPILERCHECK='%compiler% -v'
 fi
 (cd android && nice -n 19 ionice -c3 ./gradlew "$@" --build-cache :app:createBundleReleaseJsAndAssets --rerun :app:assembleRelease)
 # Gradle signed it with the template's debug key, which everyone has: it is signed again with the project's key
