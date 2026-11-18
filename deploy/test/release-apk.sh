@@ -87,8 +87,8 @@ fi
 # time_macros; the headers' times, which npm ci changes). The compiler is known by what clang -v says, not by its
 # file's time, which an NDK installed afresh (as CI's is) changes. Paths stay absolute and the build folder is
 # hashed, ccache's defaults: a precompiled header holds the absolute paths of the checkout it was made in, so
-# one from another worktree's build would fail this one's. A checkout's releases and builds share what it
-# compiled before, the other app among them.
+# one from another worktree's build would fail this one's. A checkout's builds share what it compiled before, the
+# other app among them; a release (deploy/release/android-release.sh) has a cache of its own (CCACHE_DIR).
 if command -v ccache > /dev/null; then
 	launcher="$root/deploy/test/ccache-launcher.sh"
 	export CMAKE_C_COMPILER_LAUNCHER="$launcher" CMAKE_CXX_COMPILER_LAUNCHER="$launcher"

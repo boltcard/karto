@@ -45,6 +45,8 @@ for v in $(env | sed -n 's/^\(EXPO_PUBLIC_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$
 # CI among them: with it set, Expo keeps Metro's cache between bundles, and an EXPO_PUBLIC_ value inlined into an
 # earlier build's bundle (KARTO_RELEASE's, APP_VARIANT's) could come back in this one.
 unset CI KARTO_SIGNING_DIR KARTO_KEYSTORE KARTO_PASS_CMD KARTO_STORE CARDAPP_FULL_BUILD CARDAPP_KEEP_APKS APP_VARIANT KARTO_RELEASE CARDAPP_ABI
+# And ccache's (deploy/test/release-apk.sh compiles the native modules through it): a release's own is set below.
+for v in $(env | sed -n 's/^\(CCACHE_[A-Za-z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 sha=$(git rev-parse HEAD)
 version=$(node -p "require('./app/app.json').expo.version")
 code=$(node -p "require('./app/variant.js').versionCode('$version')") || stop "app.json's version $version is not X.Y.Z"
@@ -70,7 +72,17 @@ pin=$(git show HEAD:deploy/signing/signer.sha256 | tr -d ': \t\r\n' | tr 'A-F' '
 echo "release $tag (versionCode $code) of $sha, signed by ${pin%"${pin#????????????????}"}…"
 [ -z "$check_only" ] || { echo "android-release: ready"; exit 0; }
 
-if [ -n "$is_local" ]; then out=$root/.release/local; else out=$root/.release/$tag; fi
+if [ -n "$is_local" ]; then
+	out=$root/.release/local
+else
+	out=$root/.release/$tag
+	# A release compiles through a ccache of its own, filled by releases alone, each from main as it is on GitHub:
+	# never by a development build of a branch or a pull request, whose objects would otherwise go into a release's
+	# libraries. ccache then reads its settings from this folder's ccache.conf, not the person's, and no remote
+	# store (one named in /etc/ccache.conf would be shared with every other build). --local builds use ccache's
+	# default folder.
+	export CCACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/karto-release-ccache" CCACHE_REMOTE_STORAGE=
+fi
 tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
 rm -rf "${out:?}"
 mkdir -p "$out"
