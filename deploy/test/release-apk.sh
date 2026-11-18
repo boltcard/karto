@@ -39,12 +39,20 @@
 # CARDAPP_BUILD_ONLY=1 builds, signs and checks without a phone: nothing is
 # installed, and a development build is for arm64-v8a (the dev phones'), or
 # for CARDAPP_ABI when set (x86_64 for an emulator).
+#
+# CARDAPP_UNSIGNED=1, with CARDAPP_BUILD_ONLY=1, skips the project's key: the APK is checked as Gradle made it,
+# signed with the template's debug key alone. For CI (.github/workflows/test.yml), which has no key and installs
+# nothing: it proves the native build, the Play-services check and the bundle's markers on every change.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 # shellcheck source=/dev/null # checked on its own
 . "$root/deploy/test/android-env.sh"
 adb="$ANDROID_HOME/platform-tools/adb"
 build_only=${CARDAPP_BUILD_ONLY:-}
+unsigned=${CARDAPP_UNSIGNED:-}
+[ -z "$unsigned" ] || [ "$unsigned" = 1 ] || { echo "CARDAPP_UNSIGNED is \"$unsigned\": it must be 1 or unset" >&2; exit 2; }
+[ "$unsigned" != 1 ] || [ "$build_only" = 1 ] || { echo "CARDAPP_UNSIGNED=1 needs CARDAPP_BUILD_ONLY=1: an APK without the project's key is never installed" >&2; exit 2; }
+[ "$unsigned" != 1 ] || [ -z "${CARDAPP_KEEP_APKS:-}" ] || { echo "CARDAPP_KEEP_APKS keeps a project-key APK, which CARDAPP_UNSIGNED=1 does not make" >&2; exit 2; }
 [ "$build_only" = 1 ] || [ "$("$adb" devices | grep -c 'device$')" -eq 1 ] || { echo "connect exactly one phone (adb devices)" >&2; exit 2; }
 variant=${APP_VARIANT:-wallet}
 store=${KARTO_STORE:-}
@@ -88,8 +96,13 @@ fi
 (cd android && nice -n 19 ionice -c3 ./gradlew "$@" --build-cache :app:createBundleReleaseJsAndAssets --rerun :app:assembleRelease)
 # Gradle signed it with the template's debug key, which everyone has: it is signed again with the project's key
 # (deploy/signing/sign-apk.sh), and that file is the one checked and installed. Without the key nothing is installed.
-signed=android/app/build/outputs/apk/release/app-release-signed.apk
-sh "$root/deploy/signing/sign-apk.sh" "$apk" "$signed"
+if [ "$unsigned" = 1 ]; then
+	# Without the key (CI): the checks below read the APK as Gradle made it, and nothing is installed.
+	signed=$apk
+else
+	signed=android/app/build/outputs/apk/release/app-release-signed.apk
+	sh "$root/deploy/signing/sign-apk.sh" "$apk" "$signed"
+fi
 if [ "$store" = play ]; then
 	sh "$root/deploy/test/play-gms.sh" "$signed"
 else

@@ -1,6 +1,11 @@
 # The checks every change must pass, on Linux: cardd's (go vet and go test in server/) and the apps' (vitest and
 # the TypeScript compiler in app/). They are the last two lines of `make test`; its first three, the signing and
 # Play-services scripts' tests, need the Android SDK and are left to a developer's computer. Nothing here is given a secret.
+# And both Android apps built as a release is (KARTO_RELEASE=1), for arm64-v8a, by deploy/test/release-apk.sh
+# without the project's key (CARDAPP_UNSIGNED=1): the native build, the no-Play-services check and the bundle's
+# markers, on every change, with nothing installed. The APKs are not uploaded: signed only with the template's
+# debug key, they are not for anyone's phone. Caches (Gradle's, and ccache's for the native modules' C++) are
+# read by every run but written only by pushes to main, so no branch or pull request can put anything in them.
 # Actions are pinned by commit: the tag beside each is the release that commit was when it was pinned.
 name: Tests
 on:
@@ -57,3 +62,69 @@ jobs:
       - name: npm run typecheck
         working-directory: app
         run: npm run typecheck
+
+  android:
+    name: Android build (${{ matrix.app }}, unsigned)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      # One app's build failing does not stop the other's.
+      fail-fast: false
+      matrix:
+        app: [wallet, pos]
+    env:
+      APP_VARIANT: ${{ matrix.app }}
+      KARTO_RELEASE: '1'
+      CARDAPP_BUILD_ONLY: '1'
+      CARDAPP_UNSIGNED: '1'
+      CARDAPP_ABI: arm64-v8a
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # Gradle runs make app-deploy-assets for the wallet (plugins/withDeployAssets.js), which builds cardd.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: 21
+      # Gradle's caches: written only on main (the action's default for other branches is read-only).
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: npm ci
+        working-directory: app
+        run: npm ci
+      - name: The NDK and CMake React Native names, and ccache
+        run: |
+          ndk=$(sed -n 's/^ndkVersion = "\(.*\)"$/\1/p' app/node_modules/react-native/gradle/libs.versions.toml)
+          [ -n "$ndk" ]
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" "cmake;3.22.1" > /dev/null
+          echo "NDK_VERSION=$ndk" >> "$GITHUB_ENV"
+          sudo apt-get install -y -qq ccache > /dev/null
+          ccache --version | head -1
+          echo "COMPILE_CACHE_DIR=$(ccache --get-config cache_dir)" >> "$GITHUB_ENV"
+      # One cache for each NDK, app and package-lock.json, as on the Mac (ios.yml): restored by every run, saved
+      # only by a push to main that missed it, and never added to after.
+      - id: ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.COMPILE_CACHE_DIR }}
+          key: ccache-android-v1-${{ runner.os }}-${{ runner.arch }}-ndk${{ env.NDK_VERSION }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json') }}
+      - name: Build and check (deploy/test/release-apk.sh)
+        run: |
+          ccache --zero-stats > /dev/null
+          sh deploy/test/release-apk.sh
+          echo "== ccache: hits are files not compiled again"
+          ccache --show-stats
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.COMPILE_CACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
