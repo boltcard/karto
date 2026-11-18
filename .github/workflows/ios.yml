@@ -406,11 +406,14 @@ jobs:
           # with USE_CCACHE=1, read the ccache to run from a build setting, which no compiler is handed, so they
           # ran clang alone, uncached. The settings are React Native's ccache.conf, made for Xcode's builds
           # (scripts/xcode/ccache.conf). Swift is not cached.
+          # The compiler is known by what clang -v says, not by its file's time (ccache's default): every
+          # runner image gives the same Xcode's clang a new time, so a cache from another image missed on
+          # every file, the same Xcode or not (the key holds the Xcode).
           w="$RUNNER_TEMP/cached-compilers"
           mkdir -p "$w"
           for c in clang clang++; do
-            printf '#!/bin/sh\nexport CCACHE_DIR=%s CCACHE_CONFIGPATH=%s\nexec %s %s "$@"\n' \
-              "$dir" "$GITHUB_WORKSPACE/app/node_modules/react-native/scripts/xcode/ccache.conf" \
+            printf '#!/bin/sh\nexport CCACHE_DIR=%s CCACHE_CONFIGPATH=%s CCACHE_COMPILERCHECK=%s\nexec %s %s "$@"\n' \
+              "$dir" "$GITHUB_WORKSPACE/app/node_modules/react-native/scripts/xcode/ccache.conf" "'%compiler% -v'" \
               "$(command -v ccache)" "$(xcrun -f "$c")" > "$w/cached-$c"
             chmod +x "$w/cached-$c"
           done
@@ -443,12 +446,12 @@ jobs:
       # Restored if there is one for this Xcode, app, package-lock.json and Podfile.lock (the pods as installed,
       # those fetched from CocoaPods' own servers too, so it comes after pod install); else saved at the job's
       # end, once the job has passed. No restore-keys: a cache is never carried over to another set of packages.
-      # v2 is bumped by hand to throw every cache away (a build setting changed without a package changing; v1's
-      # were saved empty).
+      # v3 is bumped by hand to throw every cache away (a build setting changed without a package changing; v1's
+      # were saved empty, v2's knew the compiler by its file's time).
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.COMPILE_CACHE_DIR }}
-          key: ccache-v2-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
+          key: ccache-v3-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
       - name: Build the app for a device, unsigned
         working-directory: app
         run: |
