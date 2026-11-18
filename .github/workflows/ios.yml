@@ -16,9 +16,17 @@
 #                 shows the line (a private address, a port, a throwaway user and a host key, nothing more).
 # Which app: Karto Wallet unless the message also says [ios:app=pos] (or the form's app is pos), for Karto PoS: its
 # own identifier and profile, its Xcode project KartoPoS, no simulator run (sim and the package's Mac tests are the
-# wallet's), and Karto-PoS.ipa.sealed when signed.
+# wallet's), and Karto-PoS.ipa.sealed when signed. [ios:app=both] (or the form's both) builds and signs the two
+# side by side in one run, each on a Mac of its own (not for sim). A run's artifacts carry the app's name:
+# device-wallet, signed-apps-pos and so on.
 # [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
-# Every Mac job waits for the Linux checks. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
+# The Mac builds start alongside the Linux checks, not after them (macOS minutes cost nothing in a public
+# repository, and a build is about four minutes sooner); signing waits for both, so nothing that failed the checks
+# is signed. The device build compiles C and Objective-C through ccache, whose cache is kept between runs: one
+# cache for each Xcode, app and package-lock.json, saved once by the first run that misses it and never added to
+# after, so a change of packages starts a cache afresh rather than carrying entries the old packages' scripts
+# could have written. GitHub lets a branch read its own caches and main's, never another branch's, so a build
+# from main only ever uses a cache main made. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
 # team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM), IPHONE_UDID (the one iPhone
 # the development profile is made for, exactly as Apple shows it: a secret, not a variable, because a step's log
 # shows its variables in clear) and IPA_PASSPHRASE (a random one, e.g. openssl rand -base64 32: the sealed apps
@@ -60,7 +68,7 @@ on:
       app:
         description: Which app
         type: choice
-        options: [wallet, pos]
+        options: [wallet, pos, both]
         default: wallet
       diag:
         description: 'For signed: the line deploy/test/iphone-diag.sh line prints (HOST:PORT:USER:HOSTKEYBLOB of the test SSH server on the local network); empty for no diagnostics app'
@@ -84,7 +92,8 @@ jobs:
     outputs:
       what: ${{ steps.read.outputs.what }}
       diag: ${{ steps.read.outputs.diag }}
-      app: ${{ steps.read.outputs.app }}
+      # The apps to build, as a JSON list for the Mac jobs' matrix: ["wallet"], ["pos"] or ["wallet","pos"].
+      apps: ${{ steps.read.outputs.apps }}
     steps:
       - id: read
         env:
@@ -105,9 +114,10 @@ jobs:
             app=$(printf '%s\n' "$MESSAGE" | sed -n 's/.*\[ios:app=\([a-z]*\)\].*/\1/p' | head -1)
           fi
           case "$what" in check | sim | device | signed) ;; *) what=none ;; esac
-          [ "$app" = pos ] || app=wallet
-          # The till has no simulator run (no diagnostics screen of its own) and no diagnostics app.
-          if [ "$app" = pos ] && [ "$what" = sim ]; then
+          case "$app" in pos | both) ;; *) app=wallet ;; esac
+          # The till has no simulator run (no diagnostics screen of its own) and no diagnostics app. With both,
+          # a diag line is the wallet's.
+          if [ "$app" != wallet ] && [ "$what" = sim ]; then
             echo "Karto PoS has no simulator run: ask for check, device or signed"
             exit 1
           fi
@@ -121,10 +131,14 @@ jobs:
             echo "the diag line is not HOST:PORT:USER:HOSTKEYBLOB"
             exit 1
           fi
-          echo "asked for: $what of $app${diag:+, with a diagnostics app}"
+          case "$app" in
+            both) apps='["wallet","pos"]' ;;
+            *) apps="[\"$app\"]" ;;
+          esac
+          echo "asked for: $what of $apps${diag:+, with a diagnostics app}"
           echo "what=$what" >> "$GITHUB_OUTPUT"
           echo "diag=$diag" >> "$GITHUB_OUTPUT"
-          echo "app=$app" >> "$GITHUB_OUTPUT"
+          echo "apps=$apps" >> "$GITHUB_OUTPUT"
 
   # Linux, cheap: a wrong setting or a broken package is found here, before a Mac is started.
   check:
@@ -147,9 +161,10 @@ jobs:
           # Without a server the SSH tests skip themselves: a run that skipped any proved nothing.
           if grep -q 'skipped' "$RUNNER_TEMP/swift-test.log"; then echo "some tests were skipped"; exit 1; fi
 
-  # The server bundle is made on Linux and brought to the Mac, as the plugin's iPhone half expects.
+  # The server bundle is made on Linux and brought to the Mac, as the plugin's iPhone half expects. It does not
+  # wait for check, so neither do the Mac builds after it (see the top of this file).
   assets:
-    needs: [plan, check]
+    needs: plan
     if: contains(fromJSON('["sim", "device", "signed"]'), needs.plan.outputs.what)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -350,12 +365,20 @@ jobs:
     if: contains(fromJSON('["device", "signed"]'), needs.plan.outputs.what)
     runs-on: macos-26
     timeout-minutes: 60
+    strategy:
+      # With both apps, one failing does not stop the other's build (its log is still worth having).
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
     env:
       DIAG: ${{ needs.plan.outputs.diag }}
       # Which app (variant.js), and its Xcode project's name: Expo names it after the app's name without spaces.
-      APP_VARIANT: ${{ needs.plan.outputs.app }}
-      EXPO_PUBLIC_APP_VARIANT: ${{ needs.plan.outputs.app }}
-      PROJ: ${{ needs.plan.outputs.app == 'pos' && 'KartoPoS' || 'Karto' }}
+      APP_VARIANT: ${{ matrix.app }}
+      EXPO_PUBLIC_APP_VARIANT: ${{ matrix.app }}
+      PROJ: ${{ matrix.app == 'pos' && 'KartoPoS' || 'Karto' }}
+      # pod install sets the pods' compilers to React Native's ccache wrappers (scripts/xcode/ccache-clang.sh,
+      # with its ccache.conf). Swift is not cached, nor is anything when ccache is not on the Mac.
+      USE_CCACHE: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -370,6 +393,20 @@ jobs:
           sw_vers
           xcodebuild -version
           xcodebuild -showsdks | grep -i iphoneos
+      - name: ccache
+        run: |
+          command -v ccache > /dev/null || HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 brew install --quiet ccache
+          ccache --version | head -1
+          # Its cache is ccache's default folder (the wrappers' ccache.conf names none), as ccache itself says.
+          echo "CCACHE_FOLDER=$(ccache --get-config cache_dir)" >> "$GITHUB_ENV"
+          # A new Xcode compiles differently: a cache of its own (see the top of this file).
+          echo "XCODE_ID=$(xcodebuild -version | shasum -a 256 | cut -c1-16)" >> "$GITHUB_ENV"
+      # Restored if there is one for this Xcode, app and package-lock.json; else saved at the job's end, once the
+      # job has passed. No restore-keys: a cache is never carried over to another set of packages.
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CCACHE_FOLDER }}
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json') }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: deploy-assets
@@ -391,9 +428,12 @@ jobs:
         run: |
           pod install 2>&1 | tee "$OUT/pod-install.log"
           ls -d "$PROJ.xcworkspace"
+          # Says whether the pods compile through ccache (React Native's [Ccache] lines).
+          grep -F '[Ccache]' "$OUT/pod-install.log" || echo "no [Ccache] line: compiling without ccache"
       - name: Build the app for a device, unsigned
         working-directory: app
         run: |
+          ccache --zero-stats > /dev/null
           status=0
           xcodebuild -workspace "ios/$PROJ.xcworkspace" -scheme "$PROJ" -configuration Release \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
@@ -403,6 +443,8 @@ jobs:
           grep -nE '(error:|fatal error|ld: |Undefined symbols|duplicate symbol|warning: .*(CardNative|CardSsh|CardLogic|DeviceKey|NfcReader|QrScannerView|CardCameraView|withDeployAssets))' "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400 | head -150 || echo "none"
           echo "== the end of the log"
           tail -25 "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400
+          echo "== ccache: hits are files not compiled again"
+          ccache --show-stats || true
           exit "$status"
       - name: What is in the wallet
         if: env.APP_VARIANT == 'wallet'
@@ -519,14 +561,14 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.plan.outputs.what == 'signed'
         with:
-          name: unsigned-apps
+          name: unsigned-apps-${{ matrix.app }}
           path: ${{ runner.temp }}/unsigned
           # Deleted by the forget-unsigned job at the run's end; a day at most if that job never runs.
           retention-days: 1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: device
+          name: device-${{ matrix.app }}
           path: ${{ runner.temp }}/out
           retention-days: 7
 
@@ -536,12 +578,18 @@ jobs:
   # never leave the job: they name the team, the developer and the iPhone, and artifacts can be read by anyone
   # who can read the repository.
   sign:
-    needs: [plan, device]
+    # check too: the builds no longer wait for it, so signing does.
+    needs: [plan, check, device]
     if: needs.plan.outputs.what == 'signed'
     # The six secrets are the ios-signing environment's, not the repository's: only this job names it.
     environment: ios-signing
     runs-on: macos-26
     timeout-minutes: 15
+    strategy:
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+      # One at a time: with a new signing key, two at once would each find no certificate and ask Apple for one.
+      max-parallel: 1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -568,7 +616,7 @@ jobs:
           IOS_SIGNING_KEY: ${{ secrets.IOS_SIGNING_KEY }}
           IPA_PASSPHRASE: ${{ secrets.IPA_PASSPHRASE }}
           IPHONE_UDID: ${{ secrets.IPHONE_UDID }}
-          APP_VARIANT: ${{ needs.plan.outputs.app }}
+          APP_VARIANT: ${{ matrix.app }}
         run: |
           # Checked now, not after the build is signed: without it the apps could not be uploaded.
           [ -n "$IPA_PASSPHRASE" ] || { echo "IPA_PASSPHRASE is not set: the signed apps could not be sealed"; exit 1; }
@@ -582,7 +630,7 @@ jobs:
           BUNDLE_ID=$BUNDLE_ID "$RUNNER_TEMP/venv/bin/python" deploy/test/ios-provision.py "$RUNNER_TEMP/signing"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: unsigned-apps
+          name: unsigned-apps-${{ matrix.app }}
           path: ${{ runner.temp }}/unsigned
       # Signed after the build, not by it: the build is then the one already proven, and the pods' targets
       # (which take no profile) never meet the signing settings.
@@ -736,7 +784,7 @@ jobs:
           rm -rf "${s:?}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: signed-apps
+          name: signed-apps-${{ matrix.app }}
           path: ${{ runner.temp }}/out
           retention-days: 7
 
@@ -754,6 +802,10 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          id=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name == "unsigned-apps") | .id')
-          [ -z "$id" ] || gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
-          echo "unsigned-apps ${id:+deleted}${id:-was not there}"
+          # One for each app built: unsigned-apps-wallet, unsigned-apps-pos.
+          ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name | startswith("unsigned-apps")) | "\(.id) \(.name)"')
+          [ -n "$ids" ] || { echo "no unsigned-apps artifact was there"; exit 0; }
+          printf '%s\n' "$ids" | while read -r id name; do
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            echo "$name deleted"
+          done
