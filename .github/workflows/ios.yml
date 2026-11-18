@@ -22,11 +22,13 @@
 # [ios:app=pos] says only which app; [ios:check], [ios:device] or [ios:signed] still says what to run.
 # The Mac builds start alongside the Linux checks, not after them (macOS minutes cost nothing in a public
 # repository, and a build is about four minutes sooner); signing waits for both, so nothing that failed the checks
-# is signed. The device build compiles C and Objective-C through ccache, whose cache is kept between runs: one
-# cache for each Xcode, app and package-lock.json, saved once by the first run that misses it and never added to
-# after, so a change of packages starts a cache afresh rather than carrying entries the old packages' scripts
-# could have written. GitHub lets a branch read its own caches and main's, never another branch's, so a build
-# from main only ever uses a cache main made. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
+# is signed. The device build compiles the pods' C and Objective-C through ccache, whose cache is kept between
+# runs: one cache for each Xcode, app and set of packages (package-lock.json and Podfile.lock), saved once by the
+# first run that misses it and never added to after, so a change of packages starts a cache afresh rather than
+# carrying entries the old packages' scripts could have written. GitHub lets a branch read its own caches and
+# main's, never another branch's, so a build from main only ever uses a cache main made. So the first build on
+# main after a change of packages or Xcode is a cold one (as is a branch's first, unless main has a cache), and
+# GitHub drops a cache nobody has used for 7 days. Signing needs six secrets: ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_P8 (a
 # team App Store Connect key), IOS_SIGNING_KEY (an RSA key of the project's own, PEM), IPHONE_UDID (the one iPhone
 # the development profile is made for, exactly as Apple shows it: a secret, not a variable, because a step's log
 # shows its variables in clear) and IPA_PASSPHRASE (a random one, e.g. openssl rand -base64 32: the sealed apps
@@ -140,7 +142,7 @@ jobs:
           echo "diag=$diag" >> "$GITHUB_OUTPUT"
           echo "apps=$apps" >> "$GITHUB_OUTPUT"
 
-  # Linux, cheap: a wrong setting or a broken package is found here, before a Mac is started.
+  # Linux, cheap: a wrong setting or a broken package is found here, before anything is signed.
   check:
     needs: plan
     if: needs.plan.outputs.what != 'none'
@@ -369,7 +371,8 @@ jobs:
       # With both apps, one failing does not stop the other's build (its log is still worth having).
       fail-fast: false
       matrix:
-        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+        # (The fallback is never built: it only keeps the expression whole when plan was skipped.)
+        app: ${{ fromJSON(needs.plan.outputs.apps || '["wallet"]') }}
     env:
       DIAG: ${{ needs.plan.outputs.diag }}
       # Which app (variant.js), and its Xcode project's name: Expo names it after the app's name without spaces.
@@ -401,12 +404,6 @@ jobs:
           echo "CCACHE_FOLDER=$(ccache --get-config cache_dir)" >> "$GITHUB_ENV"
           # A new Xcode compiles differently: a cache of its own (see the top of this file).
           echo "XCODE_ID=$(xcodebuild -version | shasum -a 256 | cut -c1-16)" >> "$GITHUB_ENV"
-      # Restored if there is one for this Xcode, app and package-lock.json; else saved at the job's end, once the
-      # job has passed. No restore-keys: a cache is never carried over to another set of packages.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.CCACHE_FOLDER }}
-          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json') }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: deploy-assets
@@ -430,6 +427,14 @@ jobs:
           ls -d "$PROJ.xcworkspace"
           # Says whether the pods compile through ccache (React Native's [Ccache] lines).
           grep -F '[Ccache]' "$OUT/pod-install.log" || echo "no [Ccache] line: compiling without ccache"
+      # Restored if there is one for this Xcode, app, package-lock.json and Podfile.lock (the pods as installed,
+      # those fetched from CocoaPods' own servers too, so it comes after pod install); else saved at the job's
+      # end, once the job has passed. No restore-keys: a cache is never carried over to another set of packages.
+      # v1 is bumped by hand to throw every cache away (a build setting changed without a package changing).
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CCACHE_FOLDER }}
+          key: ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.XCODE_ID }}-${{ matrix.app }}-${{ hashFiles('app/package-lock.json', 'app/ios/Podfile.lock') }}
       - name: Build the app for a device, unsigned
         working-directory: app
         run: |
@@ -445,6 +450,9 @@ jobs:
           tail -25 "$OUT/xcodebuild-$APP_VARIANT.log" | cut -c1-400
           echo "== ccache: hits are files not compiled again"
           ccache --show-stats || true
+          # pod install setting the wrappers proves nothing if Xcode then compiles past them: count the calls.
+          calls=$(ccache --print-stats | awk -F'\t' '$1 ~ /^(direct_cache_hit|preprocessed_cache_hit|cache_miss)$/ { n += $2 } END { print n + 0 }' || echo 0)
+          [ "${calls:-0}" -gt 0 ] || echo "::warning title=ccache::no compile went through ccache: this build was not cached"
           exit "$status"
       - name: What is in the wallet
         if: env.APP_VARIANT == 'wallet'
@@ -586,8 +594,10 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 15
     strategy:
+      # One app's signing failing does not stop the other's.
+      fail-fast: false
       matrix:
-        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+        app: ${{ fromJSON(needs.plan.outputs.apps || '["wallet"]') }}
       # One at a time: with a new signing key, two at once would each find no certificate and ask Apple for one.
       max-parallel: 1
     steps:
@@ -805,7 +815,14 @@ jobs:
           # One for each app built: unsigned-apps-wallet, unsigned-apps-pos.
           ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts" --jq '.artifacts[] | select(.name | startswith("unsigned-apps")) | "\(.id) \(.name)"')
           [ -n "$ids" ] || { echo "no unsigned-apps artifact was there"; exit 0; }
-          printf '%s\n' "$ids" | while read -r id name; do
-            gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
-            echo "$name deleted"
-          done
+          # Every one is tried before the step fails: one refused does not keep the other.
+          failed=0
+          while read -r id name; do
+            if gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"; then
+              echo "$name deleted"
+            else
+              echo "$name could not be deleted"
+              failed=1
+            fi
+          done <<< "$ids"
+          exit "$failed"
