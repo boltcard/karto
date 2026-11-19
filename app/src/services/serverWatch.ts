@@ -26,7 +26,7 @@ import type { Row } from '../wallet/stack';
 
 /** The wallet and hosting, while the wallet or Settings is in front (as the server page's card list did). */
 const REFRESH_MS = 5_000;
-/** A key trusted on first use is checked against LNVPS's this often (LNVPS publishes it about an hour after the server starts). */
+/** A key trusted on first use is checked against LNVPS's this often (LNVPS publishes it within minutes of the server starting, at worst about an hour). */
 const KEY_CHECK_MS = 5 * 60_000;
 /** While the backups view carries a warning or its check failed, it is checked again this often. */
 const BACKUPS_RECHECK_MS = 60_000;

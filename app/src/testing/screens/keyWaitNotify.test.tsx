@@ -54,11 +54,11 @@ describe('the offer to be told when LNVPS has confirmed the server', () => {
     expect(screen.queryByRole('button', { name: BUTTON })).toBeNull();
   });
 
-  it('says to come back in about an hour when notifications are refused, starts no watch, and can ask again', async () => {
+  it('says to come back later when notifications are refused, starts no watch, and can ask again', async () => {
     android.requestNotifications.mockResolvedValue(false);
     render(<KeyWaitNotify />);
     await press(BUTTON);
-    expect(await screen.findByText(/Notifications are off for Karto Wallet, so come back in about an hour/, undefined, WAIT)).toBeTruthy();
+    expect(await screen.findByText(/Notifications are off for Karto Wallet, so come back later/, undefined, WAIT)).toBeTruthy();
     expect(armKeyWatch).not.toHaveBeenCalled();
     // Asked again, and allowed this time.
     android.requestNotifications.mockResolvedValue(true);
@@ -71,13 +71,13 @@ describe('the offer to be told when LNVPS has confirmed the server', () => {
     armKeyWatch.mockRejectedValueOnce(new Error('WorkManager refused'));
     render(<KeyWaitNotify />);
     await press(BUTTON);
-    expect(await screen.findByText(/couldn’t set up the notification \(WorkManager refused\), so come back in about an hour/, undefined, WAIT)).toBeTruthy();
+    expect(await screen.findByText(/couldn’t set up the notification \(WorkManager refused\), so come back later/, undefined, WAIT)).toBeTruthy();
   });
 
   it('promises no notification on a phone that can\'t post one (an iPhone)', async () => {
     native = { requestNotifications: vi.fn(), notificationsAllowed: vi.fn() };
     render(<KeyWaitNotify />);
-    expect(await screen.findByText(/This phone can’t tell you when it’s ready, so come back in about an hour/, undefined, WAIT)).toBeTruthy();
+    expect(await screen.findByText(/This phone can’t tell you when it’s ready, so come back later/, undefined, WAIT)).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
     expect(screen.queryByText(/You’ll get a notification/)).toBeNull();
   });

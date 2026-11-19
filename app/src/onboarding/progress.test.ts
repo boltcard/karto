@@ -115,7 +115,7 @@ describe('progress', () => {
     expect(payFoot(null)).toBe('Pay from any Lightning wallet. Karto Wallet carries on by itself once it’s paid.');
   });
 
-  // Trusted on first use, then checked against LNVPS's key (about an hour after the server starts).
+  // Trusted on first use, then checked against LNVPS's key (within minutes of the server starting).
   it('says whether LNVPS has confirmed the server key', () => {
     const host = { ipv4: '45.67.89.164', hostname: 'vm-1009.lnvps.cloud', user: 'debian', hostKey: { keyType: 'ssh-ed25519', publicKey: 'AAAA' } };
     const s = { ...initialState('GBR'), step: 'done' as const };
@@ -123,7 +123,7 @@ describe('progress', () => {
     expect(hostKeyNotice({ ...s, host }, 0)).toEqual({ kind: 'ok', text: 'LNVPS has confirmed this server\'s SSH key.' });
     expect(hostKeyNotice({ ...s, host: { ...host, keySource: 'first_use' } }, 0)).toEqual({
       kind: 'pending',
-      text: "LNVPS hasn't confirmed your server's identity yet. It usually does about an hour after the server starts; the app checks while the wallet or a Settings page is open.",
+      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of the server starting; the app checks while the wallet or a Settings page is open.",
     });
     const bad = hostKeyNotice({ ...s, host: { ...host, keySource: 'first_use' }, hostKeyMismatch: 'LNVPS published SHA256:x' }, 0);
     expect(bad.kind).toBe('mismatch');
@@ -139,7 +139,7 @@ describe('progress', () => {
     const late = hostKeyNotice(s, 1_000_000 + 2 * 3600_000 + 1);
     expect(late.kind).toBe('overdue');
     expect(late.text).toContain('2 hours');
-    expect(late.text).toMatch(/^LNVPS still hasn't confirmed your server's identity \(its SSH key\) after 2 hours; it normally does within one\./);
+    expect(late.text).toMatch(/^LNVPS still hasn't confirmed your server's identity \(its SSH key\) after 2 hours; it normally does within minutes\./);
     expect(late.text).toContain('vm-1009.lnvps.cloud');
     // Saved before trustedAt existed: no way to tell how long, so still pending.
     expect(hostKeyNotice({ ...s, host: { ...host, keySource: 'first_use' } }, 1e15).kind).toBe('pending');

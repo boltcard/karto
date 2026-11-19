@@ -280,15 +280,16 @@ export type Deps = {
 };
 
 export const HOST_KEY_WAIT_MS = 10 * 60 * 1000;
-/** LNVPS publishes a new server's key about an hour after it starts: twice that is a warning. */
+/** LNVPS publishes a new server's key within minutes of it starting, at worst about an hour (then hourly): twice that is a warning. */
 export const HOST_KEY_CONFIRM_WAIT_MS = 2 * 60 * 60 * 1000;
 /**
  * How long the install waits at host-key for LNVPS to publish the server's key before it offers Try again: LNVPS
- * reads a new server's key about an hour after it starts, then hourly, so three hours is more than it should take.
+ * scans a new server's key every 30 s for its first 30 minutes (LNVPS/api issue 443), then hourly, so three hours is more
+ * than it should take.
  */
 export const HOST_KEY_CONFIRM_LIMIT_MS = 3 * 60 * 60 * 1000;
 export const HOST_KEY_UNCONFIRMED =
-  'LNVPS still hasn’t confirmed your server after 3 hours; it normally does within about an hour of the server starting. ' +
+  'LNVPS still hasn’t confirmed your server after 3 hours; it normally does within minutes of the server starting. ' +
   'Your wallet seed and card key have not been sent to the server. Try again to keep waiting, or ask LNVPS why your ' +
   'server’s SSH key isn’t listed.';
 /** The same, for a server an older app set up without waiting for LNVPS: what it was sent then is not known. */
@@ -698,9 +699,10 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
     hostKey = { keyType: published.key_type, publicKey: published.public_key };
     keySource = 'lnvps';
   } else {
-    // LNVPS reads a new server's key about an hour after it starts (one scan before sshd is
-    // up, then hourly). The app pins the key the server presents now, for the install's
-    // steps that carry no secret; the step host-key waits for LNVPS's to match it before any secret goes.
+    // LNVPS reads a new server's key within minutes of it starting (every 30 s for its first
+    // 30 minutes, LNVPS/api issue 443), then hourly; it may not have it yet. The app pins the
+    // key the server presents now, for the install's steps that carry no secret; the step
+    // host-key waits for LNVPS's to match it before any secret goes.
     try {
       hostKey = await d.scanHostKey(ipv4, 22);
     } catch {
@@ -778,8 +780,8 @@ async function startInPlace(s: OnboardingState, d: Deps, vm: Vm): Promise<Onboar
 }
 
 /**
- * Checks a key trusted on first use against the one LNVPS publishes (about an hour after the
- * server starts): the same key makes it 'lnvps'; a different one sets hostKeyMismatch.
+ * Checks a key trusted on first use against the one LNVPS publishes (within minutes of the
+ * server starting): the same key makes it 'lnvps'; a different one sets hostKeyMismatch.
  * Returns the state unchanged while LNVPS has no key yet, or when nothing needs checking.
  */
 export async function verifyHostKey(s: OnboardingState, lnvps: Pick<LnvpsClient, 'getVm'>): Promise<OnboardingState> {

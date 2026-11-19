@@ -11,7 +11,7 @@ export const WAIT_MS: Record<Waiting, number> = {
   order_expiring: 30_000,
   boot: 10_000,
   host_keys: 15_000,
-  // LNVPS reads a new server's key about an hour after it starts, then hourly: once a minute is plenty.
+  // LNVPS reads a new server's key within minutes of it starting, else hourly: once a minute is plenty.
   host_key_confirm: 60_000,
   health: 10_000,
   network: 10_000,

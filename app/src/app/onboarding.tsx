@@ -23,7 +23,7 @@ export default function Onboarding() {
   if (!s || !runner) return <Screen busy />;
   return (
     <Screen title={title}>
-      {/* Not through the wait for LNVPS to confirm the server, up to an hour, which the app may be left for. */}
+      {/* Not through the wait for LNVPS to confirm the server, usually minutes but up to an hour, which the app may be left for. */}
       {s.waiting !== 'host_key_confirm' && <KeepAwake />}
       <SetupSteps s={s} runner={runner} upload={upload} />
     </Screen>

@@ -1,8 +1,8 @@
 // Under the wait for LNVPS to confirm the server (the install's step host-key, or a rebuild's boot in place on the
 // old server's own VM): being told when it is over, so the person can leave the app. On a phone whose module can post the notice (Android), the background watch
 // (onboarding/keyWatchTask.ts) starts by itself where notifications are allowed already; otherwise a button asks for
-// Android 13's notification permission first. Elsewhere, and when notifications stay off, it says to come back in about
-// an hour. onboarding/keyWatch.ts words it.
+// Android 13's notification permission first. Elsewhere, and when notifications stay off, it says to come back
+// later. onboarding/keyWatch.ts words it.
 import { useEffect, useState } from 'react';
 import { keyWaitNotifyView, setupNotices, type KeyWaitNotify as Notify } from '../onboarding/keyWatch';
 import { armKeyWatch, keyWatchArmed } from '../onboarding/keyWatchTask';

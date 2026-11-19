@@ -40,7 +40,7 @@ function react(waiting: Waiting, s: OnboardingState, t: World): OnboardingState 
   if (waiting === 'payment') t.lnvps.pay(s.vmId!);
   if (waiting === 'boot') t.lnvps.boot(s.vmId!);
   if (waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [{ key_type: 'ssh-rsa', public_key: 'AAAAB3', fingerprint_sha256: 'SHA256:x' }, HOST_KEY]);
-  // LNVPS publishes the key the server presented on first use, as it does about an hour after the server starts.
+  // LNVPS publishes the key the server presented on first use, as it does within minutes of the server starting.
   if (waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
   // The person picks the first server offered (the one paid furthest ahead).
   if (waiting === 'choose_vm') return { ...s, chosenVmId: s.vmChoices![0].id };
@@ -437,8 +437,8 @@ describe('onboarding', () => {
     expect(s.invoice).toMatchObject({ bolt11: fakeInvoice(1_550_000n), expiresAt: t.w.nowMs + 600_000 });
   });
 
-  // LNVPS reads a new server's host key about an hour after it starts (one scan before sshd is
-  // up, then hourly). Until then: trust the key the server presents, and verify it later.
+  // LNVPS reads a new server's host key within minutes of it starting, or else
+  // hourly. Until then: trust the key the server presents, and verify it later.
   it('trusts the key the server presents when LNVPS has not published one yet', async () => {
     const t = world();
     let s = await drive(initialState('GBR'), t, (x) => x.step === 'boot');
@@ -495,8 +495,8 @@ describe('onboarding', () => {
       expect(s).toMatchObject({ waiting: 'host_key_confirm', installed: SYSTEM, stepStartedAt: { step: 'host-key', at: started } });
       expect(t.ssh.connects.length).toBe(connects);
       expect(statusLine(s, t.w.nowMs)).toBe(
-        'Waiting for LNVPS to confirm your server: 25 min so far. LNVPS checks a new server’s identity (its SSH key) about an hour after ' +
-          'it starts, then every hour. Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.',
+        'Waiting for LNVPS to confirm your server: 25 min so far. LNVPS checks a new server’s identity (its SSH key) within minutes of ' +
+          'it starting, then every hour. Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.',
       );
       expect(installFoot(s, t.w.nowMs)).toContain('You can leave the app while LNVPS confirms your server');
       noSecretSent(t);
@@ -1266,7 +1266,7 @@ describe('rebuild', () => {
       let s = await advance({ ...at, host: firstUse() }, t.deps);
       expect(s).toMatchObject({ step: 'boot', waiting: 'host_key_confirm', runningSince: started, host: firstUse() });
       expect(statusLine(s, t.w.nowMs)).toBe(
-        'Waiting for LNVPS to confirm your server: 0 min so far. LNVPS checks a server’s identity (its SSH key) every hour. ' +
+        'Waiting for LNVPS to confirm your server: 0 min so far. LNVPS checks a server’s identity (its SSH key) within minutes of it starting, then every hour. ' +
           'Nothing on it is retired or wiped until LNVPS has confirmed it.',
       );
       // Closed and opened again an hour later: still waiting, from the same start.
@@ -1673,7 +1673,7 @@ describe('rebuild', () => {
       expect(s).toMatchObject({ step: 'order' });
       s = saved(await drive(s, t, (x) => x.step === 'retire'));
       // Booted, its key trusted on first use, the install's steps that carry no secret run, and LNVPS has confirmed the
-      // key (about an hour later): the old server keeps running until now.
+      // key (minutes, or up to an hour, later): the old server keeps running until now.
       expect(s).toMatchObject({ vmId: 1001, host: { keySource: 'lnvps', trustedAt: expect.any(Number) }, installed: [...BEFORE_SECRETS] });
       s = saved(await advance(s, t.deps));
       expect(s).toMatchObject({ step: 'retire', waiting: 'confirm_retire' });

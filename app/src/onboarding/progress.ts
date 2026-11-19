@@ -206,12 +206,12 @@ function hostKeyWaitLine(s: OnboardingState, now: number): string {
   const since = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : atBoot ? (s.runningSince ?? now) : now;
   const head = `Waiting for LNVPS to confirm your server: ${Math.floor(Math.max(0, now - since) / 60_000)} min so far. `;
   if (atBoot) {
-    return `${head}LNVPS checks a server’s identity (its SSH key) every hour. Nothing on it is retired or wiped until LNVPS has confirmed it.`;
+    return `${head}LNVPS checks a server’s identity (its SSH key) within minutes of it starting, then every hour. Nothing on it is retired or wiped until LNVPS has confirmed it.`;
   }
   const held = secretsAt(s) === 'maybe_sent'
     ? 'This server was set up before Karto Wallet waited for LNVPS, so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.'
     : 'Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.';
-  return `${head}LNVPS checks a new server’s identity (its SSH key) about an hour after it starts, then every hour. ${held}`;
+  return `${head}LNVPS checks a new server’s identity (its SSH key) within minutes of it starting, then every hour. ${held}`;
 }
 
 /**
@@ -294,7 +294,7 @@ export function newInstallLogLines(prev: OnboardingState | null, s: OnboardingSt
  * wait's own, and a third count from the install's start read as a clock that disagreed with them.
  */
 export function installFoot(s: OnboardingState, nowMs: number): string {
-  // The wait for LNVPS can take an hour: the app needn't stay open for it.
+  // The wait for LNVPS is usually minutes but can take an hour: the app needn't stay open for it.
   if (s.waiting === 'host_key_confirm') return 'You can leave the app while LNVPS confirms your server: the install carries on when you come back.';
   const keep = 'Keep the app open: the screen stays on. If you leave, it carries on when you come back.';
   return s.installSince === undefined ? keep : `${Math.floor(Math.max(0, nowMs - s.installSince) / 60_000)} min so far. ${keep}`;
@@ -374,14 +374,14 @@ export function hostKeyNotice(s: OnboardingState, nowMs: number): { kind: 'ok' |
       return {
         kind: 'overdue',
         text:
-          `LNVPS still hasn't confirmed your server's identity (its SSH key) after 2 hours; it normally does within one. Until it does, the app ` +
+          `LNVPS still hasn't confirmed your server's identity (its SSH key) after 2 hours; it normally does within minutes. Until it does, the app ` +
           `can't be sure the server it set up is really ${s.host.hostname}. Don't put more money on it until it does, and ask LNVPS why the ` +
           'key isn\'t listed.',
       };
     }
     return {
       kind: 'pending',
-      text: "LNVPS hasn't confirmed your server's identity yet. It usually does about an hour after the server starts; the app checks while the wallet or a Settings page is open.",
+      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of the server starting; the app checks while the wallet or a Settings page is open.",
     };
   }
   return { kind: 'ok', text: 'LNVPS has confirmed this server\'s SSH key.' };

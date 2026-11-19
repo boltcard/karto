@@ -82,9 +82,10 @@ export default function Rebuild() {
         {/* What the rebuild costs the person, set apart. */}
         <Callout>
           <Body>
-            The old server keeps running while a new server is prepared and waits for LNVPS to confirm it, which usually takes about an
-            hour. Then the old server is retired, and cards can&apos;t pay for the few minutes the rest of the install takes. Rebuilt in
-            place on the old server&apos;s own VM, it stops at the start. Each card then needs a tap to point it at the new server.
+            The old server keeps running while a new server is prepared and waits for LNVPS to confirm it, which usually takes a few
+            minutes, at worst about an hour. Then the old server is retired, and cards can&apos;t pay for the few minutes the rest of
+            the install takes. Rebuilt in place on the old server&apos;s own VM, it stops at the start. Each card then needs a tap to
+            point it at the new server.
           </Body>
         </Callout>
         <Button title="Rebuild server" onPress={() => setConfirmed(true)} />

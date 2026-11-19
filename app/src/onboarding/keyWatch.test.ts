@@ -223,13 +223,13 @@ describe('the wait\'s offer to be told', () => {
       button: 'Tell me when it’s ready',
     });
     expect(keyWaitNotifyView({ kind: 'unsupported' })).toEqual({
-      line: 'This phone can’t tell you when it’s ready, so come back in about an hour: the install carries on when you open the app.',
+      line: 'This phone can’t tell you when it’s ready, so come back later: the install carries on when you open the app.',
       button: null,
     });
     expect(keyWaitNotifyView({ kind: 'unsupported' }).line).not.toContain('notification');
     expect(keyWaitNotifyView({ kind: 'armed' }).line).toContain('You’ll get a notification when LNVPS has confirmed your server.');
     expect(keyWaitNotifyView({ kind: 'refused' })).toEqual({
-      line: 'Notifications are off for Karto Wallet, so come back in about an hour: the install carries on when you open the app.',
+      line: 'Notifications are off for Karto Wallet, so come back later: the install carries on when you open the app.',
       button: 'Tell me when it’s ready', // to ask again, where Android still shows the question
     });
     expect(keyWaitNotifyView({ kind: 'failed', why: 'no record' }).line).toContain('(no record)');
