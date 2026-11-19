@@ -19,6 +19,8 @@ const REASONS: Record<string, string> = {
   not_active: "This card isn't set up yet.",
   card_reset: 'This card has been wiped.',
   unknown_card: "Your server doesn't know this card.",
+  // The card needs the check after a restore, and this check didn't say it was proved: the wallet's list was out of date.
+  needs_check: 'This card must be checked by an up-to-date Karto Wallet.',
 };
 
 /** A tag that carries a card's link but isn't the card, held for the check after a restore. */
@@ -30,7 +32,8 @@ export async function checkTap(i: Identity, d: Pick<CardDeps, 'held' | 'issuer'>
   // A tag read as a plain one (a phone that is a card) carries its tap itself.
   const sun = i.read?.sun ?? i.sun;
   if (i.kind !== 'ours' || !sun) return { ok: false, reason: 'Only a card that is set up can be checked.' };
-  if (i.known?.needsCheck) {
+  const proved = !!i.known?.needsCheck;
+  if (proved) {
     if (i.plain || !i.uid || i.version === undefined) return { ok: false, reason: NOT_THE_CARD };
     try {
       await card.authenticate(0, deriveCardKeys(d.issuer, i.uid, i.version).k0);
@@ -40,7 +43,7 @@ export async function checkTap(i: Identity, d: Pick<CardDeps, 'held' | 'issuer'>
     }
   }
   try {
-    return { ok: true, card: await d.held.checkCard(sun) };
+    return { ok: true, card: await d.held.checkCard(sun, { proved }) };
   } catch (e) {
     if (isNetworkFailure(e)) return { ok: false, reason: "Can't reach your server to check this tap." };
     if (e instanceof CarddError) return { ok: false, reason: REASONS[e.code] ?? e.message };

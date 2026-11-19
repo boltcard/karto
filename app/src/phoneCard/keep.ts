@@ -167,7 +167,9 @@ async function keepOwn(d: KeepDeps, cards: CardInfo[], rec: PhoneCardRecord): Pr
       checkCounters(at, 1);
       return { ...r, version: mine.version, next: at + 1 };
     });
-    if (written) await d.cardd.checkCard(tapSuns({ issuer: d.issuer, n: rec.n, version: mine.version }, written.next - 1, 1, d.random)[0]);
+    // proved: the phone can't ask its own card for key 0, but this tap is the phone's own card's, made here from the
+    // phrase's keys and a counter past every one it handed out; no recorded tap is in it.
+    if (written) await d.cardd.checkCard(tapSuns({ issuer: d.issuer, n: rec.n, version: mine.version }, written.next - 1, 1, d.random)[0], { proved: true });
   }
   // 7. The record never behind the server: its key version, and a next past the server's counter.
   await d.record.update((r) => r && { ...r, version: mine.version, next: Math.max(r.next, mine.counter + 1) });
@@ -197,7 +199,7 @@ export function phoneCardKeeper(d: KeepDeps & { armed(): boolean }): (cards: Car
       wallet: () => c.wallet(),
       reserveCard: noting((id, name) => c.reserveCard(id, name)),
       confirmCard: noting((id, sun) => c.confirmCard(id, sun)),
-      checkCard: noting((sun) => c.checkCard(sun)),
+      checkCard: noting((sun, o) => c.checkCard(sun, o)),
       wipeCard: noting((id) => c.wipeCard(id)),
       wipedCard: noting((id) => c.wipedCard(id)),
       freezeCard: noting((id) => c.freezeCard(id)),

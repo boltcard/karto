@@ -65,11 +65,11 @@ func TestProgramThenCheck(t *testing.T) {
 		t.Fatalf("confirm: %+v %v", card, err)
 	}
 	p, c = tap(t, 0, 1)
-	got, err := svc.Check(ctx, p, c)
+	got, err := svc.Check(ctx, p, c, false)
 	if err != nil || got.Card.ID != cardID || got.Counter != 1 {
 		t.Fatalf("check: %+v %v", got, err)
 	}
-	if _, err := svc.Check(ctx, p, c); !errors.Is(err, store.ErrReplayed) {
+	if _, err := svc.Check(ctx, p, c, false); !errors.Is(err, store.ErrReplayed) {
 		t.Fatalf("replayed tap: got %v", err)
 	}
 }
@@ -100,13 +100,13 @@ func TestErrors(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newService(t)
 	p, c := tap(t, 0, 0)
-	if _, err := svc.Check(ctx, p, c); !errors.Is(err, ErrUnknownCard) {
+	if _, err := svc.Check(ctx, p, c, false); !errors.Is(err, ErrUnknownCard) {
 		t.Fatalf("unregistered: got %v", err)
 	}
-	if _, err := svc.Check(ctx, "ef963ff7828658a599f3041510671e88", "94eed9ee65337086"); !errors.Is(err, sun.ErrNotOurs) {
+	if _, err := svc.Check(ctx, "ef963ff7828658a599f3041510671e88", "94eed9ee65337086", false); !errors.Is(err, sun.ErrNotOurs) {
 		t.Fatalf("foreign card: got %v", err)
 	}
-	if _, err := svc.Check(ctx, "abc", c); !errors.Is(err, sun.ErrMalformed) {
+	if _, err := svc.Check(ctx, "abc", c, false); !errors.Is(err, sun.ErrMalformed) {
 		t.Fatalf("malformed: got %v", err)
 	}
 	for _, bad := range []string{"", "E07CE1279D980ECB892A81924B67BF18", cardID + "00", "../etc"} {
@@ -128,7 +128,7 @@ func TestCheckRejectsCardStillProgramming(t *testing.T) {
 	svc, st := newService(t)
 	svc.Reserve(ctx, cardID, "")
 	p, c := tap(t, 0, 5)
-	if _, err := svc.Check(ctx, p, c); !errors.Is(err, ErrNotActive) {
+	if _, err := svc.Check(ctx, p, c, false); !errors.Is(err, ErrNotActive) {
 		t.Fatalf("got %v, want ErrNotActive", err)
 	}
 	if card, _ := st.GetCard(ctx, cardID); card.LastCounter != -1 {
@@ -186,11 +186,11 @@ func TestAdopt(t *testing.T) {
 		card.LastCounter != 17 || card.Name != "Daily" || card.Host != "" {
 		t.Fatalf("adopt: %+v %v", card, err)
 	}
-	if _, err := svc.Check(ctx, p, c); !errors.Is(err, store.ErrReplayed) {
+	if _, err := svc.Check(ctx, p, c, false); !errors.Is(err, store.ErrReplayed) {
 		t.Fatalf("the adopting tap again: got %v, want ErrReplayed", err)
 	}
 	p, c = tap(t, 3, 18)
-	if got, err := svc.Check(ctx, p, c); err != nil || got.Counter != 18 {
+	if got, err := svc.Check(ctx, p, c, false); err != nil || got.Counter != 18 {
 		t.Fatalf("next tap: %+v %v", got, err)
 	}
 	p, c = tap(t, 3, 19)
@@ -429,7 +429,7 @@ func TestCheckAfterARestore(t *testing.T) {
 		recorded = append(recorded, [2]string{p, c})
 	}
 	p, c := tap(t, 0, 10)
-	got, err := svc.Check(ctx, p, c)
+	got, err := svc.Check(ctx, p, c, true)
 	if err != nil || got.Card.NeedsCheck || got.Card.LastCounter != 10 {
 		t.Fatalf("check: %+v %v", got, err)
 	}
@@ -448,13 +448,36 @@ func TestCheckAfterARestore(t *testing.T) {
 	}
 }
 
+// A check the wallet didn't prove (an older wallet's, or a copy of a tap
+// held to a phone) is refused for a card that needs one, and moves nothing;
+// the next proved one clears it. An unmarked card is checked unproved as
+// before.
+func TestCheckAfterARestoreNeedsProof(t *testing.T) {
+	ctx := context.Background()
+	svc, st := restored(t)
+	p, c := tap(t, 0, 5)
+	if _, err := svc.Check(ctx, p, c, false); !errors.Is(err, ErrNeedsCheck) {
+		t.Fatalf("unproved: %v", err)
+	}
+	if card, _ := st.GetCard(ctx, cardID); !card.NeedsCheck || card.LastCounter != 1 {
+		t.Fatalf("after an unproved check: %+v", card)
+	}
+	if got, err := svc.Check(ctx, p, c, true); err != nil || got.Card.NeedsCheck || got.Card.LastCounter != 5 {
+		t.Fatalf("proved: %+v %v", got, err)
+	}
+	p, c = tap(t, 0, 6)
+	if got, err := svc.Check(ctx, p, c, false); err != nil || got.Card.LastCounter != 6 {
+		t.Fatalf("unproved, once checked: %+v %v", got, err)
+	}
+}
+
 // A check with a tap at or below the server's counter is refused, and the
 // card still needs one.
 func TestCheckAfterARestoreRefusesAnOldTap(t *testing.T) {
 	ctx := context.Background()
 	svc, st := restored(t)
 	p, c := tap(t, 0, 1)
-	if _, err := svc.Check(ctx, p, c); !errors.Is(err, store.ErrReplayed) {
+	if _, err := svc.Check(ctx, p, c, true); !errors.Is(err, store.ErrReplayed) {
 		t.Fatalf("old tap: %v", err)
 	}
 	if card, _ := st.GetCard(ctx, cardID); !card.NeedsCheck {
@@ -463,7 +486,7 @@ func TestCheckAfterARestoreRefusesAnOldTap(t *testing.T) {
 	// A frozen card is checked as well, and stays frozen.
 	svc.Freeze(ctx, cardID)
 	p, c = tap(t, 0, 5)
-	if got, err := svc.Check(ctx, p, c); err != nil || got.Card.NeedsCheck || got.Card.State != store.StateFrozen {
+	if got, err := svc.Check(ctx, p, c, true); err != nil || got.Card.NeedsCheck || got.Card.State != store.StateFrozen {
 		t.Fatalf("frozen check: %+v %v", got, err)
 	}
 }

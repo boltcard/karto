@@ -447,9 +447,13 @@ export class CarddClient {
     return this.call('POST', `/api/v1/cards/${id}/confirm`, sun);
   }
 
-  /** Tap to check: verifies the tap and moves the counter on. */
-  checkCard(sun: Sun): Promise<CardInfo> {
-    return this.call('POST', '/api/v1/cards/check', sun);
+  /**
+   * Tap to check: verifies the tap and moves the counter on. proved: the card proved its key 0 in the read the tap
+   * came from (or it is this phone's own card): only such a check lets a card that needsCheck pay again (otherwise
+   * 409 needs_check). Sent only for such a card, so a cardd from before it, which knows no such card, never sees it.
+   */
+  checkCard(sun: Sun, o: { proved?: boolean } = {}): Promise<CardInfo> {
+    return this.call('POST', '/api/v1/cards/check', o.proved ? { p: sun.p, c: sun.c, proved: true } : sun);
   }
 
   /** Adds a card cardd doesn't know as active, once cardd has checked the tap at that version (phrase-only rebuild). */

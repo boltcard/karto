@@ -261,11 +261,18 @@ func (a *api) setHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) check(w http.ResponseWriter, r *http.Request) {
-	var req tapRequest
+	var req struct {
+		tapRequest
+		// Proved: the wallet had the card prove its key 0 in the read this
+		// tap came from (or the tap is its own phone's card's): only such a
+		// check lets a card restored from a backup pay again. A wallet from
+		// before it never sends it, and gets needs_check for such a card.
+		Proved bool `json:"proved"`
+	}
 	if !readJSON(w, r, &req) {
 		return
 	}
-	tap, err := a.cards.Check(r.Context(), req.P, req.C)
+	tap, err := a.cards.Check(r.Context(), req.P, req.C, req.Proved)
 	if err != nil {
 		writeError(w, err)
 		return

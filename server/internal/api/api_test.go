@@ -189,12 +189,26 @@ func TestCheckAfterARestore(t *testing.T) {
 	if card := out["cards"].([]any)[0].(map[string]any); card["needsCheck"] != true {
 		t.Fatalf("after the restore: %v", card)
 	}
-	if status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 1)); status != 409 || out["error"] != "replayed" {
+	proved := func(tap map[string]string) map[string]any {
+		return map[string]any{"p": tap["p"], "c": tap["c"], "proved": true}
+	}
+	if status, out := c.do("POST", "/api/v1/cards/check", proved(tapFor(t, 0, 1))); status != 409 || out["error"] != "replayed" {
 		t.Fatalf("an old tap: %d %v", status, out)
 	}
-	status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 12))
+	// Unproved, as an older wallet sends it: refused, the counter unmoved.
+	if status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 12)); status != 409 || out["error"] != "needs_check" {
+		t.Fatalf("unproved: %d %v", status, out)
+	}
+	if card, _ := c.st.GetCard(context.Background(), cardID); card.LastCounter != 1 || !card.NeedsCheck {
+		t.Fatalf("after an unproved check: %+v", card)
+	}
+	status, out := c.do("POST", "/api/v1/cards/check", proved(tapFor(t, 0, 12)))
 	if status != 200 || out["counter"] != 12.0 || out["needsCheck"] != nil {
 		t.Fatalf("check: %d %v", status, out)
+	}
+	// Once checked, an unproved check works as it always did.
+	if status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 13)); status != 200 || out["counter"] != 13.0 {
+		t.Fatalf("unproved, once checked: %d %v", status, out)
 	}
 }
 

@@ -312,7 +312,8 @@ export default function Account() {
       )}
       {card && <ReadBack rows={cardLimits(card, look.view, look.rated)} />}
       {card?.state === 'frozen' && <Body>Frozen: can&apos;t pay; still takes top-ups.</Body>}
-      {card && restoreLine && <Body>{restoreLine}</Body>}
+      {/* Gone once a check here passes: the list catches up a moment later. */}
+      {card && restoreLine && !tapCheck?.ok && <Body>{restoreLine}</Body>}
       {card && tapCheck && (tapCheck.ok ? <Body>{tapCheckText(tapCheck)}</Body> : <ErrorText>{tapCheckText(tapCheck)}</ErrorText>)}
       {id === 'hosting' && <HostingPanel card={hostingCard(hosting.status, hostingSyncer.lnvpsExpires, nowS)} />}
 

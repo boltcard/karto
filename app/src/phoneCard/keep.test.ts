@@ -282,6 +282,9 @@ describe("steps 5 and 6: this phone's card, where the server and the phone diffe
     expect(t.cardd.cards.get(t.id(0))!.needsCheck).toBeUndefined();
     expect(await t.stored()).toEqual({ n: 0, version: 0, next: 400_002 });
     expect(t.s.calls).toEqual(['checkCard']);
+    // proved: the phone's own card, made here; no recorded tap is in it.
+    const check = t.cardd.http.requests.find((r) => r.url.endsWith('/cards/check'))!;
+    expect(JSON.parse(check.body!)).toMatchObject({ proved: true });
     // Checked once: the next run has nothing to do.
     await t.run();
     expect(t.s.calls).toEqual([]);

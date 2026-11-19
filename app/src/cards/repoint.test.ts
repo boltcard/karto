@@ -21,6 +21,13 @@ async function onOtherServer(host: string, cardHost = host) {
   return { ...t, id };
 }
 
+/** What each check asked of cardd said besides p and c. */
+const checkBodies = (t: Awaited<ReturnType<typeof cardWorld>>) =>
+  t.cardd.http.requests.filter((r) => r.url.endsWith('/cards/check')).map((r) => {
+    const { p: _p, c: _c, ...rest } = JSON.parse(r.body ?? '{}');
+    return rest;
+  });
+
 describe('repointCard', () => {
   it('writes this server\'s URL and new offsets, keeping the keys, and cardd accepts the next tap', async () => {
     const t = await onOtherServer('vm-9.lnvps.cloud');
@@ -36,11 +43,19 @@ describe('repointCard', () => {
   });
 
   // A restore leaves the card needing its owner's check before it can pay: the re-point's check is that check.
-  it("clears a restore's need for a check", async () => {
+  it("clears a restore's need for a check, saying the check was proved", async () => {
     const t = await onOtherServer('vm-9.lnvps.cloud');
     t.cardd.cards.get(t.id)!.needsCheck = true;
     expect((await repointCard(t.tap().card, t.deps)).needsCheck).toBeUndefined();
     expect(t.cardd.cards.get(t.id)!.needsCheck).toBeUndefined();
+    expect(checkBodies(t)).toEqual([{ proved: true }]);
+  });
+
+  // A card that needs no check: the check is sent as before, which a cardd from before proved takes.
+  it('sends a check without proved for a card that needs none', async () => {
+    const t = await onOtherServer('vm-9.lnvps.cloud');
+    await repointCard(t.tap().card, t.deps);
+    expect(checkBodies(t)).toEqual([{}]);
   });
 
   // Cut between the URL and the offsets, from a longer host (old offsets reach past the new URL).
@@ -90,7 +105,7 @@ describe('checkTap', () => {
 
   // A card held to the phone after a restore onto the same server (nothing to re-point): the tap check is the
   // owner's check the server waits for, and the card can pay again.
-  it("clears a restore's need for a check", async () => {
+  it("clears a restore's need for a check, saying the check was proved", async () => {
     const t = await onOtherServer('vm-1.lnvps.cloud');
     t.cardd.cards.get(t.id)!.needsCheck = true;
     const held = t.tap().card;
@@ -99,6 +114,19 @@ describe('checkTap', () => {
     const check = await checkTap(i, t.deps, held);
     expect(check.ok && check.card.needsCheck).toBeFalsy();
     expect(t.cardd.cards.get(t.id)!.needsCheck).toBeUndefined();
+    expect(checkBodies(t)).toEqual([{ proved: true }]);
+  });
+
+  // The wallet's list said no check was needed, but the server says one is (a restore just then): it says only an
+  // up-to-date wallet can give it, as it would to an older wallet's unproved check.
+  it('says an up-to-date wallet must check a card the server refuses as needing the check', async () => {
+    const t = await onOtherServer('vm-1.lnvps.cloud');
+    const held = t.tap().card;
+    const i = await identify(held, t.deps);
+    t.cardd.cards.get(t.id)!.needsCheck = true;
+    expect(await checkTap(i, t.deps, held)).toEqual({ ok: false, reason: 'This card must be checked by an up-to-date Karto Wallet.' });
+    expect(t.cardd.cards.get(t.id)).toMatchObject({ needsCheck: true, counter: 0 });
+    expect(checkBodies(t)).toEqual([{}]);
   });
 
   // Something that answers as an NTAG 424 with a tap recorded after the backup, but without the card's key 0 (a
@@ -114,8 +142,8 @@ describe('checkTap', () => {
     expect(await checkTap(i, t.deps, held)).toEqual({ ok: false, reason: NOT_THE_CARD });
     expect(t.cardd.cards.get(t.id)).toMatchObject({ needsCheck: true, counter: 0 });
     expect(t.cardd.http.requests.some((r) => r.url.endsWith('/cards/check'))).toBe(false);
-    // Nor does a re-point of it, which checks the card too.
-    await expect(repointCard(t.tap().card, t.deps)).rejects.toThrow();
+    // Nor does a re-point of it, which checks the card too, and says so in the same words.
+    await expect(repointCard(t.tap().card, t.deps)).rejects.toThrow(NOT_THE_CARD);
     expect(t.cardd.cards.get(t.id)).toMatchObject({ needsCheck: true, counter: 0 });
     expect(t.cardd.http.requests.some((r) => r.url.endsWith('/cards/check'))).toBe(false);
   });

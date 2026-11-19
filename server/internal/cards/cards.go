@@ -221,10 +221,14 @@ func (s *Service) Adopt(ctx context.Context, version uint32, name, p, c string) 
 }
 
 // Check verifies a tap and moves the counter on ("tap to check"). It is the
-// owner's phone's (device auth), so it also clears a restored card's
-// NeedsCheck: the counter is then the card's own, and every tap recorded
-// before it is refused as used.
-func (s *Service) Check(ctx context.Context, p, c string) (Tap, error) {
+// owner's phone's (device auth). For a card restored from a backup
+// (NeedsCheck) it is the owner's check only when proved: the wallet had the
+// card prove its key 0 in the same read, so the tap isn't a copy of one
+// recorded after the backup. It then clears NeedsCheck: the counter is the
+// card's own, and every tap recorded before it is refused as used. Unproved,
+// such a card is ErrNeedsCheck and its counter stays; any other card is
+// checked as before, proved or not.
+func (s *Service) Check(ctx context.Context, p, c string, proved bool) (Tap, error) {
 	tap, err := s.verify(ctx, p, c)
 	if err != nil {
 		return Tap{}, err
@@ -236,10 +240,20 @@ func (s *Service) Check(ctx context.Context, p, c string) (Tap, error) {
 	default:
 		return Tap{}, ErrNotActive
 	}
-	if err := s.store.CheckCounter(ctx, tap.Card.ID, tap.Counter); err != nil {
+	if tap.Card.NeedsCheck && !proved {
+		return Tap{}, ErrNeedsCheck
+	}
+	advance := s.store.AdvanceCounter
+	if proved {
+		advance = s.store.CheckCounter
+	}
+	if err := advance(ctx, tap.Card.ID, tap.Counter); err != nil {
 		return Tap{}, err
 	}
-	tap.Card.LastCounter, tap.Card.NeedsCheck = int64(tap.Counter), false
+	tap.Card.LastCounter = int64(tap.Counter)
+	if proved {
+		tap.Card.NeedsCheck = false
+	}
 	return tap, nil
 }
 

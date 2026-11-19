@@ -309,7 +309,7 @@ export class FakeCardd {
     card('POST', '', (_id, b) => this.reserve(b.id, b.name ?? ''));
     card('POST', '/adopt', (_id, b) => this.adopt(b as unknown as { version: unknown; name: unknown } & Sun));
     card('PUT', '/([0-9a-f]{32})/host', (id, b) => this.setHost(id, b.host));
-    card('POST', '/check', (_id, b) => this.check(b as Sun));
+    card('POST', '/check', (_id, b) => this.check(b as unknown as Sun & { proved?: boolean }));
     card('PATCH', '/([0-9a-f]{32})', (id, b) => this.rename(id, b.name ?? ''));
     card('POST', '/([0-9a-f]{32})/confirm', (id, b) => this.confirm(id, b as Sun));
     card('POST', '/([0-9a-f]{32})/wipe', (id) => this.startCardWipe(id));
@@ -1166,13 +1166,15 @@ export class FakeCardd {
     return { ...card };
   }
 
-  private check(sun: Sun) {
-    const { card, counter } = this.verify(sun);
+  /** As cards.Service.Check: a card that needs the check after a restore takes only a proved one. */
+  private check(b: Sun & { proved?: boolean }) {
+    const { card, counter } = this.verify(b);
     if (card.state === 'reset') throw new Refusal(422, 'card_reset', 'cards: card has been wiped');
     if (card.state !== 'active' && card.state !== 'frozen') throw new Refusal(409, 'not_active', 'cards: card setup has not finished or it is being wiped');
+    if (card.needsCheck && !b.proved) throw new Refusal(409, 'needs_check', "cards: card needs its owner's check after a restore");
     if (counter <= card.counter) throw new Refusal(409, 'replayed', 'store: counter not above last seen');
     Object.assign(card, { counter, updated: this.now() });
-    delete card.needsCheck; // the owner's check, after a restore
+    if (b.proved) delete card.needsCheck; // the owner's check, after a restore
     return { ...card };
   }
 }
