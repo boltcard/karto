@@ -418,6 +418,14 @@ describe('readyView', () => {
     }
   });
 
+  // The old server's final snapshot holds every freeze made there.
+  it("says nothing of freezes after a rebuild from the old server's final snapshot", () => {
+    const s = done({ rebuild: { source: 'server_page', backup: { ...KEPT, final: true } } });
+    expect(readyView(s, null, NOW, 0).line).toBe(
+      'No card can pay until you hold it to the phone: each one is marked in the wallet, and one that still points at the old server is re-pointed then.',
+    );
+  });
+
   it('says after a rebuild from the phrase alone that no cards are listed', () => {
     const s = done({ restoring: true, rebuild: { source: 'new_phone', backup: { kind: 'phrase_only' } } });
     const line = 'No cards are listed yet: hold each card to the phone to add it back. All the money is in Pool.';

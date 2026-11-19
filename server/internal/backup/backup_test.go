@@ -294,6 +294,22 @@ func TestAStackSnapshotDecrypts(t *testing.T) {
 		if err := os.WriteFile(out, plain, 0o600); err != nil {
 			t.Fatal(err)
 		}
+		// The stack's books owe nothing, and a restore that owes nothing with
+		// no channel is set at once: 1 sat in pool makes the copy's restore
+		// wait for a channel, as one with money does.
+		if os.Getenv("CARDD_BACKUP_TEST_OWE") != "" {
+			st, err := store.Open(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.Close()
+			if _, err := st.Credit(context.Background(), store.Pool, 1_000, "the stack test's", ""); err != nil {
+				t.Fatal(err)
+			}
+			if err := st.Checkpoint(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 

@@ -1688,7 +1688,7 @@ describe('rebuild', () => {
       s = saved(await advance(confirmed(s, { retire: true }), t.deps));
       expect(s).toMatchObject({
         step: 'install',
-        rebuild: { retire: { result: 'retired', at: t.w.nowMs }, backupLocked: true, backup: { kind: 'kept', name: final, created: T0 - 60, cards: 3, totalMsat: 7_000_000 } },
+        rebuild: { retire: { result: 'retired', at: t.w.nowMs }, backupLocked: true, backup: { kind: 'kept', name: final, created: T0 - 60, cards: 3, totalMsat: 7_000_000, final: true } },
       });
       expect(s.notice).toBe(`The old server's final snapshot, of ${timeText(T0 - 60)}, replaces the backup of ${timeText(T0 - 7200)} chosen in step 1.`);
       expect(await t.files.read(final)).toEqual(old.cardd.snapshots.get(1));
@@ -1703,6 +1703,8 @@ describe('rebuild', () => {
       s = await drive(s, t);
       expect(s).toMatchObject({ step: 'done', vmId: 1001, othersRevoked: true });
       expect(t.cardd.restored).toMatchObject({ kind: 'db', from: final.replace(/\.age$/, '') });
+      // The old server's final snapshot: the server page says nothing of freezes made after it.
+      expect(t.cardd.meta.get('restore.final')).toBe('1');
     });
 
     // Security review H1: a new VM waits for LNVPS to confirm its key, up to an hour, and retiring the old server
@@ -2147,7 +2149,8 @@ describe('rebuild', () => {
         const { t, old, s: at, name } = await atRetire();
         old.cardd.addSnapshot(sealSummary(summary(T0 - 7200), t.keys.backupAgeRecipient), T0 - 7200); // the one chosen
         const s = await advance(confirmed(at, { retire: true }), t.deps);
-        expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'retired' }, backup: { name } } });
+        // The final snapshot is the one chosen (cardd made no new one: nothing had changed), so it is the final one.
+        expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'retired' }, backup: { name, final: true } } });
         expect(s.notice).toBeUndefined();
         expect(old.cardd.lastDownload).toBe(0); // the phone holds it already
       });
@@ -2209,6 +2212,7 @@ describe('rebuild', () => {
         spoil(old, t);
         const s = await advance(confirmed(at, { retire: true }), t.deps);
         expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'retired' }, backup: { name } } });
+        expect((s.rebuild!.backup as { final?: true }).final).toBeUndefined();
         expect(s.notice).toBe(`${why} The rebuild goes on from the backup of ${timeText(T0 - 7200)}.`);
         expect(old.cardd.retired?.replacedBy).toBe(1001);
       });

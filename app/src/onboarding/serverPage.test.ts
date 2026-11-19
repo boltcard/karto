@@ -51,9 +51,23 @@ describe('restoreView', () => {
   // A backup's cards are as it had them: a card frozen after it was made is active again, and cardd can't know.
   it('says that cards frozen after the backup need freezing again, except for a fresh start from the phrase', () => {
     expect(REFREEZE).toBe('Cards you froze after this backup was made are active again: freeze them again.');
-    for (const state of ['pending', 'no_channel'] as const) expect(restoreView({ state, from: 'backup' })!.refreeze).toBe(REFREEZE);
-    expect(restoreView({ state: 'done', from: 'backup', reconciledMsat: 0, reconciledAt: 1 })!.refreeze).toBe(REFREEZE);
-    expect(restoreView({ state: 'pending', from: 'phrase' })!.refreeze).toBeUndefined();
+    const now = 1_790_000_000;
+    for (const state of ['pending', 'no_channel'] as const) expect(restoreView({ state, from: 'backup' }, null, now)!.refreeze).toBe(REFREEZE);
+    expect(restoreView({ state: 'done', from: 'backup', reconciledMsat: 0, reconciledAt: now - 86_400 }, null, now)!.refreeze).toBe(REFREEZE);
+    expect(restoreView({ state: 'pending', from: 'phrase' }, null, now)!.refreeze).toBeUndefined();
+  });
+
+  // The old server's final snapshot holds every freeze made there: nothing is undone.
+  it("says nothing of freezes for the old server's final snapshot", () => {
+    for (const state of ['pending', 'no_channel'] as const) expect(restoreView({ state, from: 'backup', final: true })!.refreeze).toBeUndefined();
+    expect(restoreView({ state: 'done', from: 'backup', final: true, reconciledMsat: 0, reconciledAt: 1_790_000_000 }, null, 1_790_000_000)!.refreeze).toBeUndefined();
+  });
+
+  // A week after the books were set, the cards' freezes have long been seen to: the line goes.
+  it('drops the line a week after the books were set', () => {
+    const done = { state: 'done', from: 'backup', reconciledMsat: 0, reconciledAt: 1_790_000_000 } as const;
+    expect(restoreView(done, null, 1_790_000_000 + 7 * 86_400 - 1)!.refreeze).toBe(REFREEZE);
+    expect(restoreView(done, null, 1_790_000_000 + 7 * 86_400)!.refreeze).toBeUndefined();
   });
 
   const from = '0123456789abcdef0123456789abcdef-7-1789990000';

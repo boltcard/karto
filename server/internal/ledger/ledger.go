@@ -232,6 +232,9 @@ type RestoreState struct {
 	From           string // meta restore.from: the backup restored, or "phrase"
 	ReconciledMsat int64  // once done: what was booked to pool (either sign)
 	ReconciledAt   int64  // once done: when, in unix seconds
+	// Final: the backup was the old server's final snapshot (meta
+	// restore.final, from cardd restore -final): nothing done there is missing.
+	Final bool
 }
 
 // restoreState is meta restore.reconcile, "" when nothing was restored.
@@ -251,6 +254,12 @@ func (l *Ledger) Restore(ctx context.Context) (*RestoreState, error) {
 	}
 	r := &RestoreState{State: state}
 	if r.From, err = l.store.GetMeta(ctx, "restore.from"); err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	switch _, err := l.store.GetMeta(ctx, "restore.final"); {
+	case err == nil:
+		r.Final = true
+	case !errors.Is(err, store.ErrNotFound):
 		return nil, err
 	}
 	v, err := l.store.GetMeta(ctx, "restore.reconciled")

@@ -368,18 +368,20 @@ db_is_original "after the next check finished it"
 
 # Rebuild on this one stack: the old server's side (final snapshot,
 # retire), then an in-place rebuild (wipe, restore). Real phoenixd has no
-# channel here, so the restore ends at no_channel; recovery isn't proved.
+# channel here, so the restore ends at no_channel (its copy owes 1 sat:
+# one owing nothing is set at once); recovery isn't proved.
 echo "== rebuild: a final snapshot, with this phone revoked in it"
 ./cardd-ctl device revoke -key-id b18b86ce1389e46d
 snap=$(./install.sh final-snapshot) || fail "final-snapshot"
 version=$(echo "$snap" | sed -n 's/^{"version":\([0-9]*\),"created":[0-9]*}$/\1/p')
 [ -n "$version" ] || fail "final-snapshot printed '$snap'"
 docker compose cp "cardd:/data/backups/$version.age" "$work/final.age" >/dev/null 2>&1 || fail "no snapshot $version"
-(cd "$root/server" && CARDD_BACKUP_TEST_FILE="$work/final.age" CARDD_BACKUP_TEST_PLAIN="$work/final.db" go test -count=1 -run TestAStackSnapshotDecrypts ./internal/backup/) >/dev/null ||
+(cd "$root/server" && CARDD_BACKUP_TEST_FILE="$work/final.age" CARDD_BACKUP_TEST_PLAIN="$work/final.db" CARDD_BACKUP_TEST_OWE=1 go test -count=1 -run TestAStackSnapshotDecrypts ./internal/backup/) >/dev/null ||
 	fail "the final snapshot doesn't open with the backup key"
 
 echo "== restore: bad arguments, and never over a database it didn't restore"
 for args in "restore" "restore 04xyz" "restore $PUB" "restore $PUB 20x h 1.2.3.4" "restore $PUB 1004 vm-1004.lnvps.cloud 45.67.89.171 bad/from" \
+	"restore $PUB 1004 vm-1004.lnvps.cloud 45.67.89.171 a-1-2 finally" \
 	"restore-fresh" "restore-fresh $PUB 1004" "retire" "retire 20x"; do
 	set +e
 	# shellcheck disable=SC2086 # split on purpose
@@ -429,10 +431,11 @@ base64 "$work/newer.db" | ./install.sh restore "$PUB" 1004 vm-1004.lnvps.cloud 4
 code=$?
 set -e
 [ "$code" -eq 6 ] || fail "restore of a newer schema exited $code, want 6"
-base64 "$work/final.db" | ./install.sh restore "$PUB" 1004 vm-1004.lnvps.cloud 45.67.89.171 0123abcd-2-1759750000 || fail "restore"
+base64 "$work/final.db" | ./install.sh restore "$PUB" 1004 vm-1004.lnvps.cloud 45.67.89.171 0123abcd-2-1759750000 final || fail "restore"
 [ "$(base64 "$work/final.db" | ./install.sh restore "$PUB" 1004 vm-1004.lnvps.cloud 45.67.89.171)" = "already restored" ] || fail "restore again"
 CARDD_RESTORE_CHANNEL_WAIT=10s ./install.sh up || fail "up after the restore"
 [ "$(./cardd-ctl meta get restore.from)" = 0123abcd-2-1759750000 ] || fail "restore.from"
+[ "$(./cardd-ctl meta get restore.final)" = 1 ] || fail "restore.final isn't set for a final snapshot"
 [ "$(./cardd-ctl meta get restore.reconcile)" = pending ] || fail "restore.reconcile isn't pending"
 [ "$(./cardd-ctl meta get vm.id)" = 1004 ] || fail "vm.id isn't the new VM's"
 [ "$(./cardd-ctl device list)" = "$(printf 'b18b86ce1389e46d\ttest\tactive')" ] || fail "this phone wasn't re-activated: $(./cardd-ctl device list)"

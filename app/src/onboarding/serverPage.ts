@@ -46,12 +46,18 @@ export function rebuildSuggestion(o: {
  */
 export type RestoreView = {
   from: string; line: string; red: boolean; setBooks: boolean; phoenixd?: string; notUp?: string;
-  /** From a backup (not the phrase alone): the cards are as the backup had them, so a freeze made since is undone. */
+  /**
+   * From a backup (not the phrase alone) that isn't the old server's final snapshot: the cards are as the backup had
+   * them, so a freeze made since is undone. Gone a week after the books were set.
+   */
   refreeze?: string;
 };
 
 /** The restore's line for the cards' freezes: cardd has no record of one made after the backup. */
 export const REFREEZE = 'Cards you froze after this backup was made are active again: freeze them again.';
+
+/** How long after the books were set the server page keeps saying so: by then the cards' freezes have been seen to. */
+const REFREEZE_FOR_S = 7 * 86_400;
 
 export function restoreView(
   r: RestoreInfo | null,
@@ -68,7 +74,8 @@ export function restoreView(
       : created !== undefined
         ? `Restored from the backup of ${whenText(created, nowS, offsetMin)}`
         : 'Restored from a backup';
-  const view = (line: string, red = false, setBooks = false): RestoreView => ({ from, line, red, setBooks, ...(r.from !== 'phrase' && { refreeze: REFREEZE }) });
+  const refreeze = r.from !== 'phrase' && !r.final && !(r.state === 'done' && nowS - (r.reconciledAt ?? 0) >= REFREEZE_FOR_S);
+  const view = (line: string, red = false, setBooks = false): RestoreView => ({ from, line, red, setBooks, ...(refreeze && { refreeze: REFREEZE }) });
   switch (r.state) {
     case 'pending':
       return { ...view('Waiting for the channel to come back'), phoenixd: phoenixdNow(liquidity).phoenixd };
