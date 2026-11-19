@@ -14,6 +14,7 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { openSnapshot, removeKeptBackups } from '../backup/files';
 import { loadBackups } from '../backup/panel';
 import { registerBackupTask, unregisterBackupTask } from '../backup/task';
+import { endKeyWatch } from '../onboarding/keyWatchTask';
 import { CarddClient } from '../cardd/client';
 import { serverStatus } from '../cardd/status';
 import { checkTap, type TapCheck } from '../cards/check';
@@ -318,7 +319,8 @@ export function usePhoneWallet(): { carryOn(): Promise<void>; remove(): Promise<
         sv.wallet.whileClosed(
           () =>
             removeWallet({
-              job: { unregister: unregisterBackupTask },
+              // The background jobs: the backups', and the watch over a setup's wait for LNVPS, should one run.
+              job: { unregister: () => Promise.all([unregisterBackupTask(), endKeyWatch()]) },
               store: sv.store,
               backups: { removeAll: removeKeptBackups },
               deviceKey: sv.deviceKey,

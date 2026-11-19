@@ -83,3 +83,13 @@ export type AlertsNativeApi = {
   addListener(event: 'onPushEndpoint', listener: (e: PushEndpoint) => void): { remove(): void };
   addListener(event: 'onPushFailed', listener: (e: PushFailedEvent) => void): { remove(): void };
 };
+
+/** The setup's own notices: Android's module only (CardNativeModule.kt, AlertNotifier.kt). */
+export type SetupNoticeNativeApi = {
+  /** Posts a notification on the "Server setup" channel under tag (a later one replaces it); a tap opens the wallet. */
+  postSetupNotice(tag: string, title: string, text: string): void;
+  /** As AlertsNativeApi's. */
+  notificationsAllowed(): boolean;
+  /** As AlertsNativeApi's. */
+  requestNotifications(): Promise<boolean>;
+};

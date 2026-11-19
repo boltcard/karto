@@ -30,6 +30,7 @@ import { nativePhoneCard, type PhoneCard } from '../native/phoneCard';
 import { nativeScanHostKey, nativeSsh } from '../native/ssh';
 import type { BundleFile, UploadProgress } from '../onboarding/install';
 import { reconcileDevice, type Deps, type OnboardingState } from '../onboarding/machine';
+import { settleKeyWatch } from '../onboarding/keyWatchTask';
 import { OnboardingRunner, RunnerSlot } from '../onboarding/runner';
 import type { KeepDeps } from '../phoneCard/keep';
 import { noPhoneCardRecord, phoneCardRecord, type PhoneCardRecordStore } from '../phoneCard/record';
@@ -268,11 +269,13 @@ export function useOnboardingRunner(enabled: boolean, begin?: (saved: Onboarding
       if (begin && r.state.step === 'done') await r.update(() => begin(initial));
       setRunner(r);
       setState(r.state);
+      settleKeyWatch(r.state);
       // An upload's figure is its own attempt's: off the install step, once the step fails, or while it waits to
       // connect again after a drop, it is dropped, so the next try says "Connecting to the server…" and not where
       // the last attempt stopped.
       off = r.subscribe((x) => {
         setState(x);
+        settleKeyWatch(x); // the watch over the wait for LNVPS ends once the setup is past it
         if (x.step !== 'install' || x.error || x.waiting === 'reconnect') setUpload(null);
       });
       offUpload = r.subscribeUpload(setUpload);

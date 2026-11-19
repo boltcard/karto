@@ -36,7 +36,7 @@ internal object AlertNotifier {
   private const val CHARCOAL = 0xff24292f.toInt()
   private val main = Handler(Looper.getMainLooper())
 
-  /** The two channels, made once (Android keeps them, and the owner's changes to them). */
+  /** The channels, made once (Android keeps them, and the owner's changes to them). */
   fun channels(context: Context) {
     if (Build.VERSION.SDK_INT < 26) return
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -44,6 +44,7 @@ internal object AlertNotifier {
       listOf(
         NotificationChannel(AlertWords.CHANNEL_SPENDS, "Card spends and refused taps", NotificationManager.IMPORTANCE_HIGH),
         NotificationChannel(AlertWords.CHANNEL_RECEIVED, "Money received", NotificationManager.IMPORTANCE_DEFAULT),
+        NotificationChannel(AlertWords.CHANNEL_SETUP, "Server setup", NotificationManager.IMPORTANCE_DEFAULT),
       ),
     )
   }

@@ -370,6 +370,11 @@ class CardNativeModule : Module() {
     // The last endpoint the distributor gave, for an app opened after one came while it was closed.
     Function("pushEndpoint") { AlertEndpoint.saved(context())?.toMap() }
     Function("notificationsAllowed") { NotificationManagerCompat.from(context()).areNotificationsEnabled() }
+    // A notice of the setup's own, worded by the app (onboarding/keyWatch.ts): posted by the background check while
+    // the setup waits for LNVPS to confirm the server. A tap opens the wallet, which carries on the install.
+    Function("postSetupNotice") { tag: String, title: String, text: String ->
+      AlertNotifier.post(context(), Alert(title, text, AlertWords.CHANNEL_SETUP, tag, null, null, false))
+    }
     // Android 13 asks the person; below it notifications are allowed unless the person blocked them in Settings.
     AsyncFunction("requestNotifications") { promise: Promise ->
       val context = context()

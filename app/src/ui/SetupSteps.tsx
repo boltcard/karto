@@ -10,6 +10,7 @@ import { doneSteps, doneSummary, errorActions, installFoot, installRows, setupPr
 import type { OnboardingRunner } from '../onboarding/runner';
 import { PayPanel } from './PayPanel';
 import { RebuildControls } from './RebuildControls';
+import { KeyWaitNotify } from './KeyWaitNotify';
 import { DoneFold, Progress, StatusLine } from './setup';
 import { Body, Button, ErrorText, Panel, Small, Step, Title } from './ui';
 
@@ -42,6 +43,7 @@ export function SetupSteps({ s, runner, upload, children }: { s: OnboardingState
       {line !== null && (s.error ? <ErrorText>{line}</ErrorText> : <StatusLine text={line} spinning={working(s)} />)}
       {s.step === 'pay' && !s.error && <PayPanel s={s} runner={runner} serverTime={() => runner.deps.lnvps.serverTime()} />}
       {s.step === 'install' && <InstallList s={s} upload={upload} now={now} />}
+      {s.step === 'install' && s.waiting === 'host_key_confirm' && !s.error && <KeyWaitNotify />}
       <RebuildControls s={s} runner={runner} />
       {actions.retry && <Button title="Try again" onPress={() => runner.retry()} />}
       {actions.chooseCountry && <Button title="Choose another country" onPress={() => router.replace('/country')} />}

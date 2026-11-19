@@ -26,6 +26,9 @@ internal object AlertWords {
   const val CHANNEL_SPENDS = "alerts-spends"
   const val CHANNEL_RECEIVED = "alerts-received"
 
+  /** The setup's own notices (LNVPS has confirmed the server, or contradicted it), which the app's JavaScript words. */
+  const val CHANNEL_SETUP = "setup"
+
   /** What a payload that doesn't parse, or isn't version 1, shows: the app opens. */
   val FALLBACK = Alert("Karto", "New activity", CHANNEL_RECEIVED, "activity", null, null, false)
 
