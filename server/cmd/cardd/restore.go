@@ -43,6 +43,7 @@ func restore(args []string, stdin io.Reader, out io.Writer) error {
 	device := fs.String("device", "", "the restoring phone's hex uncompressed P-256 public key")
 	fresh := fs.Bool("fresh", false, "no backup (phrase only): an empty database, stdin unread")
 	from := fs.String("from", "", `the backup restored, for meta restore.from (default "backup", or "phrase" with -fresh)`)
+	final := fs.Bool("final", false, "the backup is the old server's final snapshot, made as the rebuild retired it (meta restore.final): nothing done there is missing from it")
 	var vm store.RestoredVM
 	fs.StringVar(&vm.ID, "vm-id", "", "the new VM's LNVPS id, for meta vm.id")
 	fs.StringVar(&vm.Host, "vm-host", "", "the new VM's hostname, for meta vm.host")
@@ -103,6 +104,9 @@ func restore(args []string, stdin io.Reader, out io.Writer) error {
 		return err
 	}
 	err = st.PrepareRestored(ctx, *from, hex.EncodeToString(raw), vm)
+	if err == nil && *final && !*fresh {
+		err = st.SetMeta(ctx, "restore.final", "1")
+	}
 	if err == nil {
 		err = st.Checkpoint(ctx)
 	}

@@ -164,7 +164,7 @@ export class FakeCardd {
   /** /data/cardd.db is there: cardd made it at up, or a restore wrote it; wipe deletes it. */
   database = false;
   /** What install.sh restore or restore-fresh last put in place, with the database's bytes as they arrived. */
-  restored: { kind: 'db'; db: Uint8Array; device: string; from?: string } | { kind: 'fresh'; device: string } | null = null;
+  restored: { kind: 'db'; db: Uint8Array; device: string; from?: string; final?: true } | { kind: 'fresh'; device: string } | null = null;
   /** The RETIRED marker beside phoenixd's seed (install.sh retire). */
   retired: { at: string; replacedBy: number } | null = null;
   /** phoenixd's seed is there (false: never installed, or re-installed through LNVPS); install.sh retired exits 9 without it. */
@@ -201,14 +201,15 @@ export class FakeCardd {
       return { stdout: `${id}\n` };
     });
     // A rebuild's commands (deploy/install.sh), with their exit codes.
-    // install.sh restore DEVICE VMID HOST IPV4 [FROM], and restore-fresh DEVICE VMID HOST IPV4.
+    // install.sh restore DEVICE VMID HOST IPV4 [FROM [final]], and restore-fresh DEVICE VMID HOST IPV4.
     const VM = `${QUOTED} ${QUOTED} ${QUOTED}`;
     const vmOf = (id: string, host: string, ipv4: string) => ({ id: unquote(id), host: unquote(host), ipv4: unquote(ipv4) });
-    ssh.when(new RegExp(`install\\.sh restore ${QUOTED} ${VM}(?: ${QUOTED})?$`), (cmd, stdin) => {
-      const [, device, id, host, ipv4, from] = new RegExp(`restore ${QUOTED} ${VM}(?: ${QUOTED})?$`).exec(cmd)!;
+    ssh.when(new RegExp(`install\\.sh restore ${QUOTED} ${VM}(?: ${QUOTED}( final)?)?$`), (cmd, stdin) => {
+      const [, device, id, host, ipv4, from, final] = new RegExp(`restore ${QUOTED} ${VM}(?: ${QUOTED}( final)?)?$`).exec(cmd)!;
       // GNU base64 -d takes any line wrapping.
       const db = base64.decode((stdin ?? '').replace(/\s+/g, ''));
-      return this.restoreDatabase({ kind: 'db', db, device: unquote(device), ...(from ? { from: unquote(from) } : {}) }, vmOf(id, host, ipv4));
+      return this.restoreDatabase(
+        { kind: 'db', db, device: unquote(device), ...(from ? { from: unquote(from) } : {}), ...(final && { final: true as const }) }, vmOf(id, host, ipv4));
     });
     ssh.when(new RegExp(`install\\.sh restore-fresh ${QUOTED} ${VM}$`), (cmd) => {
       const [, device, id, host, ipv4] = new RegExp(`restore-fresh ${QUOTED} ${VM}$`).exec(cmd)!;
@@ -253,7 +254,10 @@ export class FakeCardd {
     this.meta.set('vm.host', vm.host);
     this.meta.set('vm.ipv4', vm.ipv4);
     this.meta.set('restore.from', from);
-    this.restore = { state: 'pending', from };
+    const final = r.kind === 'db' && r.final === true;
+    if (final) this.meta.set('restore.final', '1');
+    else this.meta.delete('restore.final');
+    this.restore = { state: 'pending', from, ...(final && { final }) };
     // The phrase that drove the SSH session is proof enough: the backup's revocation of this phone is undone.
     this.revoked.delete(keyId(hexToBytes(r.device)));
     return {};

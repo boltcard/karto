@@ -170,7 +170,11 @@ export type RenewRequest = { id: string; days: number };
  * channel is back, no_channel when none came back in time, done once set (reconciledMsat went to pool).
  * from is the backup's name, or 'phrase'; times are unix seconds.
  */
-export type RestoreInfo = { state: 'pending' | 'no_channel' | 'done'; from: string; reconciledMsat?: number; reconciledAt?: number };
+export type RestoreInfo = {
+  state: 'pending' | 'no_channel' | 'done'; from: string; reconciledMsat?: number; reconciledAt?: number;
+  /** The backup was the old server's final snapshot, made as a rebuild retired it: nothing done there is missing from it. */
+  final?: boolean;
+};
 /** The money side of the server. liquidity is null while phoenixd can't be asked. */
 export type Wallet = {
   cards: WalletCard[]; pool: WalletAccount; hosting: WalletAccount;

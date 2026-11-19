@@ -5,7 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -191,6 +193,33 @@ func TestRestore(t *testing.T) {
 				t.Fatalf("the sale that was open: %+v %v", s, err)
 			}
 		})
+	}
+}
+
+// -final says the backup is the old server's final snapshot, made as the
+// rebuild retired it: nothing done on the old server is missing from it (a
+// card frozen after an hourly backup, say). cardd keeps it in meta
+// restore.final for the app; without -final, nothing is kept.
+func TestRestoreFinal(t *testing.T) {
+	ctx := context.Background()
+	for _, final := range []bool{false, true} {
+		db := filepath.Join(t.TempDir(), "cardd.db")
+		extra := []string{"-from", "a1b2 3 1790000000"}
+		if final {
+			extra = append(extra, "-final")
+		}
+		if err := runWithStdin(restoreArgs(t, db, extra...), bytes.NewReader(backupOf(t, false)), io.Discard); err != nil {
+			t.Fatal(err)
+		}
+		st, err := store.Open(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, err := st.GetMeta(ctx, "restore.final")
+		st.Close()
+		if final && (err != nil || v != "1") || !final && !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("final %v: restore.final %q %v", final, v, err)
+		}
 	}
 }
 

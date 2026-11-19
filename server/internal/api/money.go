@@ -313,6 +313,9 @@ func (a *api) wallet(w http.ResponseWriter, r *http.Request) {
 		if restore.State == "done" {
 			rj["reconciledMsat"], rj["reconciledAt"] = restore.ReconciledMsat, restore.ReconciledAt
 		}
+		if restore.Final {
+			rj["final"] = true
+		}
 		out["restore"] = rj
 	}
 	if rev != "" {

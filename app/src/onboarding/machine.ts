@@ -81,8 +81,11 @@ export function secretsWords(s: Pick<OnboardingState, 'host' | 'installed'>): st
   }
 }
 
-/** What a rebuild restores: a snapshot kept on this phone (its file's name and what it holds), or nothing but the phrase. */
-export type ChosenBackup = { kind: 'kept'; name: string; created: number; cards: number; totalMsat: number } | { kind: 'phrase_only' };
+/**
+ * What a rebuild restores: a snapshot kept on this phone (its file's name and what it holds), or nothing but the phrase.
+ * final: the old server's final snapshot, made as step 4 retired it, so nothing done there is missing from it.
+ */
+export type ChosenBackup = { kind: 'kept'; name: string; created: number; cards: number; totalMsat: number; final?: true } | { kind: 'phrase_only' };
 
 /**
  * How step 4 left the old server; at is ms. Only retired, reinstalled, empty (it holds no phoenixd
@@ -975,7 +978,7 @@ async function restoreOf(b: ChosenBackup, d: Deps): Promise<Restore> {
   if (b.kind === 'phrase_only') return { kind: 'fresh' };
   const db = ageDecrypt(await d.backups.read(b.name), d.keys.backupAgeIdentity);
   // Its name (install id, version, time) becomes meta restore.from.
-  return { kind: 'db', db, from: b.name.replace(/\.age$/, '') };
+  return { kind: 'db', db, from: b.name.replace(/\.age$/, ''), ...(b.final && { final: true }) };
 }
 
 /** Only these leave the old server unable to run phoenixd again, whatever LNVPS later says of it. */
@@ -1689,7 +1692,14 @@ async function takeLatest(
   }
   if (!x) return goesOn(s, "The old server's final snapshot can't be opened with your recovery phrase.");
   if (x.userVersion > CARDD_SCHEMA_VERSION) throw newerBackup(x.userVersion);
-  if (was?.kind === 'kept' && x.created <= was.created) return noFinal ? goesOn(s, noFinal) : s;
+  if (was?.kind === 'kept' && x.created <= was.created) {
+    if (noFinal) return goesOn(s, noFinal);
+    // A final snapshot just made that is the one chosen: cardd made no new one, as nothing had changed.
+    if (!final.justMade || name !== was.name || was.final) return s;
+    s = { ...s, rebuild: { ...r, backup: { ...was, final: true } } };
+    await d.checkpoint(s);
+    return s;
+  }
   // Restored already (the look before up sent the rebuild back to step 4): cardd restores only where no
   // database is, so the install wipes and restores again, on any target; the seed and the card key stay.
   // cardd hasn't started there, unless the app was cut once up had run and before that was saved: then
@@ -1699,7 +1709,10 @@ async function takeLatest(
   s = {
     ...s,
     ...(again && { installed: s.installed.filter((step) => step !== 'wipe' && step !== 'restore') }),
-    rebuild: { ...r, backup: { kind: 'kept', name, created: x.created, cards: x.cards, totalMsat: x.totalMsat }, backupLocked: true, ...(again && { rewipe: true }) },
+    rebuild: {
+      ...r, backup: { kind: 'kept', name, created: x.created, cards: x.cards, totalMsat: x.totalMsat, ...(final.justMade && { final: true as const }) },
+      backupLocked: true, ...(again && { rewipe: true }),
+    },
     notice: `The old server's final snapshot, of ${timeText(x.created)}, replaces ${fromText(was)} chosen in step 1.`,
   };
   await d.checkpoint(s);

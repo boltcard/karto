@@ -65,7 +65,8 @@ export async function recoveryCheckRunning(ssh: SshSession): Promise<boolean> {
 }
 
 /** What a rebuild restores: a decrypted backup (from: its name, recorded as meta restore.from), or nothing but the phrase. */
-export type Restore = { kind: 'db'; db: Uint8Array; from?: string } | { kind: 'fresh' };
+/** final: the database is the old server's final snapshot (install.sh restore's final, after from). */
+export type Restore = { kind: 'db'; db: Uint8Array; from?: string; final?: boolean } | { kind: 'fresh' };
 
 export type InstallOptions = {
   bundle: BundleFile[];
@@ -151,7 +152,7 @@ export async function install(ssh: SshSession, o: InstallOptions): Promise<void>
     const args = [shellQuote(o.device), ...vm.map(shellQuote)].join(' ');
     if (r.kind === 'fresh') return run('restore', sh(`restore-fresh ${args}`));
     // The SSH module's stdin is text: base64, which install.sh decodes.
-    return run('restore', sh(`restore ${args}${r.from ? ` ${shellQuote(r.from)}` : ''}`), base64.encode(r.db));
+    return run('restore', sh(`restore ${args}${r.from ? ` ${shellQuote(r.from)}${r.final ? ' final' : ''}` : ''}`), base64.encode(r.db));
   };
 
   const steps: Record<InstallStep, () => Promise<unknown>> = {

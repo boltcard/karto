@@ -323,7 +323,8 @@ export function readyView(s: OnboardingState, lnvpsExpires: number | null, nowS:
     return view('Your server is rebuilt', [
       paid && `${paid}.`,
       'No card can pay until you hold it to the phone: each one is marked in the wallet, and one that still points at the old server is re-pointed then.',
-      REFREEZE,
+      // The old server's final snapshot holds every freeze made there.
+      s.rebuild.backup?.kind === 'kept' && s.rebuild.backup.final ? null : REFREEZE,
     ]);
   }
   if (s.restoring) return view('Your server is ready', ['This phone is now paired with your server.', paid && `${paid}.`]);

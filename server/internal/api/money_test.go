@@ -644,6 +644,14 @@ func TestWalletShowsTheRestore(t *testing.T) {
 	if status, out := w.do("POST", "/api/v1/ledger/restore-books", nil); status != 409 || out["error"] != "not_no_channel" {
 		t.Fatalf("restore-books again: %d %v", status, out)
 	}
+	if hasKey(r, "final") {
+		t.Fatalf("final without restore.final: %v", r)
+	}
+	// From the old server's final snapshot (cardd restore -final).
+	w.st.SetMeta(ctx, "restore.final", "1")
+	if _, out := w.do("GET", "/api/v1/wallet", nil); out["restore"].(map[string]any)["final"] != true {
+		t.Fatalf("final: %v", out["restore"])
+	}
 }
 
 func hasKey(m map[string]any, k string) bool {

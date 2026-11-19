@@ -11,8 +11,9 @@
 #   install.sh wipe              rebuild in place: keep only the seed, issuer key
 #   install.sh seed              stdin: phoenixd's 12 words -> seed.dat
 #   install.sh issuer-key        stdin: 32 hex chars -> cardd's issuer.key
-#   install.sh restore DEVICE VMID HOST IPV4 [FROM]
-#                                rebuild: stdin: the database, base64
+#   install.sh restore DEVICE VMID HOST IPV4 [FROM [final]]
+#                                rebuild: stdin: the database, base64; final:
+#                                it is the old server's final snapshot
 #   install.sh restore-fresh DEVICE VMID HOST IPV4
 #                                rebuild from the phrase: an empty one
 #   install.sh up                start everything and wait until healthy
@@ -255,9 +256,17 @@ restore() {
 		exit 2
 		;;
 	esac
+	case ${6:-} in
+	'') final= ;;
+	final) final=-final ;;
+	*)
+		echo "install.sh restore: the word after FROM is final or nothing" >&2
+		exit 2
+		;;
+	esac
 	# The phone's SSH stdin is text. cardd's exit code (6 or 7) is ours.
 	base64 -d | compose run --rm --no-deps -T cardd restore -db /data/cardd.db -device "$1" \
-		-vm-id "$2" -vm-host "$3" -vm-ipv4 "$4" ${from:+-from "$from"}
+		-vm-id "$2" -vm-host "$3" -vm-ipv4 "$4" ${from:+-from "$from"} $final
 }
 
 restore_fresh() {
@@ -283,7 +292,7 @@ check_vm() {
 }
 
 vm_usage() {
-	echo "usage: install.sh restore DEVICE VMID HOST IPV4 [FROM] | restore-fresh DEVICE VMID HOST IPV4 (the new VM's id, hostname and IPv4 address)" >&2
+	echo "usage: install.sh restore DEVICE VMID HOST IPV4 [FROM [final]] | restore-fresh DEVICE VMID HOST IPV4 (the new VM's id, hostname and IPv4 address)" >&2
 	exit 2
 }
 
@@ -820,7 +829,7 @@ docker-setup) setup_docker ;;
 prepare) prepare "${2:-}" ;;
 seed) seed ;;
 issuer-key) issuer_key ;;
-restore) restore "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" ;;
+restore) restore "${2:-}" "${3:-}" "${4:-}" "${5:-}" "${6:-}" "${7:-}" ;;
 restore-fresh) restore_fresh "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
 up) up ;;
 final-snapshot) final_snapshot ;;
@@ -834,7 +843,7 @@ recovery-check)
 # recovery-check's detached part.
 recovery-run) recovery_run "$2" "${3:-}" "${4:-}" "${5:-}" ;;
 *)
-	echo "usage: install.sh system|first-boot|swap|docker|docker-setup|prepare HOST|wipe|seed|issuer-key|restore DEVICE VMID HOST IPV4 [FROM]|restore-fresh DEVICE VMID HOST IPV4|up|final-snapshot|retire NEWVM|retired|recovery-check [MINUTES]|recovery-check result" >&2
+	echo "usage: install.sh system|first-boot|swap|docker|docker-setup|prepare HOST|wipe|seed|issuer-key|restore DEVICE VMID HOST IPV4 [FROM [final]]|restore-fresh DEVICE VMID HOST IPV4|up|final-snapshot|retire NEWVM|retired|recovery-check [MINUTES]|recovery-check result" >&2
 	exit 2
 	;;
 esac

@@ -292,6 +292,16 @@ describe('install for a rebuild', () => {
     expect([cardd.meta.get('vm.id'), cardd.meta.get('vm.host'), cardd.meta.get('vm.ipv4')]).toEqual(['1001', 'vm-1001.lnvps.cloud', '45.67.89.164']);
   });
 
+  // The old server's final snapshot says so after its name: cardd keeps meta restore.final for the server page.
+  it("says when the backup is the old server's final snapshot", async () => {
+    const { ssh, cardd } = served();
+    await install(await session(ssh), { ...base, restore: { kind: 'db', db, from, final: true }, device, done: [], onStep: async () => {} });
+    expect(ssh.commands.find((c) => /install\.sh restore /.test(c.command))!.command)
+      .toBe(`sh card-app/install.sh restore '${device}' '1001' 'vm-1001.lnvps.cloud' '45.67.89.164' '${from}' final`);
+    expect(cardd.meta.get('restore.final')).toBe('1');
+    expect(cardd.restore).toEqual({ state: 'pending', from, final: true });
+  });
+
   it('starts from an empty database for the phrase alone', async () => {
     const { ssh, cardd } = served();
     const done: InstallStep[] = [];
