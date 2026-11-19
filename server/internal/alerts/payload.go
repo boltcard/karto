@@ -30,7 +30,7 @@ type RefusalReason string
 
 const (
 	RefusedPaused   RefusalReason = "paused"   // spending is paused on the server
-	RefusedOff      RefusalReason = "off"      // the card is frozen, reset or not active
+	RefusedOff      RefusalReason = "off"      // the card is frozen, reset, not active or needs its owner's check after a restore
 	RefusedRepeated RefusalReason = "repeated" // a counter already used, other than a terminal's retry
 	RefusedPerTap   RefusalReason = "per-tap"  // over the card's limit per payment ("per-payment limit" in the words)
 	RefusedDaily    RefusalReason = "daily"    // over the card's 24-hour limit

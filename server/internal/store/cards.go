@@ -145,16 +145,22 @@ func (s *Store) AdoptCard(ctx context.Context, id string, version uint32, name s
 
 // AdvanceCounter records a tap's counter. It fails with ErrReplayed unless
 // counter is strictly above the last one seen, so of two racing requests
-// with the same counter exactly one succeeds.
+// with the same counter exactly one succeeds. A card that needs its owner's
+// check (NeedsCheck) is never moved on here, whatever the counter: that is
+// CheckCounter's (ErrConflict; cards.Service.Spend refuses it before).
 func (s *Store) AdvanceCounter(ctx context.Context, id string, counter uint32) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE cards SET last_counter = ?, updated_at = ?
-		WHERE id = ? AND last_counter < ?`, counter, s.now().Unix(), id, counter)
+		WHERE id = ? AND last_counter < ? AND needs_check = 0`, counter, s.now().Unix(), id, counter)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, err := s.GetCard(ctx, id); err != nil {
+		c, err := s.GetCard(ctx, id)
+		if err != nil {
 			return err
+		}
+		if c.NeedsCheck {
+			return fmt.Errorf("%w: the card needs its owner's check after a restore", ErrConflict)
 		}
 		return ErrReplayed
 	}

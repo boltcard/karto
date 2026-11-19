@@ -330,6 +330,10 @@ func TestCheckCounterClearsTheMark(t *testing.T) {
 	if err := s.PrepareRestored(ctx, "backup", "04aa", newVM); err != nil {
 		t.Fatal(err)
 	}
+	// A tap's counter is never moved on for it, however far on (cards.Service.Spend refuses it first).
+	if err := s.AdvanceCounter(ctx, id, 40); !errors.Is(err, ErrConflict) {
+		t.Fatalf("a tap's counter: %v", err)
+	}
 	if err := s.CheckCounter(ctx, id, 4); !errors.Is(err, ErrReplayed) {
 		t.Fatalf("the backup's own counter: %v", err)
 	}
