@@ -1,4 +1,7 @@
 # TLS for the VM's hostname (Let's Encrypt; Caddy's internal CA for localhost).
+# cardd limits the invoices anyone may ask for by the last address in the
+# X-Forwarded-For that reverse_proxy writes: setting trusted_proxies, or
+# publishing cardd's port, would let a client choose that address.
 {$CARDD_HOST} {
 	reverse_proxy cardd:8080
 }

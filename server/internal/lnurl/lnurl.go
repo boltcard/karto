@@ -26,6 +26,7 @@ import (
 	"github.com/boltcard/karto/server/internal/ledger"
 	"github.com/boltcard/karto/server/internal/lnaddr"
 	"github.com/boltcard/karto/server/internal/phoenixd"
+	"github.com/boltcard/karto/server/internal/ratelimit"
 	"github.com/boltcard/karto/server/internal/store"
 	"github.com/boltcard/karto/server/internal/sun"
 )
@@ -138,8 +139,29 @@ type Server struct {
 	// payments, to find one whose webhook never came: 2 seconds in cardd (0:
 	// never, and such a payment waits for the 5-minute sweep).
 	QuickLook time.Duration
+	// Limit holds back the invoices the public callbacks make (top-ups and
+	// refund links, one limit for both): each is a row in phoenixd's
+	// database, asked for by anyone (nil: no limit). See InvoiceLimit.
+	Limit *ratelimit.Limiter
 
 	crediting sync.Mutex // one credit at a time: see credit
+
+	limitLog   sync.Mutex
+	limitSaid  time.Time // when the log last said invoices were refused
+	limitSince int       // invoices refused since then
+}
+
+// InvoiceLimit is cardd's limit on the invoices the public callbacks make,
+// per client and overall. A payer's wallet asks once per payment, and again
+// on a retry or a changed amount: 5 at once and then one every 10 s is more
+// than one person needs. Overall, 60 at once covers many payers together (a
+// shop's refunds, a crowd topping up cards), and one a second after that is
+// still far beyond a personal server's real traffic, while a flood makes
+// phoenixd at most 86,400 invoices a day instead of as many as it can.
+// At most 4,096 clients are kept (well under a megabyte): more at once
+// than that is a flood the overall limit already holds.
+func InvoiceLimit(now func() time.Time) *ratelimit.Limiter {
+	return ratelimit.New(ratelimit.Rate{Burst: 5, Every: 10 * time.Second}, ratelimit.Rate{Burst: 60, Every: time.Second}, 4096, now)
 }
 
 // Routes adds the public endpoints to mux.
@@ -153,14 +175,50 @@ func (s *Server) Routes(mux *http.ServeMux) {
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
+	writeJSONStatus(w, http.StatusOK, v)
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*") // LUD-01: web wallets call these
+	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
 
 // fail answers LNURL's error shape. Terminals and wallets show the reason.
 func fail(w http.ResponseWriter, reason string) {
 	writeJSON(w, map[string]string{"status": "ERROR", "reason": reason})
+}
+
+// mayInvoice takes one of the invoices the public callbacks may make, for
+// the client asking; false after the refusal is answered: LNURL's error,
+// with HTTP 429 and when to try again.
+func (s *Server) mayInvoice(w http.ResponseWriter, r *http.Request) bool {
+	if s.Limit == nil {
+		return true
+	}
+	ok, retry := s.Limit.Take(ratelimit.ClientKey(r))
+	if ok {
+		return true
+	}
+	s.sayLimited()
+	w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
+	writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
+		"reason": "This server is asked for too many invoices just now. Try again in a minute."})
+	return false
+}
+
+// sayLimited logs that the limit refused an invoice: the first at once, then
+// at most a line a minute with how many since, so a flood doesn't fill the
+// log. The client's address is never logged.
+func (s *Server) sayLimited() {
+	s.limitLog.Lock()
+	defer s.limitLog.Unlock()
+	s.limitSince++
+	if now := s.Now(); now.Sub(s.limitSaid) >= time.Minute {
+		s.Log.Printf("lnurl: invoices refused by the limit: %d since the last such line", s.limitSince)
+		s.limitSaid, s.limitSince = now, 0
+	}
 }
 
 // Address is an account's Lightning address: pool@, hosting@, or c<10 hex>@
@@ -238,6 +296,9 @@ func (s *Server) payCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	note, ok := payerNote(w, r)
 	if !ok {
+		return
+	}
+	if !s.mayInvoice(w, r) {
 		return
 	}
 	// The invoice's description hash stays sha256(metadata): the note isn't
@@ -878,6 +939,9 @@ func (s *Server) backCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	note, ok := payerNote(w, r)
 	if !ok {
+		return
+	}
+	if !s.mayInvoice(w, r) {
 		return
 	}
 	sum := sha256.Sum256([]byte(refundMetadata))
