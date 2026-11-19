@@ -21,6 +21,8 @@ function setup(initial = initialState('GBR')) {
       if (s.waiting === 'payment') t.lnvps.pay(s.vmId!);
       if (s.waiting === 'boot') t.lnvps.boot(s.vmId!);
       if (s.waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+      // LNVPS publishes the key the server presented on first use.
+      if (s.waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
     },
   });
   return { t, runner, saved, waits };
@@ -63,6 +65,8 @@ describe('OnboardingRunner', () => {
           if (s.waiting === 'payment') t.lnvps.pay(s.vmId!);
           if (s.waiting === 'boot') t.lnvps.boot(s.vmId!);
           if (s.waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+          // LNVPS publishes the key the server presented on first use.
+          if (s.waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
         },
       });
       return r;
@@ -153,6 +157,8 @@ describe('OnboardingRunner', () => {
         if (s.waiting === 'payment') t.lnvps.pay(s.vmId!);
         if (s.waiting === 'boot') t.lnvps.boot(s.vmId!);
         if (s.waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+        // LNVPS publishes the key the server presented on first use.
+        if (s.waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
       },
     });
     await runner.start();
@@ -206,7 +212,7 @@ describe('OnboardingRunner', () => {
           runner.pause(); // the app went to the background while waiting for payment
         }
         if (w === 'boot' && !signal.aborted) return new Promise((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }));
-        if (w === 'host_keys') t.lnvps.publishHostKeys(runner.state.vmId!, [HOST_KEY]);
+        if (w === 'host_keys' || w === 'host_key_confirm') t.lnvps.publishHostKeys(runner.state.vmId!, [HOST_KEY]);
         return Promise.resolve();
       },
     });
@@ -301,6 +307,8 @@ describe('OnboardingRunner, a connection that drops', () => {
         if (s.waiting === 'payment') t.lnvps.pay(s.vmId!);
         if (s.waiting === 'boot') t.lnvps.boot(s.vmId!);
         if (s.waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+        // LNVPS publishes the key the server presented on first use.
+        if (s.waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
         // The app leaves the screen during the third wait for the connection.
         if (s.waiting === 'reconnect' && s.drops?.n === 3) runner.pause();
       },

@@ -13,6 +13,8 @@ async function onboarded(t: ReturnType<typeof world>): Promise<OnboardingState> 
     if (s.waiting === 'payment') t.lnvps.pay(s.vmId!);
     if (s.waiting === 'boot') t.lnvps.boot(s.vmId!);
     if (s.waiting === 'host_keys') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+    // LNVPS publishes the key the server presented on first use.
+    if (s.waiting === 'host_key_confirm') t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
   }
   expect(s.step).toBe('done');
   return s;

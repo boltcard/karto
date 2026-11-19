@@ -2,15 +2,23 @@
 // contract is in deploy/README.md). Each finished step is reported through
 // onStep so the caller can save it, and a resumed install skips it. wipe and
 // restore belong to a rebuild: without one they do
-// nothing and are reported done like the others.
+// nothing and are reported done like the others. host-key is the app's own:
+// the caller's check that LNVPS has confirmed the server's SSH key, before the
+// first step that sends a secret; without a check it does nothing.
 import { base64 } from '@scure/base';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { shellQuote, SshDropped, SshUploadRefused, type SshSession } from './ssh';
 import { STEP_NOT_RUN, stepCommand } from './stepCommand';
 
 export const DIR = 'card-app';
-export const INSTALL_STEPS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta'] as const;
+export const INSTALL_STEPS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta'] as const;
 export type InstallStep = (typeof INSTALL_STEPS)[number];
+
+/**
+ * The steps that send a secret to the server: phoenixd's seed, the issuer key, and a backup's whole ledger. They all
+ * come after host-key, so none runs on a server whose SSH key LNVPS has not confirmed.
+ */
+export const SECRET_STEPS: readonly InstallStep[] = ['seed', 'issuer-key', 'restore'];
 
 /**
  * A saved list of finished steps as this app reads it: an app from before saved 'system', the one
@@ -21,9 +29,12 @@ export function savedSteps(saved: readonly string[]): InstallStep[] {
   return saved.flatMap((x): InstallStep[] => (x === 'system' ? ['first-boot', 'swap', 'docker', 'docker-setup'] : known.has(x) ? [x as InstallStep] : []));
 }
 
-/** The steps as the person sees them, in INSTALL_STEPS' order: the wipe and the restore only where they do something. */
-export const installStepsFor = (o: { wipe?: boolean; restore?: boolean }): readonly InstallStep[] =>
-  INSTALL_STEPS.filter((x) => (x !== 'wipe' || !!o.wipe) && (x !== 'restore' || !!o.restore));
+/**
+ * The steps as the person sees them, in INSTALL_STEPS' order: the wipe, the wait for LNVPS to confirm the server's
+ * key (hostKey) and the restore only where they do something.
+ */
+export const installStepsFor = (o: { wipe?: boolean; hostKey?: boolean; restore?: boolean }): readonly InstallStep[] =>
+  INSTALL_STEPS.filter((x) => (x !== 'wipe' || !!o.wipe) && (x !== 'host-key' || !!o.hostKey) && (x !== 'restore' || !!o.restore));
 
 /** A file of the deploy bundle, relative to ~/card-app on the VM: bytes, or an APK asset streamed natively. */
 export type BundleFile = { path: string; mode: number; sha256: string } & (
@@ -69,9 +80,15 @@ export type InstallOptions = {
   onUpload?: (p: UploadProgress) => void;
   /** In place: first delete everything the old server had but phoenixd's seed and the issuer key. */
   wipe?: boolean;
-  restore?: Restore;
+  /** What to restore, or how to have it when the step runs (a backup decrypted only then, never before it is needed). */
+  restore?: Restore | (() => Promise<Restore>);
   /** This phone's public key (lower-case hex), which the restore re-activates; required with restore. */
   device?: string;
+  /**
+   * Runs at the step host-key, before the first step that sends a secret (SECRET_STEPS): throwing stops the install
+   * there. Onboarding's check that LNVPS has confirmed the server's SSH key; Update server has none.
+   */
+  confirmHostKey?: () => Promise<void>;
   /** Runs just before up starts anything; throwing stops the install there (a rebuild's last look at the old VM). */
   beforeUp?: () => Promise<void>;
   /** A new token for each start of a step (stepCommand.ts): 32 hex digits, random unless a test says. */
@@ -144,10 +161,13 @@ export async function install(ssh: SshSession, o: InstallOptions): Promise<void>
     wipe: async () => {
       if (o.wipe) await run('wipe', sh('wipe'));
     },
+    'host-key': async () => {
+      await o.confirmHostKey?.();
+    },
     seed: () => run('seed', sh('seed'), o.phoenixdSeed),
     'issuer-key': () => run('issuer-key', sh('issuer-key'), o.issuerKey),
     restore: async () => {
-      if (o.restore) await restore(o.restore);
+      if (o.restore) await restore(typeof o.restore === 'function' ? await o.restore() : o.restore);
     },
     up: async () => {
       await o.beforeUp?.();

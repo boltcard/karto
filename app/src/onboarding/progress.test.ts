@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { installStepsFor } from './install';
-import { initialState, startRebuild, STEPS, type OnboardingState, type Rebuild, type Waiting } from './machine';
+import { initialState, startRebuild, STEPS, type OnboardingState, type Rebuild, type ServerHost, type Waiting } from './machine';
 import {
   countdown, doneLine, doneSteps, doneSummary, elapsed, errorActions, hostKeyNotice, INSTALL_STEP_LABELS, installFoot, installLogLine, installRows, installStepStatus, newInstallLogLines, payFoot, payWithin, readyView,
   setupInstallSteps, setupProgress, STEP_LABELS, statusLine, stepHeading, stepRows, stepsFor, stepStatus, uploadLine, working,
@@ -174,6 +174,19 @@ describe('progress', () => {
     expect(installStepsFor({})).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'seed', 'issuer-key', 'up', 'meta']);
     expect(installStepsFor({ restore: true })).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(installStepsFor({ wipe: true, restore: true })).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(installStepsFor({ hostKey: true })).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'seed', 'issuer-key', 'up', 'meta']);
+  });
+
+  // The wait for LNVPS is listed for a key trusted on first use, and stays listed, with its time, once LNVPS confirms it.
+  it('lists the wait for LNVPS only for a key trusted on first use', () => {
+    const host = { ipv4: '45.67.89.170', hostname: 'vm-1003.lnvps.cloud', user: 'debian', hostKey: { keyType: 'ssh-ed25519', publicKey: 'AAAA' } };
+    const at = (h: Partial<ServerHost>): OnboardingState => ({ ...initialState('GBR'), step: 'install', host: { ...host, ...h } });
+    expect(setupInstallSteps(at({ keySource: 'lnvps' }))).not.toContain('host-key');
+    expect(setupInstallSteps(at({}))).not.toContain('host-key'); // saved before keySource: LNVPS's
+    expect(setupInstallSteps(at({ keySource: 'first_use', trustedAt: 1 }))).toContain('host-key');
+    expect(setupInstallSteps(at({ keySource: 'first_use' }))).toContain('host-key');
+    expect(setupInstallSteps(at({ keySource: 'lnvps', trustedAt: 1 }))).toContain('host-key');
+    expect(INSTALL_STEP_LABELS['host-key']).toBe('Wait for LNVPS to confirm your server');
   });
 
   it('lists only the install steps this install runs, and never marks a hidden one as the current', () => {
@@ -317,11 +330,11 @@ describe('the setup screen', () => {
 
   it('spins while Karto works, and not when it is the person\'s turn or something failed', () => {
     const turn: Waiting[] = ['payment', 'old_payment', 'choose_vm', 'choose_backup', 'choose_where', 'confirm_older', 'confirm_retire', 'confirm_reinstall', 'confirm_expired'];
-    const karto: Waiting[] = ['email', 'order_expiring', 'boot', 'host_keys', 'health', 'network', 'old_unreachable', 'old_vm_starting', 'recovery_check'];
+    const karto: Waiting[] = ['email', 'order_expiring', 'boot', 'host_keys', 'host_key_confirm', 'health', 'network', 'old_unreachable', 'old_vm_starting', 'recovery_check'];
     for (const w of turn) expect([w, working(plain('pay', { waiting: w }))]).toEqual([w, false]);
     for (const w of karto) expect([w, working(plain('boot', { waiting: w }))]).toEqual([w, true]);
     // Every wait is one or the other.
-    expect([...turn, ...karto]).toHaveLength(18);
+    expect([...turn, ...karto]).toHaveLength(19);
     expect(working(plain('order'))).toBe(true);
     expect(working(plain('install'))).toBe(true);
     for (const kind of ['retry', 'fatal', 'wrong_phrase'] as const) expect(working(plain('boot', { error: { kind, message: 'x' } }))).toBe(false);

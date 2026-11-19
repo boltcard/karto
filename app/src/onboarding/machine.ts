@@ -16,8 +16,8 @@ import { hexToBytes } from '@noble/hashes/utils.js';
 import { bundleSha } from '../deploy/bundle';
 import { CARDD_SCHEMA_VERSION } from '../deploy/schema';
 import {
-  addDevice, finalSnapshot, FinalSnapshotRefused, install, InstallError, isRetired, phoenixdState, RecoveryCheckRunning, recoveryCheckRunning,
-  retireServer, revokeOthers, uploadBundle,
+  addDevice, finalSnapshot, FinalSnapshotRefused, install, InstallError, INSTALL_STEPS, isRetired, phoenixdState, RecoveryCheckRunning, recoveryCheckRunning,
+  retireServer, revokeOthers, SECRET_STEPS, uploadBundle,
   type BundleFile, type InstallOptions, type InstallStep, type Restore, type UploadProgress,
 } from './install';
 import { downloadLatest, notNewest, olderNotice, SnapshotRefused, timeText } from './rebuild';
@@ -34,19 +34,21 @@ export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
  * runner's update()); old_vm_starting is for the old server to answer SSH after LNVPS starts it;
  * old_payment for a day paid on an expired old server, so that it can be retired properly;
  * recovery_check for install.sh recovery-check to end on the old server (it starts its phoenixd again);
- * reconnect for the connection to the server being set up, which dropped (drops says how often in a row).
+ * reconnect for the connection to the server being set up, which dropped (drops says how often in a row);
+ * host_key_confirm for LNVPS to publish the SSH key of a server trusted on first use, before any secret goes to it.
  */
 export type Waiting =
-  | 'email' | 'payment' | 'order_expiring' | 'boot' | 'host_keys' | 'health' | 'network' | 'old_unreachable'
+  | 'email' | 'payment' | 'order_expiring' | 'boot' | 'host_keys' | 'host_key_confirm' | 'health' | 'network' | 'old_unreachable'
   | 'choose_vm' | 'choose_backup' | 'confirm_older' | 'choose_where' | 'confirm_retire' | 'old_vm_starting' | 'confirm_reinstall'
   | 'confirm_expired' | 'old_payment' | 'recovery_check' | 'reconnect' | 'pay_days' | 'lnvps_busy' | 'mailtm_busy';
 export type ErrorKind = 'retry' | 'fatal' | 'wrong_phrase';
 
 /**
  * keySource: 'lnvps' when the pinned key is the one LNVPS published; 'first_use' when it is
- * the one the server presented before LNVPS had it (verifyHostKey checks it later).
+ * the one the server presented before LNVPS had it. The install sends the server no secret until
+ * LNVPS publishes the same key (the step host-key), which makes it 'lnvps'.
  * Older saved states have no keySource: they pinned LNVPS's key.
- * trustedAt: when a first-use key was trusted (ms), so a confirmation that never comes is noticed.
+ * trustedAt: when a first-use key was trusted (ms); kept once LNVPS confirms it, so the setup still lists the wait.
  */
 export type ServerHost = { ipv4: string; hostname: string; user: string; hostKey: PinnedHostKey; keySource?: 'lnvps' | 'first_use'; trustedAt?: number };
 
@@ -248,6 +250,15 @@ export type Deps = {
 export const HOST_KEY_WAIT_MS = 10 * 60 * 1000;
 /** LNVPS publishes a new server's key about an hour after it starts: twice that is a warning. */
 export const HOST_KEY_CONFIRM_WAIT_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long the install waits at host-key for LNVPS to publish the server's key before it offers Try again: LNVPS
+ * reads a new server's key about an hour after it starts, then hourly, so three hours is more than it should take.
+ */
+export const HOST_KEY_CONFIRM_LIMIT_MS = 3 * 60 * 60 * 1000;
+export const HOST_KEY_UNCONFIRMED =
+  'LNVPS still hasn’t confirmed your server after 3 hours; it normally does within about an hour of the server starting. ' +
+  'Your wallet seed and card key have not been sent to the server. Try again to keep waiting, or ask LNVPS why your ' +
+  'server’s SSH key isn’t listed.';
 export const INVOICE_RENEW_BEFORE_MS = 60 * 1000;
 /** For an invoice whose expiry can't be read: assume it is short. */
 const INVOICE_FALLBACK_LIFETIME_MS = 5 * 60 * 1000;
@@ -378,7 +389,11 @@ function classify(e: unknown, s: OnboardingState): { kind: ErrorKind; message: s
   if (e instanceof HostKeyMismatchError && s.host?.keySource === 'first_use' && !s.hostKeyMismatch) {
     return { kind: 'fatal', message: `The server's SSH key changed since this app first trusted it: ${e.message}` };
   }
-  if (e instanceof HostKeyMismatchError) return { kind: 'fatal', message: `The server's SSH key is not the one LNVPS published: ${e.message}` };
+  if (e instanceof HostKeyMismatchError) {
+    // Before the seed, the install has sent no secret (host-key holds them back): say so.
+    const unsent = s.installed.includes('seed') ? '' : '. Your wallet seed and card key were not sent to it. Stop using this server.';
+    return { kind: 'fatal', message: `The server's SSH key is not the one LNVPS published: ${e.message}${unsent}` };
+  }
   if (e instanceof SshAuthError) {
     return {
       kind: 'retry',
@@ -623,9 +638,8 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
         : { ...s.host, hostKey: listed, keySource: 'lnvps', trustedAt: undefined };
       return { ...s, host, hostKeyTypes: undefined, step: 'retire' };
     }
-    // Otherwise (a new VM, or in place with nothing pinned) a rebuild trusts on first use as onboarding does,
-    // though it sends the seed, the issuer key and the whole ledger:
-    // verifyHostKey checks the key later.
+    // Otherwise (a new VM, or in place with nothing pinned) a rebuild trusts on first use as onboarding does: its
+    // install, too, sends the seed, the issuer key and the whole ledger only once LNVPS has published the same key.
   }
   const runningSince = s.runningSince ?? d.now();
   const ipv4 = v4.ip.split('/')[0];
@@ -636,8 +650,8 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
     keySource = 'lnvps';
   } else {
     // LNVPS reads a new server's key about an hour after it starts (one scan before sshd is
-    // up, then hourly). The app trusts the key the server presents now, and
-    // verifies it against LNVPS's once that appears (verifyHostKey).
+    // up, then hourly). The app pins the key the server presents now, for the install's
+    // steps that carry no secret; the step host-key waits for LNVPS's to match it before any secret goes.
     try {
       hostKey = await d.scanHostKey(ipv4, 22);
     } catch {
@@ -750,6 +764,27 @@ async function checkedHost(s: OnboardingState, d: Deps): Promise<OnboardingState
   return v;
 }
 
+/** A key trusted on first use that LNVPS has neither confirmed nor contradicted yet. */
+const keyUnconfirmed = (s: OnboardingState) => s.host?.keySource === 'first_use' && !s.hostKeyMismatch;
+
+/** The install step that runs next. */
+const nextInstallStep = (s: OnboardingState) => INSTALL_STEPS.find((x) => !s.installed.includes(x));
+
+/** host-key's check found the key still unconfirmed: the install stops there, before any secret. */
+class HostKeyUnconfirmed extends Error {}
+
+/**
+ * The wait at host-key for LNVPS to publish the server's key, timed from when the step began (kept across a
+ * closed app); past HOST_KEY_CONFIRM_LIMIT_MS, Try again, which waits as long again.
+ */
+function awaitHostKey(s: OnboardingState, d: Pick<Deps, 'now'>): OnboardingState {
+  const at = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : d.now();
+  if (d.now() - at >= HOST_KEY_CONFIRM_LIMIT_MS) {
+    return { ...s, stepStartedAt: undefined, error: { kind: 'retry', message: HOST_KEY_UNCONFIRMED } };
+  }
+  return { ...s, stepStartedAt: { step: 'host-key', at }, waiting: 'host_key_confirm' };
+}
+
 async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   // Noted and saved before anything can fail, so a first attempt that never connects keeps it.
   if (s.installSince === undefined) {
@@ -757,6 +792,9 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
     await d.checkpoint(s);
   }
   s = await checkedHost(s, d);
+  // Waiting at host-key: LNVPS is asked again, and nothing is sent to the server, not even a login.
+  const next = nextInstallStep(s);
+  if (keyUnconfirmed(s) && (next === 'host-key' || (next !== undefined && SECRET_STEPS.includes(next)))) return awaitHostKey(s, d);
   const rebuild = await rebuildOptions(s, d);
   const session = await connect(s, d);
   let current = s;
@@ -767,6 +805,13 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
     await install(session, {
       ...installOptions(s, d.keys, await d.bundle()),
       ...rebuild,
+      // The seed, the issuer key and a backup go only to a server whose SSH key LNVPS has published: a key
+      // trusted on first use could be anyone's on the network between this phone and the server.
+      confirmHostKey: async () => {
+        current = await checkedHost(current, d);
+        if (current.hostKeyMismatch) throw new HostKeyMismatchError(current.hostKeyMismatch);
+        if (keyUnconfirmed(current)) throw new HostKeyUnconfirmed();
+      },
       beforeUp: () => checkPhraseVms(s, d),
       done: s.installed,
       onUpload: d.onUpload,
@@ -790,6 +835,7 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
     });
   } catch (e) {
     if (e instanceof SshDropped) return dropped(e, current); // a wait, from the steps saved
+    if (e instanceof HostKeyUnconfirmed) return awaitHostKey(current, d); // a wait, from host-key's start
     if (isNetworkFailure(e)) throw e; // LNVPS, asked before up: wait, from the steps saved
     // In place, a recovery check on this (old) server holds wipe and up: advance waits for it, from the steps saved.
     if (e instanceof RecoveryCheckRunning) throw e;
@@ -811,18 +857,19 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
 
 /**
  * A rebuild's part of the install: in place, wipe the old
- * server's data first; restore the chosen backup (decrypted here, in memory, only
- * while the restore is still to do), or start empty for the phrase alone.
+ * server's data first; restore the chosen backup (decrypted in memory when the restore
+ * step runs, and only while it is still to do), or start empty for the phrase alone.
  */
 async function rebuildOptions(s: OnboardingState, d: Deps): Promise<Pick<InstallOptions, 'wipe' | 'restore' | 'device'>> {
   const r = s.rebuild;
   if (!r) return {};
-  if (!r.backup) throw new StepError('fatal', 'A rebuild reached the install without a backup chosen');
+  const backup = r.backup;
+  if (!backup) throw new StepError('fatal', 'A rebuild reached the install without a backup chosen');
   // The look before up reads step 4's record: without one it would let any old server be.
   if (!r.retire) throw new StepError('fatal', "A rebuild reached the install without step 4's record");
   return {
     wipe: r.target?.kind === 'in_place' || !!r.rewipe,
-    restore: s.installed.includes('restore') ? undefined : await restoreOf(r.backup, d),
+    restore: s.installed.includes('restore') ? undefined : () => restoreOf(backup, d),
     device: d.device.publicKeyHex.toLowerCase(),
   };
 }

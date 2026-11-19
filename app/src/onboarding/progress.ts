@@ -26,6 +26,7 @@ const WAITING_TEXT: Record<Waiting, string> = {
   order_expiring: 'This order is about to expire. A new one is made once LNVPS deletes it…',
   boot: 'The server is starting…',
   host_keys: 'Waiting for the new server to answer…',
+  host_key_confirm: 'Waiting for LNVPS to confirm your server…',
   health: 'Waiting for the server’s web address to be ready…',
   network: 'The phone can’t reach the internet right now. Trying again…',
   old_unreachable: 'Neither the old server nor LNVPS can be reached to say what the old server is doing. Trying again…',
@@ -186,6 +187,7 @@ export function statusLine(s: OnboardingState, now = Date.now()): string | null 
     return `${WAITING_TEXT.recovery_check} ${Math.floor(Math.max(0, now - s.checkSince) / 60_000)} min so far.`;
   }
   if (s.waiting === 'reconnect') return reconnectLine(s);
+  if (s.waiting === 'host_key_confirm') return hostKeyWaitLine(s, now);
   if (s.waiting) return WAITING_TEXT[s.waiting];
   if (s.step === 'install' || s.step === 'done') return null;
   if (s.step === 'order' && findsServer(s)) return STEP_WORKING.where;
@@ -193,12 +195,27 @@ export function statusLine(s: OnboardingState, now = Date.now()): string | null 
 }
 
 /**
+ * The wait at host-key: how long so far, why, and what it holds back. The minutes count from the step's start
+ * (kept across a closed app).
+ */
+function hostKeyWaitLine(s: OnboardingState, now: number): string {
+  const since = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : now;
+  return (
+    `Waiting for LNVPS to confirm your server: ${Math.floor(Math.max(0, now - since) / 60_000)} min so far. ` +
+    'LNVPS checks a new server’s identity (its SSH key) about an hour after it starts, then every hour. ' +
+    'Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.'
+  );
+}
+
+/**
  * The install steps the setup lists: a rebuild's wipe in place, or again after a newer final snapshot
- * replaced a backup restored (rewipe); its restore for a kept backup (the phrase alone has none to show).
+ * replaced a backup restored (rewipe); the wait for LNVPS to confirm a key trusted on first use (trustedAt stays
+ * once it has); its restore for a kept backup (the phrase alone has none to show).
  */
 export const setupInstallSteps = (s: OnboardingState): readonly InstallStep[] => {
   const r = s.rebuild;
-  return installStepsFor({ wipe: r?.target?.kind === 'in_place' || !!r?.rewipe, restore: r?.backup?.kind === 'kept' });
+  const hostKey = s.host?.keySource === 'first_use' || s.host?.trustedAt !== undefined;
+  return installStepsFor({ wipe: r?.target?.kind === 'in_place' || !!r?.rewipe, hostKey, restore: r?.backup?.kind === 'kept' });
 };
 
 export type StepRow = { step: InstallStep; label: string; status: 'done' | 'current' | 'todo'; time: string | null; spoken: string };
@@ -266,7 +283,10 @@ export function newInstallLogLines(prev: OnboardingState | null, s: OnboardingSt
 
 /** Under the install's steps: its whole minutes so far (from installSince, when the state has it) and what to do meanwhile. */
 export function installFoot(s: OnboardingState, nowMs: number): string {
-  const keep = 'Keep the app open: the screen stays on. If you leave, it carries on when you come back.';
+  // The wait for LNVPS can take an hour: the app needn't stay open for it.
+  const keep = s.waiting === 'host_key_confirm'
+    ? 'You can leave the app while LNVPS confirms your server: the install carries on when you come back.'
+    : 'Keep the app open: the screen stays on. If you leave, it carries on when you come back.';
   return s.installSince === undefined ? keep : `${Math.floor(Math.max(0, nowMs - s.installSince) / 60_000)} min so far. ${keep}`;
 }
 
@@ -303,6 +323,7 @@ export const INSTALL_STEP_LABELS: Record<InstallStep, string> = {
   'docker-setup': 'Set up Docker',
   prepare: 'Build the card server',
   wipe: 'Wipe the old server data',
+  'host-key': 'Wait for LNVPS to confirm your server',
   seed: 'Set the Lightning wallet seed',
   'issuer-key': 'Set the card key',
   restore: 'Restore the backup',

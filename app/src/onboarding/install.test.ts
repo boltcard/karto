@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { base64 } from '@scure/base';
 import {
   addDevice, finalSnapshot, FinalSnapshotRefused, install, InstallError, INSTALL_STEPS, isRetired, phoenixdState, RecoveryCheckRunning, recoveryCheckRunning,
-  retireServer, savedSteps, uploadBundle, type InstallStep,
+  retireServer, savedSteps, SECRET_STEPS, uploadBundle, type InstallStep,
 } from './install';
 import { shellQuote, SshDropped, SshUploadRefused } from './ssh';
 import { STEP_NOT_RUN, STEP_PREFIX, stepCommand } from './stepCommand';
@@ -162,10 +162,32 @@ describe('install', () => {
     expect(err).toBeInstanceOf(InstallError);
     expect(err.kind).toBe('retry');
     expect(err.message).toContain('cardd-1 is unhealthy');
-    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'seed', 'issuer-key', 'restore']);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
     await install(await session(ssh), opts);
     expect(ssh.ran(/install\.sh (first-boot|swap|docker|docker-setup)$/)).toBe(4);
     expect(ssh.ran(/install\.sh up/)).toBe(2);
+    expect(done).toEqual([...INSTALL_STEPS]);
+  });
+
+  // The caller's check that LNVPS confirmed the server's key runs before any step that sends a secret, and stops them all.
+  it('runs host-key\'s check after the steps that carry no secret and before every one that does', async () => {
+    const ssh = new FakeSsh();
+    const done: InstallStep[] = [];
+    const unconfirmed = new Error('not confirmed yet');
+    let ranBefore: string[] = [];
+    const confirmHostKey = async () => {
+      ranBefore = ssh.commands.map((c) => c.command);
+      throw unconfirmed;
+    };
+    const err = await install(await session(ssh), { ...base, done, onStep: async (s) => void done.push(s), confirmHostKey }).catch((e) => e);
+    expect(err).toBe(unconfirmed);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe']);
+    expect(ranBefore.some((c) => /install\.sh prepare /.test(c))).toBe(true);
+    expect(ssh.ran(/install\.sh (seed|issuer-key|restore|restore-fresh)( |$)/)).toBe(0);
+    expect(ssh.commands.some((c) => c.stdin === base.phoenixdSeed || c.stdin === base.issuerKey)).toBe(false);
+    expect(SECRET_STEPS.every((x) => INSTALL_STEPS.indexOf(x) > INSTALL_STEPS.indexOf('host-key'))).toBe(true);
+    // Confirmed, the install carries on from host-key.
+    await install(await session(ssh), { ...base, done, onStep: async (s) => void done.push(s), confirmHostKey: async () => {} });
     expect(done).toEqual([...INSTALL_STEPS]);
   });
 
@@ -221,7 +243,7 @@ describe('install for a rebuild', () => {
       onStep: async (x) => void done.push(x),
       beforeUp: async () => void seen.push(`beforeUp after ${ssh.commands.at(-1)!.command}`),
     });
-    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(done).toEqual([...INSTALL_STEPS]);
     expect(ssh.commands.map((c) => c.command).slice(4, 14)).toEqual([
       'sh card-app/install.sh first-boot',
