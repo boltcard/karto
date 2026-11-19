@@ -56,3 +56,18 @@ export function readLink(text: string): PosLink | null {
   if (Object.keys(parts).length !== wanted.length || !wanted.every((k) => k in parts)) return null;
   return linkOf(kind, parts);
 }
+
+/**
+ * Where a link from outside the app takes it (the router's redirectSystemPath, pos-app/+native-intent.tsx). Any app
+ * or web page can open a kartopos:// link, and the router would open whichever screen it names: This PoS, whose
+ * Unpair acts, the till, the scanner. Only the pairing link is let through, as it came (the Pair screen checks its
+ * parts). Any other opens the app at its start when it starts the app, as its icon does, and while the app is open
+ * changes nothing: null leaves it where it is (a sale stays in front). path: the link as the system gave it, a
+ * whole URL (kartopos://pair?…), or a path.
+ */
+export function systemPath(path: string, initial: boolean): string | null {
+  const rest = path.replace(/^[a-z][a-z0-9+.-]*:/, '').replace(/^\/+/, '');
+  const screen = /^[^?#]*/.exec(rest)?.[0];
+  if (screen === 'pair') return path;
+  return initial ? '/' : null;
+}

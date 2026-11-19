@@ -49,15 +49,30 @@ export const alreadyPaired = (p: Paired, host: string) =>
 /**
  * A pairing link from outside the app on a phone that is already paired. Any app or web page on the phone can send
  * one, and one press of "Pair with the new shop" would have every later sale invoiced by its server: so it is
- * refused, with no other shop on offer. The phone pairs with another shop once it is unpaired (This PoS), or by a
- * code the till's own scanner reads. What it says, how to unpair, and its one button.
+ * refused, with no other shop on offer, whoever sent it (Karto Wallet's "Karto PoS is on this phone" too). The
+ * phone pairs again, with its shop or another, once it is unpaired (Sales, This PoS, Unpair this phone) and given
+ * a new code: the refused one counts as answered. (A paired till's screens lead to its scanner only from the Pair
+ * page after a pairing failed, so 'choose' is all but out of reach.) What it says, how to unpair, and its one button.
  */
 export const linkRefused = (p: Paired) =>
   ({
     line: pairedLine(p),
-    why: "A link from another app or a web page can't move it to another shop. To pair it with another shop, unpair it first: open Sales, then This PoS, then Unpair this phone.",
+    why: "A pairing link can't change the shop of a phone that is already paired. To pair it again, with this shop or another, unpair it first (open Sales, then This PoS, then Unpair this phone), then ask Karto Wallet for a new code.",
     back: 'Back to the till',
   }) as const;
+
+/** Over Pair on a phone that isn't paired, for a link it answered before: refused while paired, used, or turned down. */
+export const SPENT_CODE = 'That pairing code was used or turned down already. Ask Karto Wallet for a new one: Shop, then Add a PoS phone.';
+
+/** This PoS's Unpair this phone, and the question it puts before it acts. */
+export const unpairWords = {
+  row: 'Unpair this phone',
+  rowLine: "It stops taking payments. The shop's sales stay.",
+  line: "Unpair this phone? It stops taking payments at once. The shop's sales stay. To take payments again it needs a new code from Karto Wallet.",
+  unpair: 'Unpair',
+  keep: 'Keep this shop',
+  busy: 'Unpairing…',
+} as const;
 
 /**
  * A pairing link that came from outside the app (Karto Wallet on this phone, the phone's own camera, but also any
@@ -114,13 +129,14 @@ export function codeInHand(scanned: Code | null, linked: Code | null): Given | n
  * paired; 'ask' for a link from outside on a phone that isn't paired; on a paired phone, 'choose' (the old shop or
  * the new) for a code its own scanner read, and 'refused' for a link from outside, which any app or web page could
  * have sent (answered for good, and nothing offered); 'plain' with none, or once the code was used or turned down;
- * 'stale' for a link answered before, which opens the app as its icon does; 'in-sale' for a link that comes while
- * a sale is open: nobody pairs a till in the middle of a sale, so it is answered for good and the sale stays in front.
+ * for a link answered before, 'stale' on a paired phone, which opens the app as its icon does, and 'spent' on one
+ * that isn't, the plain page saying so (SPENT_CODE); 'in-sale' for a link that comes while a sale is open: nobody
+ * pairs a till in the middle of a sale, so it is answered for good and the sale stays in front.
  */
-export function pairStep(paired: Paired | null, given: Given | null, used: boolean, inSale = false): 'pair' | 'ask' | 'choose' | 'refused' | 'plain' | 'stale' | 'in-sale' {
+export function pairStep(paired: Paired | null, given: Given | null, used: boolean, inSale = false): 'pair' | 'ask' | 'choose' | 'refused' | 'plain' | 'stale' | 'spent' | 'in-sale' {
   if (!given || used) return 'plain';
   if (inSale && !given.scanned) return 'in-sale';
-  if (!given.scanned && given.answered) return 'stale';
+  if (!given.scanned && given.answered) return paired ? 'stale' : 'spent';
   if (paired) return given.scanned ? 'choose' : 'refused';
   return given.scanned ? 'pair' : 'ask';
 }

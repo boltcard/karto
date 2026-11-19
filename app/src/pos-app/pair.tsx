@@ -4,16 +4,17 @@
 // page on the phone can send one, so the person is asked first, with the server it names. On a phone that is
 // already paired only the scanner's code asks (the old shop or the new): a link is refused, and the screen says how
 // to unpair. Android hands a link over again whenever it remakes the app, so a link the person has answered, or
-// that was refused, is remembered (PosStore.answered) and opens the app as its icon does. pos/pairing.ts has the
-// words and the rule, and does the pairing.
+// that was refused, is remembered (PosStore.answered): on a paired phone it opens the app as its icon does, on one
+// that isn't the plain page says the code is spent. Only a pairing link reaches this screen, or any, from outside
+// (+native-intent.tsx). pos/pairing.ts has the words and the rule, and does the pairing.
 import { Redirect, router, useFocusEffect, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { usePos } from '../pos/app';
 import { PosClient } from '../pos/client';
 import { linkOf } from '../pos/links';
-import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, linkRefused, PAIR_WORDS, pairStep, pairWith } from '../pos/pairing';
-import { Body, Button, ErrorText, Screen, Small, Title } from '../ui/ui';
+import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, linkRefused, PAIR_WORDS, pairStep, pairWith, SPENT_CODE } from '../pos/pairing';
+import { Body, Button, ErrorText, Screen, Small, Title, WarnText } from '../ui/ui';
 
 export default function Pair() {
   const pos = usePos();
@@ -159,6 +160,7 @@ export default function Pair() {
       <Title>{PAIR_WORDS.heading}</Title>
       <Body>{PAIR_WORDS.how}</Body>
       {error && <ErrorText>{error}</ErrorText>}
+      {step === 'spent' && <WarnText>{SPENT_CODE}</WarnText>}
       <Button title={PAIR_WORDS.scan} onPress={() => router.push('/scan')} />
       {pos.paired && <Button title="Back to the till" kind="secondary" onPress={() => router.replace('/till')} />}
       <Small>{PAIR_WORDS.limits}</Small>

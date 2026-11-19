@@ -1,18 +1,20 @@
 // This PoS: the phone's name in the shop, the shop's server, the sound switch, and Unpair this
-// phone, which acts at once: the shop is asked to forget the phone, the phone forgets the shop, and Pair opens.
+// phone, which asks first (pairing again takes a new code from Karto Wallet); then the shop is asked to forget the
+// phone, the phone forgets the shop, and Pair opens.
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { usePos } from '../pos/app';
 import { BUILD_LABEL } from '../pos/build';
-import { unpair } from '../pos/pairing';
+import { unpair, unpairWords } from '../pos/pairing';
 import { walletFact } from '../pos/names';
 import { Fact, SwitchLine } from '../pos/parts';
-import { ListGroup, ListRow, Panel, Screen, Small } from '../ui/ui';
+import { Body, Button, Callout, ListGroup, ListRow, Panel, Screen, Small } from '../ui/ui';
 
 export default function ThisPos() {
   const pos = usePos();
+  const [asking, setAsking] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  if (pos.paired === undefined || leaving) return <Screen title="This PoS" busy busyText={leaving ? 'Unpairing…' : undefined} />;
+  if (pos.paired === undefined || leaving) return <Screen title="This PoS" busy busyText={leaving ? unpairWords.busy : undefined} />;
   if (pos.paired === null) return <Redirect href="/pair" />;
   const leave = async () => {
     setLeaving(true);
@@ -28,9 +30,17 @@ export default function ThisPos() {
         <Fact label="The shop's server" value={pos.paired.host} />
         <SwitchLine name="Sound when paid" value={pos.sound} onChange={pos.setSound} />
       </Panel>
-      <ListGroup>
-        <ListRow icon="cross" name="Unpair this phone" line="It stops taking payments. The shop's sales stay." danger acts onPress={() => void leave()} />
-      </ListGroup>
+      {asking ? (
+        <Callout>
+          <Body>{unpairWords.line}</Body>
+          <Button title={unpairWords.unpair} kind="danger" onPress={() => void leave()} />
+          <Button title={unpairWords.keep} kind="secondary" onPress={() => setAsking(false)} />
+        </Callout>
+      ) : (
+        <ListGroup>
+          <ListRow icon="cross" name={unpairWords.row} line={unpairWords.rowLine} danger acts onPress={() => setAsking(true)} />
+        </ListGroup>
+      )}
       <Small>{BUILD_LABEL()}</Small>
     </Screen>
   );

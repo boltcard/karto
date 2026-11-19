@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { linkOf, NOT_A_CODE, readLink, validCode, validHost } from './links';
+import { linkOf, NOT_A_CODE, readLink, systemPath, validCode, validHost } from './links';
+import { redirectSystemPath } from '../pos-app/+native-intent';
 
 const CODE = '0123456789abcdef0123456789abcdef';
 const HOST = 'vm-1001.lnvps.cloud';
@@ -78,5 +79,39 @@ describe('linkOf', () => {
     expect(linkOf('pair', { host: [HOST, 'evil.example.com'], code: CODE })).toBeNull();
     expect(linkOf('server', {})).toBeNull();
     expect(linkOf('server', { host: `${HOST}/x` })).toBeNull();
+  });
+});
+
+// Any app or web page can open a kartopos:// link. Only the pairing link is let through to the router: a link to
+// any other screen (This PoS and its Unpair, the till, the scanner) opens the app as its icon does when it starts
+// the app, and changes nothing while the app is open.
+describe('systemPath', () => {
+  const pair = `kartopos://pair?host=${HOST}&code=${CODE}`;
+
+  it('lets the pairing link through, as it came, whether it starts the app or not', () => {
+    for (const initial of [true, false]) {
+      expect(systemPath(pair, initial)).toBe(pair);
+      expect(systemPath(`kartopos:///pair?host=${HOST}&code=${CODE}`, initial)).toBe(`kartopos:///pair?host=${HOST}&code=${CODE}`);
+      expect(systemPath(`/pair?host=${HOST}&code=${CODE}`, initial)).toBe(`/pair?host=${HOST}&code=${CODE}`);
+      // Its parts are the Pair screen's to check.
+      expect(systemPath('kartopos://pair', initial)).toBe('kartopos://pair');
+    }
+  });
+
+  it('starts the app at its start for any other link, and leaves an open app where it is', () => {
+    for (const path of [
+      'kartopos://this-pos', 'kartopos://till', 'kartopos://sales', 'kartopos://sale', 'kartopos://scan', 'kartopos://_sitemap', 'kartopos://nowhere',
+      `kartopos://server?host=${HOST}`, `kartopos://pair/x?host=${HOST}&code=${CODE}`, `kartopos://PAIR?host=${HOST}&code=${CODE}`, `kartopos://pairs?host=${HOST}`,
+      `kartopos://this-pos?next=pair`, '/this-pos', 'kartopos://', 'kartopos:///', 'exp://192.168.1.2:8081/--/this-pos',
+    ]) {
+      expect(systemPath(path, true)).toBe('/');
+      expect(systemPath(path, false)).toBeNull();
+    }
+  });
+
+  it("is the router's rewrite of every link from outside the app", () => {
+    expect(redirectSystemPath({ path: pair, initial: false })).toBe(pair);
+    expect(redirectSystemPath({ path: 'kartopos://this-pos', initial: true })).toBe('/');
+    expect(redirectSystemPath({ path: 'kartopos://this-pos', initial: false })).toBeNull();
   });
 });
