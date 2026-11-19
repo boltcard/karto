@@ -8,8 +8,8 @@ import (
 
 func TestMigration15(t *testing.T) {
 	s := open(t)
-	if SchemaVersion() != 15 {
-		t.Fatalf("schema %d, want 15", SchemaVersion())
+	if SchemaVersion() < 15 {
+		t.Fatalf("schema %d, want at least 15", SchemaVersion())
 	}
 	var n int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('ledger_tx') WHERE name = 'via'`).Scan(&n); err != nil || n != 1 {

@@ -77,7 +77,8 @@ func backupOf(t *testing.T, before6b bool) []byte {
 			DROP INDEX holds_payment_id; ALTER TABLE holds DROP COLUMN offer; ALTER TABLE holds DROP COLUMN payment_id;
 			ALTER TABLE holds DROP COLUMN gave_up_at; ALTER TABLE holds DROP COLUMN reason;
 			DROP TABLE topup_notes; ALTER TABLE ledger_tx DROP COLUMN payer_note; DROP TABLE push_endpoints; DROP TABLE recent_removed;
-			DROP INDEX holds_sale; ALTER TABLE holds DROP COLUMN sale_id; DROP TABLE refund_links; ALTER TABLE ledger_tx DROP COLUMN via; DROP INDEX ledger_entry_tx; PRAGMA user_version = 3`)
+			DROP INDEX holds_sale; ALTER TABLE holds DROP COLUMN sale_id; DROP TABLE refund_links; ALTER TABLE ledger_tx DROP COLUMN via; DROP INDEX ledger_entry_tx;
+			ALTER TABLE cards DROP COLUMN needs_check; PRAGMA user_version = 3`)
 	}
 	b, err := os.ReadFile(snap)
 	if err != nil {
@@ -150,8 +151,9 @@ func TestRestore(t *testing.T) {
 			if uv, err := st.UserVersion(ctx); err != nil || uv != store.SchemaVersion() {
 				t.Fatalf("user_version %d %v", uv, err)
 			}
-			// Migrated before the new vm.host: the card keeps the host it points at.
-			if c, err := st.GetCard(ctx, cardID); err != nil || c.State != store.StateActive || c.LastCounter != 7 || c.Host != "vm-1009.lnvps.cloud" {
+			// Migrated before the new vm.host: the card keeps the host it points at. It
+			// can't pay until the owner's phone has checked it: its counter is the backup's.
+			if c, err := st.GetCard(ctx, cardID); err != nil || c.State != store.StateActive || c.LastCounter != 7 || c.Host != "vm-1009.lnvps.cloud" || !c.NeedsCheck {
 				t.Fatalf("card %+v %v", c, err)
 			}
 			if b, _ := st.Balance(ctx, store.CardAccount(cardID)); b.EntriesMsat != 4_000_000 {

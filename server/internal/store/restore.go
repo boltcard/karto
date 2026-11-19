@@ -23,6 +23,12 @@ type RestoredVM struct{ ID, Host, IPv4 string }
 // backup has it revoked. The other phones are left for revoke-others. A vm
 // not named in full is refused, changing nothing.
 //
+// The cards: each one active or frozen needs its owner's check before it
+// can pay again (Card.NeedsCheck). Its counter is the backup's, which may be
+// behind the card's: a tap recorded after the backup by a terminal would
+// otherwise pass here, as the MAC doesn't cover the host. The check, a tap
+// read by the owner's phone, moves the counter to the card's own.
+//
 // The point of sale: the PoS phones stay as the backup has
 // them (a removed one is never brought back, whatever key is given); a sale
 // still open is expired; and the fee credit cardd had accounted for is
@@ -44,6 +50,11 @@ func (s *Store) PrepareRestored(ctx context.Context, from, devicePubHex string, 
 		}
 		// Nor can a top-up's that was waiting with a payer's note.
 		if _, err := tx.ExecContext(ctx, `DELETE FROM topup_notes`); err != nil {
+			return err
+		}
+		// A card being set up, wiped or being wiped can't pay: its next state
+		// comes with a tap checked by the owner's phone, or new keys.
+		if _, err := tx.ExecContext(ctx, `UPDATE cards SET needs_check = 1 WHERE state IN (?, ?)`, StateActive, StateFrozen); err != nil {
 			return err
 		}
 		// Every endpoint was a phone's for the old server; each phone sets its

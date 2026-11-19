@@ -34,12 +34,16 @@ type Card struct {
 	PerTapMinor   int64
 	DailyMinor    int64
 	Host          string // the host its URL points at
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// NeedsCheck: restored from a backup (PrepareRestored), the card can't
+	// pay until its owner's phone has checked a tap of it (CheckCounter),
+	// which moves the counter to the card's own.
+	NeedsCheck bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 const cardCols = `id, version, state, last_counter, name, per_tap_sat, daily_sat, host, created_at, updated_at,
-	COALESCE(limit_currency, ''), COALESCE(per_tap_minor, 0), COALESCE(daily_minor, 0)`
+	COALESCE(limit_currency, ''), COALESCE(per_tap_minor, 0), COALESCE(daily_minor, 0), needs_check`
 
 type scanner interface{ Scan(...any) error }
 
@@ -47,7 +51,7 @@ func scanCard(r scanner) (Card, error) {
 	var c Card
 	var created, updated int64
 	err := r.Scan(&c.ID, &c.Version, &c.State, &c.LastCounter, &c.Name, &c.PerTapSat, &c.DailySat, &c.Host, &created, &updated,
-		&c.LimitCurrency, &c.PerTapMinor, &c.DailyMinor)
+		&c.LimitCurrency, &c.PerTapMinor, &c.DailyMinor, &c.NeedsCheck)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Card{}, ErrNotFound
 	}
@@ -84,7 +88,8 @@ func (s *Store) ReserveCard(ctx context.Context, id, name, host string) (Card, e
 		_, err = tx.ExecContext(ctx, `UPDATE cards SET name = CASE WHEN ? = '' THEN name ELSE ? END, host = ?, updated_at = ?
 			WHERE id = ?`, name, name, host, now, id)
 	case c.State == StateReset:
-		_, err = tx.ExecContext(ctx, `UPDATE cards SET version = version + 1, state = ?, last_counter = -1,
+		// New keys: the taps recorded before are another version's, so no check is needed.
+		_, err = tx.ExecContext(ctx, `UPDATE cards SET version = version + 1, state = ?, last_counter = -1, needs_check = 0,
 			name = CASE WHEN ? = '' THEN name ELSE ? END, host = ?, updated_at = ? WHERE id = ?`,
 			StateProgramming, name, name, host, now, id)
 	default:
@@ -143,6 +148,25 @@ func (s *Store) AdoptCard(ctx context.Context, id string, version uint32, name s
 // with the same counter exactly one succeeds.
 func (s *Store) AdvanceCounter(ctx context.Context, id string, counter uint32) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE cards SET last_counter = ?, updated_at = ?
+		WHERE id = ? AND last_counter < ?`, counter, s.now().Unix(), id, counter)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		if _, err := s.GetCard(ctx, id); err != nil {
+			return err
+		}
+		return ErrReplayed
+	}
+	return nil
+}
+
+// CheckCounter records the counter of a tap the owner's phone checked
+// (cards.Service.Check) and clears NeedsCheck: like AdvanceCounter, only a
+// counter strictly above the last one seen (ErrReplayed otherwise, the mark
+// kept).
+func (s *Store) CheckCounter(ctx context.Context, id string, counter uint32) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE cards SET last_counter = ?, needs_check = 0, updated_at = ?
 		WHERE id = ? AND last_counter < ?`, counter, s.now().Unix(), id, counter)
 	if err != nil {
 		return err

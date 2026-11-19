@@ -278,3 +278,92 @@ func TestPrepareRestoredAndThePointOfSale(t *testing.T) {
 		t.Fatalf("restored at %v %v", at, ok)
 	}
 }
+
+// A restored database's cards are as the backup had them: their counters
+// may be behind the cards', so taps recorded after the backup would pass.
+// cardd restore marks every card that could spend again (active or frozen)
+// as needing a check, which only its owner's phone gives; a card being set
+// up, wiped or being wiped is left alone, since it can't spend.
+func TestPrepareRestoredMarksCardsForACheck(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	const active, frozen, programming, wiping, reset = "a0", "f0", "p0", "w0", "r0"
+	for _, c := range []string{active, frozen, programming, wiping, reset} {
+		if _, err := s.ReserveCard(ctx, c, "", "vm-1009.lnvps.cloud"); err != nil {
+			t.Fatal(err)
+		}
+		if c != programming {
+			if _, err := s.ActivateCard(ctx, c, 4); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	s.FreezeCard(ctx, frozen)
+	s.StartWipe(ctx, wiping)
+	s.StartWipe(ctx, reset)
+	s.FinishWipe(ctx, reset)
+	if c, _ := s.GetCard(ctx, active); c.NeedsCheck {
+		t.Fatal("a card needs a check before any restore")
+	}
+	if err := s.PrepareRestored(ctx, "c3d4 7 1790000000", "04aa", newVM); err != nil {
+		t.Fatal(err)
+	}
+	for c, want := range map[string]bool{active: true, frozen: true, programming: false, wiping: false, reset: false} {
+		got, err := s.GetCard(ctx, c)
+		if err != nil || got.NeedsCheck != want {
+			t.Errorf("%s: %+v %v, want needs a check %v", c, got, err, want)
+		}
+	}
+	// The states and counters themselves are as the backup had them.
+	if c, _ := s.GetCard(ctx, frozen); c.State != StateFrozen || c.LastCounter != 4 {
+		t.Fatalf("frozen: %+v", c)
+	}
+}
+
+// The owner's check clears the mark and moves the counter to the card's: a
+// tap at or below the counter the server has is refused, and leaves the mark.
+func TestCheckCounterClearsTheMark(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	s.ReserveCard(ctx, id, "", "vm-1009.lnvps.cloud")
+	s.ActivateCard(ctx, id, 4)
+	if err := s.PrepareRestored(ctx, "backup", "04aa", newVM); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CheckCounter(ctx, id, 4); !errors.Is(err, ErrReplayed) {
+		t.Fatalf("the backup's own counter: %v", err)
+	}
+	if c, _ := s.GetCard(ctx, id); !c.NeedsCheck || c.LastCounter != 4 {
+		t.Fatalf("after a refused check: %+v", c)
+	}
+	if err := s.CheckCounter(ctx, id, 30); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := s.GetCard(ctx, id); c.NeedsCheck || c.LastCounter != 30 {
+		t.Fatalf("after the check: %+v", c)
+	}
+	if err := s.CheckCounter(ctx, "nope", 31); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown card: %v", err)
+	}
+}
+
+// A card wiped and added again has new keys: the taps recorded before are
+// another version's, so it starts without the mark.
+func TestReserveAfterResetClearsTheMark(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	s.ReserveCard(ctx, id, "", "vm-1009.lnvps.cloud")
+	s.ActivateCard(ctx, id, 4)
+	if err := s.PrepareRestored(ctx, "backup", "04aa", newVM); err != nil {
+		t.Fatal(err)
+	}
+	s.StartWipe(ctx, id)
+	s.FinishWipe(ctx, id)
+	c, err := s.ReserveCard(ctx, id, "", newVM.Host)
+	if err != nil || c.NeedsCheck || c.Version != 1 {
+		t.Fatalf("re-added: %+v %v", c, err)
+	}
+	if c, err := s.ActivateCard(ctx, id, 1); err != nil || c.NeedsCheck {
+		t.Fatalf("activated: %+v %v", c, err)
+	}
+}

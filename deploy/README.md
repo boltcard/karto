@@ -97,8 +97,12 @@ new server, the install above runs with two more steps:
 included; the issuer key stays. `restore` (after `issuer-key`, before `up`)
 decodes the database into `cardd restore`, which re-activates the phone's key,
 writes the new VM's id, hostname and IPv4 address (so `cardd`'s first snapshot
-names this VM, before the `meta` step writes them again), and marks the ledger
-to be set to phoenixd's balance once the channel is back; the optional last
+names this VM, before the `meta` step writes them again), marks the ledger
+to be set to phoenixd's balance once the channel is back, and marks every
+active or frozen card as needing a check: its counter is the backup's, so a
+tap recorded after the backup would pass, and the card pays again only once
+it has been held to the owner's phone (the wallet's tap check moves the
+counter to the card's own); the optional last
 argument is the backup's name, kept as `meta restore.from`. It exits 6 for a backup from a newer `cardd` and 7 if a
 database it didn't restore is there; a repeat prints `already restored`.
 `restore-fresh`, for the phrase alone, has no `cardd.db` to read: the person's

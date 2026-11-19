@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -251,6 +252,10 @@ var migrations = []string{
 	`ALTER TABLE ledger_tx ADD COLUMN via TEXT NOT NULL DEFAULT '';
 	CREATE INDEX sales_tx ON sales(tx_id) WHERE tx_id IS NOT NULL;
 	CREATE INDEX ledger_entry_tx ON ledger_entry(tx_id);`,
+	// Migration 16: a card restored from a backup needs its owner's check
+	// before it can pay (PrepareRestored): its counter may be behind the
+	// card's, so taps recorded after the backup would otherwise pass.
+	`ALTER TABLE cards ADD COLUMN needs_check INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // SchemaVersion is the user_version this cardd migrates a database to; a
@@ -327,8 +332,9 @@ func Open(path string) (*Store, error) {
 var ownTables = []struct {
 	migration int
 	table     string
-	kind      string // "table" or "index"
-}{{12, "push_endpoints", "table"}, {13, "recent_removed", "table"}, {14, "refund_links", "table"}, {15, "sales_tx", "index"}}
+	kind      string // "table", "index", or "column" (table is then "<table>.<column>")
+}{{12, "push_endpoints", "table"}, {13, "recent_removed", "table"}, {14, "refund_links", "table"}, {15, "sales_tx", "index"},
+	{16, "cards.needs_check", "column"}}
 
 // checkOwnMigrations refuses a database whose latest migrations are another
 // cardd's: one migrated by a branch that numbered a different change 12 (or
@@ -338,7 +344,13 @@ var ownTables = []struct {
 func (s *Store) checkOwnMigrations() error {
 	for _, o := range ownTables {
 		var n int
-		if err := s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = ? AND name = ?`, o.kind, o.table).Scan(&n); err != nil {
+		var err error
+		if table, column, ok := strings.Cut(o.table, "."); ok && o.kind == "column" {
+			err = s.db.QueryRow(`SELECT count(*) FROM pragma_table_info(?) WHERE name = ?`, table, column).Scan(&n)
+		} else {
+			err = s.db.QueryRow(`SELECT count(*) FROM sqlite_master WHERE type = ? AND name = ?`, o.kind, o.table).Scan(&n)
+		}
+		if err != nil {
 			return err
 		}
 		if n == 0 {

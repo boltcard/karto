@@ -172,6 +172,32 @@ func TestCardLifecycle(t *testing.T) {
 	}
 }
 
+// After a restore, the list says which cards need their owner's check, and
+// the check (POST /cards/check with the card's tap) clears it.
+func TestCheckAfterARestore(t *testing.T) {
+	c := setup(t)
+	c.do("POST", "/api/v1/cards", map[string]string{"id": cardID})
+	c.do("POST", "/api/v1/cards/"+cardID+"/confirm", tapFor(t, 0, 1))
+	_, out := c.do("GET", "/api/v1/cards", nil)
+	if card := out["cards"].([]any)[0].(map[string]any); card["needsCheck"] != nil {
+		t.Fatalf("before a restore: %v", card)
+	}
+	if err := c.st.PrepareRestored(context.Background(), "backup", "04aa", store.RestoredVM{ID: "2", Host: "vm-2.lnvps.cloud", IPv4: "192.0.2.2"}); err != nil {
+		t.Fatal(err)
+	}
+	_, out = c.do("GET", "/api/v1/cards", nil)
+	if card := out["cards"].([]any)[0].(map[string]any); card["needsCheck"] != true {
+		t.Fatalf("after the restore: %v", card)
+	}
+	if status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 1)); status != 409 || out["error"] != "replayed" {
+		t.Fatalf("an old tap: %d %v", status, out)
+	}
+	status, out := c.do("POST", "/api/v1/cards/check", tapFor(t, 0, 12))
+	if status != 200 || out["counter"] != 12.0 || out["needsCheck"] != nil {
+		t.Fatalf("check: %d %v", status, out)
+	}
+}
+
 func TestErrorCodes(t *testing.T) {
 	c := setup(t)
 	cases := []struct {

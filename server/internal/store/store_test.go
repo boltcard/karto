@@ -361,3 +361,24 @@ func TestOpenRefusesAnotherCarddsMigration13(t *testing.T) {
 		t.Fatalf("err %q, want %q", err, want)
 	}
 }
+
+// A database another build of cardd migrated to 16 has no cards.needs_check column.
+func TestOpenRefusesAnotherCarddsMigration16(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cardd.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`ALTER TABLE cards DROP COLUMN needs_check`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s, err = Open(path)
+	if err == nil {
+		s.Close()
+		t.Fatal("opened a database without cards.needs_check")
+	}
+	if want := "the database's migration 16 is not this cardd's: it has no cards.needs_check column"; err.Error() != want {
+		t.Fatalf("err %q, want %q", err, want)
+	}
+}

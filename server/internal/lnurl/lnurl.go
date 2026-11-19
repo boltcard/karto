@@ -69,7 +69,7 @@ type RefusalReason string
 
 const (
 	RefusedPaused   RefusalReason = "paused"   // spending is paused on the server
-	RefusedOff      RefusalReason = "off"      // the card is frozen, reset or not active
+	RefusedOff      RefusalReason = "off"      // the card is frozen, reset, not active or needs its owner's check after a restore
 	RefusedRepeated RefusalReason = "repeated" // a counter already used, other than a terminal's retry
 	RefusedPerTap   RefusalReason = "per-tap"  // over the card's limit per payment
 	RefusedDaily    RefusalReason = "daily"    // over the card's 24-hour limit
@@ -99,7 +99,7 @@ func (s *Server) refuse(cardID string, reason RefusalReason, amountMsat int64) {
 // refusedTap tells of a tap Spend refused, if its reason is one of the rules.
 func (s *Server) refusedTap(ctx context.Context, tap cards.Tap, err error) {
 	switch {
-	case errors.Is(err, cards.ErrFrozen), errors.Is(err, cards.ErrCardReset), errors.Is(err, cards.ErrNotActive):
+	case errors.Is(err, cards.ErrFrozen), errors.Is(err, cards.ErrCardReset), errors.Is(err, cards.ErrNotActive), errors.Is(err, cards.ErrNeedsCheck):
 		s.refuse(tap.Card.ID, RefusedOff, 0)
 	case errors.Is(err, store.ErrReplayed):
 		// Tap.Card was read before the counter moved, so of two taps with one
@@ -818,6 +818,8 @@ func reason(err error) string {
 		return "This tap was already used. Tap the card again."
 	case errors.Is(err, cards.ErrFrozen):
 		return "This card is frozen."
+	case errors.Is(err, cards.ErrNeedsCheck):
+		return "This card must be held to its owner's phone once before it can pay again."
 	case errors.Is(err, cards.ErrNotActive), errors.Is(err, cards.ErrCardReset), errors.Is(err, store.ErrConflict):
 		return "This card isn't active."
 	case errors.Is(err, ledger.ErrPaused):

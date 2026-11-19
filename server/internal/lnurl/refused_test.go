@@ -311,3 +311,22 @@ func TestTerminalAnswersUnchanged(t *testing.T) {
 		t.Fatalf("paused: %q", got)
 	}
 }
+
+// After a restore, a tap is refused with words a terminal can show, until
+// the owner's check; the owner is told, as for a card that is off.
+func TestRefusedNeedsCheck(t *testing.T) {
+	ctx := context.Background()
+	w := setup(t)
+	r := watch(w)
+	if err := w.st.PrepareRestored(ctx, "backup", "04aa", store.RestoredVM{ID: "2", Host: "vm-2.lnvps.cloud", IPv4: "192.0.2.2"}); err != nil {
+		t.Fatal(err)
+	}
+	w.counter = 40 // taps recorded after the backup
+	x := w.get(w.tap())
+	if x["status"] != "ERROR" || x["reason"] != "This card must be held to its owner's phone once before it can pay again." {
+		t.Fatalf("tap: %v", x)
+	}
+	if g := r.one(t); g.Reason != lnurl.RefusedOff || g.AmountMsat != 0 {
+		t.Fatalf("refusal: %+v", g)
+	}
+}

@@ -385,3 +385,85 @@ func TestPeekLeavesCounter(t *testing.T) {
 		t.Fatalf("spend after peek: %v", err)
 	}
 }
+
+// restored is the test card, active at counter 1, as cardd restore leaves it:
+// needing its owner's check.
+func restored(t *testing.T) (*Service, *store.Store) {
+	t.Helper()
+	svc, st := activeCard(t)
+	if err := st.PrepareRestored(context.Background(), "backup", "04aa", store.RestoredVM{ID: "2", Host: "vm-2.lnvps.cloud", IPv4: "192.0.2.2"}); err != nil {
+		t.Fatal(err)
+	}
+	return svc, st
+}
+
+// After a restore, a tap at a terminal is refused, however far on its
+// counter, and names the card (alerts); the counter stays.
+func TestSpendRefusesACardThatNeedsACheck(t *testing.T) {
+	ctx := context.Background()
+	svc, st := restored(t)
+	p, c := tap(t, 0, 20)
+	got, err := svc.Spend(ctx, p, c)
+	if !errors.Is(err, ErrNeedsCheck) || got.Card.ID != cardID || got.Counter != 20 {
+		t.Fatalf("spend: %+v %v", got, err)
+	}
+	if card, _ := st.GetCard(ctx, cardID); card.LastCounter != 1 || !card.NeedsCheck {
+		t.Fatalf("after the refusal: %+v", card)
+	}
+	// Frozen as well, it says frozen: the person froze it.
+	svc.Freeze(ctx, cardID)
+	if _, err := svc.Spend(ctx, p, c); !errors.Is(err, ErrFrozen) {
+		t.Fatalf("frozen: %v", err)
+	}
+}
+
+// The owner's check (the card held to the wallet) takes the card's own
+// counter and clears the mark: every tap recorded before it is refused as
+// used, and the card pays again from the next.
+func TestCheckAfterARestore(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := restored(t)
+	recorded := [][2]string{}
+	for n := uint32(2); n <= 9; n++ {
+		p, c := tap(t, 0, n)
+		recorded = append(recorded, [2]string{p, c})
+	}
+	p, c := tap(t, 0, 10)
+	got, err := svc.Check(ctx, p, c)
+	if err != nil || got.Card.NeedsCheck || got.Card.LastCounter != 10 {
+		t.Fatalf("check: %+v %v", got, err)
+	}
+	for _, r := range recorded {
+		if _, err := svc.Spend(ctx, r[0], r[1]); !errors.Is(err, store.ErrReplayed) {
+			t.Fatalf("recorded tap: %v", err)
+		}
+	}
+	// The check's own tap, sent to a terminal, is used too.
+	if _, err := svc.Spend(ctx, p, c); !errors.Is(err, store.ErrReplayed) {
+		t.Fatalf("the check's tap: %v", err)
+	}
+	p, c = tap(t, 0, 11)
+	if got, err := svc.Spend(ctx, p, c); err != nil || got.Card.LastCounter != 11 {
+		t.Fatalf("the next tap: %+v %v", got, err)
+	}
+}
+
+// A check with a tap at or below the server's counter is refused, and the
+// card still needs one.
+func TestCheckAfterARestoreRefusesAnOldTap(t *testing.T) {
+	ctx := context.Background()
+	svc, st := restored(t)
+	p, c := tap(t, 0, 1)
+	if _, err := svc.Check(ctx, p, c); !errors.Is(err, store.ErrReplayed) {
+		t.Fatalf("old tap: %v", err)
+	}
+	if card, _ := st.GetCard(ctx, cardID); !card.NeedsCheck {
+		t.Fatalf("after an old tap: %+v", card)
+	}
+	// A frozen card is checked as well, and stays frozen.
+	svc.Freeze(ctx, cardID)
+	p, c = tap(t, 0, 5)
+	if got, err := svc.Check(ctx, p, c); err != nil || got.Card.NeedsCheck || got.Card.State != store.StateFrozen {
+		t.Fatalf("frozen check: %+v %v", got, err)
+	}
+}

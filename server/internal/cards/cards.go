@@ -24,8 +24,11 @@ var (
 	ErrNotActive   = errors.New("cards: card setup has not finished or it is being wiped")
 	ErrBadName     = errors.New("cards: a name is one line of at most 40 characters")
 	ErrFrozen      = errors.New("cards: card is frozen")
-	ErrBadLimits   = errors.New("cards: limits are 1 to 2,000,000 sat, and the 24-hour limit is at least the per-tap one")
-	ErrBadHost     = errors.New("cards: a host is a bare lower-case hostname such as vm-1.lnvps.cloud")
+	// ErrNeedsCheck: restored from a backup, the card pays only once its
+	// owner's phone has checked a tap of it (store.Card.NeedsCheck).
+	ErrNeedsCheck = errors.New("cards: card needs its owner's check after a restore")
+	ErrBadLimits  = errors.New("cards: limits are 1 to 2,000,000 sat, and the 24-hour limit is at least the per-tap one")
+	ErrBadHost    = errors.New("cards: a host is a bare lower-case hostname such as vm-1.lnvps.cloud")
 )
 
 var (
@@ -217,7 +220,10 @@ func (s *Service) Adopt(ctx context.Context, version uint32, name, p, c string) 
 	return s.store.AdoptCard(ctx, id, version, name, picc.Counter, "")
 }
 
-// Check verifies a tap and moves the counter on ("tap to check").
+// Check verifies a tap and moves the counter on ("tap to check"). It is the
+// owner's phone's (device auth), so it also clears a restored card's
+// NeedsCheck: the counter is then the card's own, and every tap recorded
+// before it is refused as used.
 func (s *Service) Check(ctx context.Context, p, c string) (Tap, error) {
 	tap, err := s.verify(ctx, p, c)
 	if err != nil {
@@ -230,10 +236,10 @@ func (s *Service) Check(ctx context.Context, p, c string) (Tap, error) {
 	default:
 		return Tap{}, ErrNotActive
 	}
-	if err := s.store.AdvanceCounter(ctx, tap.Card.ID, tap.Counter); err != nil {
+	if err := s.store.CheckCounter(ctx, tap.Card.ID, tap.Counter); err != nil {
 		return Tap{}, err
 	}
-	tap.Card.LastCounter = int64(tap.Counter)
+	tap.Card.LastCounter, tap.Card.NeedsCheck = int64(tap.Counter), false
 	return tap, nil
 }
 
@@ -247,7 +253,7 @@ func (s *Service) Peek(ctx context.Context, p, c string) (Tap, error) {
 // SUN, that the card is active, and that the counter is above the last one
 // seen. The counter moves on here, so a replayed p and c are refused. When
 // the card is known and the tap is refused for its state or its counter
-// (ErrFrozen, ErrCardReset, ErrNotActive, store.ErrReplayed), the Tap still
+// (ErrFrozen, ErrCardReset, ErrNotActive, ErrNeedsCheck, store.ErrReplayed), the Tap still
 // carries the card, as read before the counter moved, and the tap's counter,
 // so the refusal can be alerted. Other errors give an empty Tap.
 func (s *Service) Spend(ctx context.Context, p, c string) (Tap, error) {
@@ -263,6 +269,11 @@ func (s *Service) Spend(ctx context.Context, p, c string) (Tap, error) {
 		return tap, ErrCardReset
 	default:
 		return tap, ErrNotActive
+	}
+	// Restored from a backup: the counter may be behind the card's, so this
+	// tap may be one recorded after the backup. It stays where it is.
+	if tap.Card.NeedsCheck {
+		return tap, ErrNeedsCheck
 	}
 	if err := s.store.AdvanceCounter(ctx, tap.Card.ID, tap.Counter); err != nil {
 		if errors.Is(err, store.ErrReplayed) {

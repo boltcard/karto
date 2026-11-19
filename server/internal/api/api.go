@@ -73,14 +73,17 @@ func New(svc *cards.Service, auth *deviceauth.Verifier, version string, meta Met
 }
 
 type cardJSON struct {
-	ID        string `json:"id"`
-	Version   uint32 `json:"version"`
-	State     string `json:"state"`
-	Counter   int64  `json:"counter"`
-	Name      string `json:"name"`
-	Host      string `json:"host"`
-	PerTapSat int64  `json:"perTapSat"`
-	DailySat  int64  `json:"dailySat"`
+	ID      string `json:"id"`
+	Version uint32 `json:"version"`
+	State   string `json:"state"`
+	Counter int64  `json:"counter"`
+	Name    string `json:"name"`
+	Host    string `json:"host"`
+	// NeedsCheck: restored from a backup, the card can't pay until it is held
+	// to the owner's phone, whose tap check (POST /cards/check) clears it.
+	NeedsCheck bool  `json:"needsCheck,omitempty"`
+	PerTapSat  int64 `json:"perTapSat"`
+	DailySat   int64 `json:"dailySat"`
 	// Limits: the card's limits in a currency, when they are; perTapSat and
 	// dailySat are then what a tap would take at the last rate.
 	Limits  *limitsJSON `json:"limits,omitempty"`
@@ -93,7 +96,7 @@ type cardJSON struct {
 // take them now, and in their currency when they are kept in one.
 func (a *api) toJSON(c store.Card) cardJSON {
 	perTap, daily := a.cards.LimitsSat(c)
-	return cardJSON{ID: c.ID, Version: c.Version, State: string(c.State), Counter: c.LastCounter, Name: c.Name, Host: c.Host,
+	return cardJSON{ID: c.ID, Version: c.Version, State: string(c.State), Counter: c.LastCounter, Name: c.Name, Host: c.Host, NeedsCheck: c.NeedsCheck,
 		PerTapSat: perTap, DailySat: daily, Limits: limitsOf(c), Created: c.CreatedAt.Unix(), Updated: c.UpdatedAt.Unix()}
 }
 
@@ -291,6 +294,7 @@ var errorCodes = []struct {
 	{store.ErrConflict, http.StatusConflict, "conflict"},
 	{cards.ErrNotActive, http.StatusConflict, "not_active"},
 	{cards.ErrFrozen, http.StatusConflict, "frozen"},
+	{cards.ErrNeedsCheck, http.StatusConflict, "needs_check"},
 	{cards.ErrBadLimits, http.StatusBadRequest, "bad_limits"},
 	{errBadNote, http.StatusBadRequest, "bad_note"},
 	{errBadRequest, http.StatusBadRequest, "malformed"},
