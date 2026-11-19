@@ -3,7 +3,7 @@ import { CarddError } from '../cardd/error';
 import { FakeCardd, vectorDeviceKey } from '../testing/fakeCardd';
 import { vectors } from '../testing/vectors';
 import { PosClient } from './client';
-import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, pairError, pairStep, pairWith, PAIR_WORDS, removedWords, scanRefusal, unpair } from './pairing';
+import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, linkRefused, pairError, pairStep, pairWith, PAIR_WORDS, removedWords, scanRefusal, unpair } from './pairing';
 import { PosStore, type KeyValue } from './settings';
 
 const HOST = 'vm-1001.lnvps.cloud';
@@ -78,13 +78,26 @@ describe('the Pair screen\'s words', () => {
     });
   });
 
+  // Any app or web page on the phone can send a pairing link. On a paired till one press of "Pair with the new
+  // shop" would have every later sale invoiced by that server: a link there is refused, never put as a choice.
+  it('refuses a pairing link on a paired phone, saying how it is paired and how to unpair it', () => {
+    expect(linkRefused({ host: HOST, name: 'Till 1' })).toEqual({
+      line: `This phone is already paired with ${HOST} as Till 1.`,
+      why: "A link from another app or a web page can't move it to another shop. To pair it with another shop, unpair it first: open Sales, then This PoS, then Unpair this phone.",
+      back: 'Back to the till',
+    });
+    expect(linkRefused({ host: HOST, name: 'Till 1', wallet: 'Pixel 9a' }).line).toBe(`This phone is already paired with Pixel 9a (${HOST}) as Till 1.`);
+  });
+
   it("pairs at once only by its own scanner's code, on a phone that isn't paired", () => {
     const link = { host: HOST, code: 'a'.repeat(32) };
     const paired = { host: HOST, name: 'Till 1' };
     expect(pairStep(null, { link, scanned: true }, false)).toBe('pair');
     expect(pairStep(null, { link, scanned: false }, false)).toBe('ask');
+    // On a paired phone only the till's own scanner offers the other shop; a link from outside is refused.
     expect(pairStep(paired, { link, scanned: true }, false)).toBe('choose');
-    expect(pairStep(paired, { link, scanned: false }, false)).toBe('choose');
+    expect(pairStep(paired, { link, scanned: false }, false)).toBe('refused');
+    expect(pairStep(paired, { link: { ...link, host: 'vm-1003.lnvps.cloud' }, scanned: false }, false)).toBe('refused');
     // No link, or one already used or turned down: the plain page, with whatever went wrong.
     expect(pairStep(null, null, false)).toBe('plain');
     expect(pairStep(paired, null, false)).toBe('plain');
@@ -134,7 +147,7 @@ describe('the Pair screen\'s words', () => {
     const paired = { host: HOST, name: 'Till 1' };
     expect(pairStep(paired, { link, scanned: false }, false, true)).toBe('in-sale');
     expect(pairStep(paired, { link, scanned: false, answered: true }, false, true)).toBe('in-sale');
-    expect(pairStep(paired, { link, scanned: false }, false, false)).toBe('choose');
+    expect(pairStep(paired, { link, scanned: false }, false, false)).toBe('refused');
     // With no link there is nothing to turn away.
     expect(pairStep(paired, null, false, true)).toBe('plain');
   });
@@ -145,7 +158,7 @@ describe('the Pair screen\'s words', () => {
     const paired = { host: HOST, name: 'Till 1' };
     expect(pairStep(null, { link, scanned: false, answered: true }, false)).toBe('stale');
     expect(pairStep(paired, { link, scanned: false, answered: true }, false)).toBe('stale');
-    expect(pairStep(paired, { link, scanned: false, answered: false }, false)).toBe('choose');
+    expect(pairStep(paired, { link, scanned: false, answered: false }, false)).toBe('refused');
     expect(pairStep(null, { link, scanned: true, answered: true }, false)).toBe('pair');
     // Once this screen has used it, the screen stays, with whatever went wrong.
     expect(pairStep(null, { link, scanned: false, answered: true }, true)).toBe('plain');

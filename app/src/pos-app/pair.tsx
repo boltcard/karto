@@ -2,16 +2,17 @@
 // ways. This app's scanner read it: it is handed over in memory (pos.scanned) and used at once. Or a link brought
 // it (kartopos://pair?host=…&code=…, which the router opens as this screen with the link's parts): any app or web
 // page on the phone can send one, so the person is asked first, with the server it names. On a phone that is
-// already paired either way asks: the old shop or the new. Android hands a link over again whenever it remakes
-// the app, so a link the person has answered is remembered (PosStore.answered) and opens the app as its icon
-// does. pos/pairing.ts has the words and the rule, and does the pairing.
+// already paired only the scanner's code asks (the old shop or the new): a link is refused, and the screen says how
+// to unpair. Android hands a link over again whenever it remakes the app, so a link the person has answered, or
+// that was refused, is remembered (PosStore.answered) and opens the app as its icon does. pos/pairing.ts has the
+// words and the rule, and does the pairing.
 import { Redirect, router, useFocusEffect, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { usePos } from '../pos/app';
 import { PosClient } from '../pos/client';
 import { linkOf } from '../pos/links';
-import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, PAIR_WORDS, pairStep, pairWith } from '../pos/pairing';
+import { alreadyPaired, ANSWER_AFTER_MS, canAnswer, codeInHand, codeKey, linkQuestion, linkRefused, PAIR_WORDS, pairStep, pairWith } from '../pos/pairing';
 import { Body, Button, ErrorText, Screen, Small, Title } from '../ui/ui';
 
 export default function Pair() {
@@ -104,6 +105,11 @@ export default function Pair() {
     void answer().then(() => (router.canGoBack() ? router.back() : router.replace('/sale')));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, key]);
+  // A link refused on a paired phone: answered for good, so it isn't put to the person again.
+  useEffect(() => {
+    if (step === 'refused') void answer();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, key]);
   useEffect(() => {
     if (step === 'pair' && started.current !== key) {
       started.current = key;
@@ -124,6 +130,16 @@ export default function Pair() {
         <Body>{w.why}</Body>
         <Button title={w.pair} onPress={() => void pair()} disabled={!ready} />
         <Button title={w.no} kind="secondary" onPress={() => void answer().then(() => setUsedKey(key))} />
+      </Screen>
+    );
+  }
+  if (pos.paired && step === 'refused') {
+    const w = linkRefused(pos.paired);
+    return (
+      <Screen title={PAIR_WORDS.title}>
+        <Body>{w.line}</Body>
+        <Body>{w.why}</Body>
+        <Button title={w.back} onPress={() => router.replace('/till')} />
       </Screen>
     );
   }

@@ -30,13 +30,33 @@ export const scanRefusal = (camera: 'refused' | 'refused_for_good', ios: boolean
   settings: camera === 'refused_for_good',
 });
 
-/** A pairing code given to a phone that is already paired: what it says, whose the new code is, and its two buttons. */
+/** Whom a paired phone is paired with, and under what name: the wallet first when the till knows it. */
+const pairedLine = (p: Paired): string =>
+  p.wallet ? `This phone is already paired with ${p.wallet} (${p.host}) as ${p.name}.` : `This phone is already paired with ${p.host} as ${p.name}.`;
+
+/**
+ * A code the till's own scanner read on a phone that is already paired: what it says, whose the new code is, and
+ * its two buttons.
+ */
 export const alreadyPaired = (p: Paired, host: string) =>
   ({
-    line: p.wallet ? `This phone is already paired with ${p.wallet} (${p.host}) as ${p.name}.` : `This phone is already paired with ${p.host} as ${p.name}.`,
+    line: pairedLine(p),
     to: host === p.host ? 'The new code is for the same shop.' : `The new code is for ${host}.`,
     pair: 'Pair with the new shop',
     keep: 'Keep this shop',
+  }) as const;
+
+/**
+ * A pairing link from outside the app on a phone that is already paired. Any app or web page on the phone can send
+ * one, and one press of "Pair with the new shop" would have every later sale invoiced by its server: so it is
+ * refused, with no other shop on offer. The phone pairs with another shop once it is unpaired (This PoS), or by a
+ * code the till's own scanner reads. What it says, how to unpair, and its one button.
+ */
+export const linkRefused = (p: Paired) =>
+  ({
+    line: pairedLine(p),
+    why: "A link from another app or a web page can't move it to another shop. To pair it with another shop, unpair it first: open Sales, then This PoS, then Unpair this phone.",
+    back: 'Back to the till',
   }) as const;
 
 /**
@@ -91,16 +111,17 @@ export function codeInHand(scanned: Code | null, linked: Code | null): Given | n
 
 /**
  * What the Pair screen does with a code: 'pair' at once only for one its own scanner read on a phone that isn't
- * paired; 'ask' for a link from outside; 'choose' (the old shop or the new) on a paired phone, wherever the code
- * came from; 'plain' with none, or once the code was used or turned down; 'stale' for a link answered before,
- * which opens the app as its icon does; 'in-sale' for a link that comes while a sale is open: nobody pairs a till
- * in the middle of a sale, so it is answered for good and the sale stays in front.
+ * paired; 'ask' for a link from outside on a phone that isn't paired; on a paired phone, 'choose' (the old shop or
+ * the new) for a code its own scanner read, and 'refused' for a link from outside, which any app or web page could
+ * have sent (answered for good, and nothing offered); 'plain' with none, or once the code was used or turned down;
+ * 'stale' for a link answered before, which opens the app as its icon does; 'in-sale' for a link that comes while
+ * a sale is open: nobody pairs a till in the middle of a sale, so it is answered for good and the sale stays in front.
  */
-export function pairStep(paired: Paired | null, given: Given | null, used: boolean, inSale = false): 'pair' | 'ask' | 'choose' | 'plain' | 'stale' | 'in-sale' {
+export function pairStep(paired: Paired | null, given: Given | null, used: boolean, inSale = false): 'pair' | 'ask' | 'choose' | 'refused' | 'plain' | 'stale' | 'in-sale' {
   if (!given || used) return 'plain';
   if (inSale && !given.scanned) return 'in-sale';
   if (!given.scanned && given.answered) return 'stale';
-  if (paired) return 'choose';
+  if (paired) return given.scanned ? 'choose' : 'refused';
   return given.scanned ? 'pair' : 'ask';
 }
 
