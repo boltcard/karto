@@ -138,8 +138,11 @@ type Fake struct {
 	// 20 ms unless a test sets it. With no WebhookURL nobody is told of the
 	// payment, and the figure moves at once.
 	FeeCreditDelay time.Duration
-	WebhookURL     string // where payment_received goes, if set
-	Down           bool   // every call fails as if phoenixd were unreachable
+	// InvoiceDelay is how long /createinvoice takes to answer once it has
+	// made the invoice (0: at once), for a client that hangs up meanwhile.
+	InvoiceDelay time.Duration
+	WebhookURL   string // where payment_received goes, if set
+	Down         bool   // every call fails as if phoenixd were unreachable
 	// MissingRoute: requests whose path starts with it get a plain 404, as a
 	// phoenixd without that route would answer.
 	MissingRoute string
@@ -469,7 +472,9 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		b, h := f.newInvoice(amt*1000, r.PostForm.Get("externalId"), description, exp)
 		f.invoices[b].descHash = r.PostForm.Get("descriptionHash")
+		delay := f.InvoiceDelay
 		f.mu.Unlock()
+		time.Sleep(delay)
 		writeJSON(w, map[string]any{"amountSat": amt, "paymentHash": h, "serialized": b})
 	case strings.HasPrefix(path, "/payments/incoming/"):
 		f.mu.Lock()

@@ -10,68 +10,106 @@ import (
 // purges an expired one, and has no call to delete one), so the rate limit
 // alone still lets a patient flood fill the server's disk: one a second is
 // 86,400 rows a day. The cap counts the invoices made in the last window
-// that haven't been paid, and refuses another past max. A paid invoice
-// leaves the count at once, so real payers never use it up.
+// that haven't been paid, overall and per client, and refuses another past
+// either. A paid invoice leaves the count at once, so real payers never use
+// it up. The window is short, so a flood that fills the cap holds back real
+// payers only that long after it stops; the share per client means one
+// address alone can't fill it.
 //
 // It is kept in memory: a restart forgets the count, which a stranger can't
-// cause, and at most doubles a day's rows when it happens.
+// cause, and at most doubles a window's rows when it happens.
 type UnpaidCap struct {
-	max    int
-	window time.Duration
-	now    func() time.Time
+	max, perClient int
+	window         time.Duration
+	now            func() time.Time
 
 	mu       sync.Mutex
-	made     map[string]time.Time // unpaid invoices by payment hash, when made
-	reserved int                  // invoices being made now (Reserve, before Made or Release)
+	made     map[string]unpaid // unpaid invoices by payment hash
+	reserved map[string]int    // invoices being made now, by client (Reserve, before Made or Release)
 }
 
-// NewUnpaidCap allows max unpaid invoices made in the last window.
-func NewUnpaidCap(max int, window time.Duration, now func() time.Time) *UnpaidCap {
-	return &UnpaidCap{max: max, window: window, now: now, made: map[string]time.Time{}}
+type unpaid struct {
+	at     time.Time
+	client string
 }
 
-// InvoiceUnpaidCap is cardd's: 1,000 unpaid invoices a day, far beyond a
-// personal server's abandoned payments, and about a megabyte of phoenixd's
-// database a day at most, instead of the rate limit's 86,400 rows.
+// NewUnpaidCap allows max unpaid invoices made in the last window, perClient of them for any one client.
+func NewUnpaidCap(max, perClient int, window time.Duration, now func() time.Time) *UnpaidCap {
+	return &UnpaidCap{max: max, perClient: perClient, window: window, now: now, made: map[string]unpaid{}, reserved: map[string]int{}}
+}
+
+// InvoiceUnpaidCap is cardd's: 300 unpaid invoices an hour, 30 of them per
+// client. Far beyond a personal server's abandoned payments, even a crowd's;
+// at most 7,200 rows a day in phoenixd's database, a few megabytes, instead
+// of the rate limit's 86,400; and a flood that fills it blocks top-ups for an
+// hour at most once it stops.
 func InvoiceUnpaidCap(now func() time.Time) *UnpaidCap {
-	return NewUnpaidCap(1000, 24*time.Hour, now)
+	return NewUnpaidCap(300, 30, time.Hour, now)
 }
 
-// Reserve takes a place for an invoice about to be made; false, with how
-// long until the oldest unpaid one leaves the count, when there is none.
-// The caller then calls Made with the invoice's hash, or Release.
-func (c *UnpaidCap) Reserve() (bool, time.Duration) {
+// Reserve takes a place for an invoice about to be made for client; false,
+// with how long until a place should be free, when there is none. The
+// caller then calls Made with the invoice's hash, or Release.
+func (c *UnpaidCap) Reserve(client string) (bool, time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	oldest := now
-	for hash, at := range c.made {
-		if !now.Before(at.Add(c.window)) {
+	var oldest, oldestMine time.Time // the oldest unpaid invoice, overall and this client's
+	mine := c.reserved[client]
+	reserved := 0
+	for _, n := range c.reserved {
+		reserved += n
+	}
+	for hash, u := range c.made {
+		if !now.Before(u.at.Add(c.window)) {
 			delete(c.made, hash)
-		} else if at.Before(oldest) {
-			oldest = at
+			continue
+		}
+		if oldest.IsZero() || u.at.Before(oldest) {
+			oldest = u.at
+		}
+		if u.client == client {
+			mine++
+			if oldestMine.IsZero() || u.at.Before(oldestMine) {
+				oldestMine = u.at
+			}
 		}
 	}
-	if len(c.made)+c.reserved >= c.max {
-		return false, oldest.Add(c.window).Sub(now)
+	free := func(from time.Time) time.Duration {
+		if from.IsZero() {
+			return time.Second // only invoices being made right now hold the places
+		}
+		return from.Add(c.window).Sub(now)
 	}
-	c.reserved++
+	if len(c.made)+reserved >= c.max {
+		return false, free(oldest)
+	}
+	if mine >= c.perClient {
+		return false, free(oldestMine)
+	}
+	c.reserved[client]++
 	return true, 0
 }
 
-// Made fills a reserved place with the invoice phoenixd made.
-func (c *UnpaidCap) Made(paymentHash string) {
+// Made fills client's reserved place with the invoice phoenixd made.
+func (c *UnpaidCap) Made(client, paymentHash string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.reserved--
-	c.made[paymentHash] = c.now()
+	c.unreserve(client)
+	c.made[paymentHash] = unpaid{at: c.now(), client: client}
 }
 
-// Release gives back a reserved place: no invoice was made.
-func (c *UnpaidCap) Release() {
+// Release gives back client's reserved place: no invoice was made.
+func (c *UnpaidCap) Release(client string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.reserved--
+	c.unreserve(client)
+}
+
+func (c *UnpaidCap) unreserve(client string) {
+	if c.reserved[client]--; c.reserved[client] <= 0 {
+		delete(c.reserved, client)
+	}
 }
 
 // Paid takes a paid invoice out of the count.
