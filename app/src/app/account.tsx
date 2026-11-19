@@ -66,8 +66,9 @@ export default function Account() {
   const unfreezing = useRef(false);
   // One give-up at a time: set before the lock's await.
   const givingUp = useRef(false);
-  // A give-up whose finish the server hasn't had yet: the catch-up makes it.
-  const [gaveUp, setGaveUp] = useState<string | null>(null);
+  // The last give-up's words, apart from the page's error, which a reload sets: a finish the server hasn't had yet
+  // (the catch-up makes it), or why it stopped.
+  const [gaveUp, setGaveUp] = useState<{ text: string; failed: boolean } | null>(null);
   /** The open Top up sheet's baseline: the history's newest id and the wallet's rev as they were when it opened (id null until the history has answered). */
   // channel: whether the server had a Lightning channel when the Top up sheet opened (null: not known), for the Received words.
   const [base, setBase] = useState<{ id: number | null; rev: string | undefined; channel: boolean | null } | null>(null);
@@ -258,13 +259,16 @@ export default function Account() {
       const refused = await screenLock(`Remove ${name}`, 'removing a card');
       if (refused !== null) return setError(refused);
       setError(null);
+      setGaveUp(null);
       const { finished } = await giveUpCard(deps, { id: c.id, version: c.version, name: c.name });
       await watch.reloadCards().catch(() => {});
       if (finished) return goBack();
-      setGaveUp('Removed. Your server will be told when it answers.');
+      setGaveUp({ text: 'Removed. Your server will be told when it answers.', failed: false });
       reload();
     } catch (e) {
-      setError(e instanceof GiveUpError ? e.message : moneyError(e));
+      setGaveUp({ text: e instanceof GiveUpError ? e.message : moneyError(e), failed: true });
+      // The money may have moved even so (a start whose answer was lost, a finish refused): the page reads it again.
+      reload();
     } finally {
       givingUp.current = false;
     }
@@ -307,7 +311,7 @@ export default function Account() {
     // The account's name in the band: the card's (from the cache until the wallet answers), Pool, Hosting or Shop.
     <Screen title={name} back right={card ? <BandMenu onPress={() => setSheet('more')} /> : undefined}>
       {error && <ErrorText>{error}</ErrorText>}
-      {gaveUp && <Body>{gaveUp}</Body>}
+      {gaveUp && (gaveUp.failed ? <ErrorText>{gaveUp.text}</ErrorText> : <Body>{gaveUp.text}</Body>)}
       <RateAgeLine />
       <AccountHeader
         card={
@@ -386,7 +390,7 @@ export default function Account() {
         />
       )}
       {sheet === 'give-up' && card && !phone && (
-        <GiveUpSheet name={name} line={giveUpLine(card, look.view, look.rated).line} onConfirm={() => void giveUp(card)} onClose={() => setSheet(null)} />
+        <GiveUpSheet {...giveUpLine(card, look.view, look.rated)} name={name} onConfirm={() => void giveUp(card)} onClose={() => setSheet(null)} />
       )}
       {sheet === 'limits' && card && (
         <LimitsSheet

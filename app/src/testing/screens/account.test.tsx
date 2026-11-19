@@ -132,3 +132,13 @@ describe("A card's I no longer have this card", () => {
     expect(screen.queryByRole('button', { name: /I no longer have this card/ })).toBeNull();
   });
 });
+
+// A payment that started after the confirm opened: the confirm says so in a sentence, and can't be pressed.
+describe("The confirm for I no longer have this card", () => {
+  it('reads as a sentence and is off while a payment is in progress', async () => {
+    const { GiveUpSheet } = await import('../../ui/GiveUpSheet');
+    render(<GiveUpSheet name="Daily" line="Wait for the payment in progress" disabled onConfirm={() => {}} onClose={() => {}} />);
+    expect(await screen.findByText(/It can't be undone\. Wait for the payment in progress\. If the card turns up/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Remove the card' }).getAttribute('aria-disabled')).toBe('true');
+  });
+});

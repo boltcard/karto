@@ -47,6 +47,23 @@ describe('giveUpCard', () => {
     expect((await t.cache.cards())[ID]).toEqual(before);
   });
 
+  // The start reached the server but its answer was lost: the money has moved, so the words can't say nothing did,
+  // and pressing again finishes it (the start can be repeated), the money moving once.
+  it('says the card may not be removed yet when the answer to the start is lost, and a second try finishes it', async () => {
+    const t = await world('active', { sat: 5000 });
+    const real = t.deps.cardd.wipeCard.bind(t.deps.cardd);
+    vi.spyOn(t.deps.cardd, 'wipeCard').mockImplementationOnce(async (id: string) => {
+      await real(id);
+      throw new TypeError('fetch failed: no answer');
+    });
+    const e = await reason(giveUpCard(t.deps, CARD));
+    expect((e as GiveUpError).message).toBe("Can't reach your server, so the card may not be removed yet. Try again when it answers.");
+    expect(t.cardd.cards.get(ID)?.state).toBe('wiping');
+    expect(await giveUpCard(t.deps, CARD)).toEqual({ finished: true });
+    expect(t.cardd.cards.get(ID)?.state).toBe('reset');
+    expect(t.cardd.balances.get('pool')).toBe(5_000_000);
+  });
+
   it('changes nothing while a payment is in progress', async () => {
     const t = await world('active', { sat: 5000 });
     t.cardd.held.set(ID, 1_000_000);
