@@ -1,5 +1,6 @@
 // Move money between the person's accounts in
-// three steps on one screen: To (the other account, from rows), Amount (with All) and Check; no screen lock; once
+// three steps on one screen: To (the other account, from rows), Amount (with All) and Check; the screen lock for
+// money moved onto a card, none for money moved off one (money/steps.ts moveLock); once
 // per request id, kept through retries and app restarts (src/money/requests.ts). money/steps.ts decides how it
 // opens, the read-back and where the outcome leads; this holds the state.
 import { useLocalSearchParams } from 'expo-router';
@@ -9,11 +10,12 @@ import type { Wallet } from '../cardd/client';
 import { symbol } from '../money/fiat';
 import { moneyError, moveAmountMsat } from '../money/format';
 import { requestId, runRequest } from '../money/requests';
-import { afterMove, moveAvailable, moveBack, moveReadBack, moveStart, moveTargets, resultView, type MoveAccount, type Ran, type Result, type Step, STEP_NAMES, stepAt } from '../money/steps';
+import { afterMove, moveAvailable, moveBack, moveLock, moveReadBack, moveStart, moveTargets, resultView, type MoveAccount, type Ran, type Result, type Step, STEP_NAMES, stepAt } from '../money/steps';
 import { useCardDeps, useServer } from '../services/server';
 import { useRouteGuard } from '../services/services';
 import { confirmView, viewText } from '../money/view';
 import { useAmountView } from '../ui/amountView';
+import { screenLock } from '../ui/lock';
 import { AmountField, RateAgeLine, ReadBack, ResultPage, StepBar } from '../ui/money';
 import { Body, Button, ErrorText, goBack, GroupLabel, Label, ListGroup, ListRow, Panel, Row, Screen } from '../ui/ui';
 import { useAndroidBack } from '../ui/useBack';
@@ -104,12 +106,19 @@ export default function Move() {
     );
   }
 
+  // Check's button, and the screen lock's prompt for money moved onto a card: the lock confirms the figure the person saw.
+  const moveTitle = `Move ${viewText(amountMsat ?? 0, cv, rated)}`;
   const move = async () => {
     if (problem || !to || !amountMsat || moving.current) return;
     moving.current = true;
     setError(null);
-    setPhase({ at: 'moving' });
     try {
+      const lock = moveLock(to, moveTitle);
+      if (lock) {
+        const why = await screenLock(lock.prompt, lock.needs);
+        if (why) return setError(why);
+      }
+      setPhase({ at: 'moving' });
       const out: Ran = await runRequest({ cardd: deps.cardd, store: deps.cache }, { kind: 'move', id: requestId(), from: from.id, to: to.id, amountMsat, started: Date.now() }).catch(
         (e) => ({ at: 'failed' as const, e }),
       );
@@ -189,7 +198,7 @@ export default function Move() {
           <RateAgeLine />
           <ReadBack rows={moveReadBack(from, to, amountMsat ?? 0, cv, rated)} force={cv} />
           {problem && <Body muted>{problem}</Body>}
-          <Button title={`Move ${viewText(amountMsat ?? 0, cv, rated)}`} disabled={problem !== null} onPress={move} />
+          <Button title={moveTitle} disabled={problem !== null} onPress={move} />
           {error && <ErrorText>{error}</ErrorText>}
           <Button title="Back" kind="secondary" onPress={back} />
         </>

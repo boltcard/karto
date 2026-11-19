@@ -1,6 +1,7 @@
 // The hold-the-card screen's decisions, apart from React so
 // they are tested: the name screen before it, its five jobs, what it reads from its link, each job's steps in plain words, which moment the
-// screen is at and what that shows, how each job ends, where leaving goes, and a wipe's page before the lock.
+// screen is at and what that shows, how each job ends, where leaving goes, which jobs ask for the screen lock, and
+// a wipe's and an add's page before it.
 // The screen (app/card.tsx) holds the state and draws.
 import type { CardState } from '../cardd/client';
 import { validCardId } from '../cardphoto/screen';
@@ -349,6 +350,36 @@ export function wipeIntro(o: { name: string; state?: CardState; balanceMsat: num
     note: `Wiping needs ${o.lock ?? 'your screen lock'}, then ${o.name || 'the card'} held to the phone.`,
     prompt: o.name ? `Wipe ${o.name}` : 'Wipe the card',
   };
+}
+
+/**
+ * The jobs that ask for the screen lock before a card is held: a wipe, and each that makes a card one of the
+ * wallet's, which can then spend what is moved onto it (an add, a finished add, which adds a blank card held to it
+ * too, and an add back). Someone with the phone unlocked for a moment could otherwise add a card of their own.
+ * Re-pointing a card of the wallet's asks for none.
+ */
+export const holdLocked = (op: Op): boolean => op !== 'repoint';
+
+const ADD_LEADS: Record<'add' | 'finish-add' | 'adopt', (name: string) => string> = {
+  add: (name) => (name ? `Add ${name}` : 'Add a card'),
+  'finish-add': (name) => (name ? `Finish adding ${name}` : 'Finish adding the card'),
+  adopt: (name) => (name ? `Add ${name} back` : 'Add the card back'),
+};
+const CAN_SPEND = 'and can spend what is moved onto it.';
+const ADD_BODIES: Record<'add' | 'finish-add' | 'adopt', string> = {
+  add: `The blank card held to the phone next becomes one of your cards, ${CAN_SPEND}`,
+  'finish-add': `The card held to the phone next becomes one of your cards, ${CAN_SPEND}`,
+  adopt: `The card held to the phone next becomes one of your cards again, ${CAN_SPEND}`,
+};
+
+/**
+ * An add's page before the screen lock, as a wipe's (wipeIntro): shown when a karto:// link opened the screen, or the
+ * lock was not confirmed. name: the card's ('' for none). lock: what this phone calls its lock (ui/lockName.ts),
+ * Android's "your screen lock" when not told. prompt: the lock's own title.
+ */
+export function addIntro(o: { op: 'add' | 'finish-add' | 'adopt'; name: string; lock?: string }): { lead: string; body: string; note: string; prompt: string } {
+  const lead = ADD_LEADS[o.op](o.name);
+  return { lead, body: ADD_BODIES[o.op], note: `Adding a card needs ${o.lock ?? 'your screen lock'}, then ${o.name || 'the card'} held to the phone.`, prompt: lead };
 }
 
 /**

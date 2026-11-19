@@ -3,15 +3,17 @@
 // cardd then keeps them in the currency and converts them at each tap.
 // The sheet says the card's limits in their own unit and opens in it when it is the server's; a card limited in a
 // currency that is no longer the server's is said in it, and changed in sat or the server's currency.
-// What is typed keeps its unit: the fields empty themselves when the rate goes under them, as Send out's do. No
-// screen lock.
+// What is typed keeps its unit: the fields empty themselves when the rate goes under them, as Send out's do.
+// Raising either limit asks for the screen lock first: a higher limit lets the card spend more at a till. Lowering
+// them asks for none.
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { CarddClient, LimitsRequest, WalletCard } from '../cardd/client';
 import { currencyOf, fiatInput, isCode, minorInputText, symbol } from '../money/fiat';
-import { convertTyped, limitsNow, limitsProblem, moneyError, satInput, thousands } from '../money/format';
+import { convertTyped, limitsNow, limitsProblem, limitsRaise, limitsText, moneyError, satInput, thousands } from '../money/format';
 import { viewText } from '../money/view';
 import { useAmountView } from './amountView';
+import { screenLock } from './lock';
 import { UnitChip } from './money';
 import { Body, Button, ErrorText, Field, Label, Row, Sheet, Title } from './ui';
 
@@ -80,6 +82,13 @@ export function LimitsSheet({ card, cardd, off, onSaved, onClose }: {
     setSaving(true);
     setError(null);
     try {
+      if (limitsRaise(card, limits, rated)) {
+        const why = await screenLock(`Raise limits to ${limitsText(limits)}`, "raising a card's limits");
+        if (why) {
+          setError(why);
+          return setSaving(false);
+        }
+      }
       await cardd.setLimits(card.id, limits);
       onSaved();
     } catch (e) {

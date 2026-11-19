@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CarddError, type Tx } from '../cardd/client';
 import { fiatSpoken, minorSpoken, type Rated } from './fiat';
 import {
-  convertTyped, dayStart, dayText, feeText, heldLine, historyRows, limitsNow, limitsProblem, lineAmount, moneyError, moveAmountMsat, msatText, resumeNotice, satInput,
+  convertTyped, dayStart, dayText, feeText, heldLine, historyRows, limitsNow, limitsProblem, limitsRaise, limitsText, lineAmount, moneyError, moveAmountMsat, msatText, resumeNotice, satInput,
   shortDate, topUpWarning, typedMsat, whenText,
 } from './format';
 
@@ -73,6 +73,48 @@ describe('limitsProblem', () => {
     expect(limitsProblem(500, 122_704, GBP)).toBeNull();
     expect(limitsProblem(500, 122_705, GBP)).toBe('Limits are up to 2,000,000 sat (£1,227.04).');
     expect(limitsProblem(500, 10_000_000_001, GBP)).toBe('Limits are up to 2,000,000 sat (£1,227.04).');
+  });
+});
+
+describe('limitsRaise', () => {
+  const GBP = { currency: 'GBP' as const, price: 61_352, time: 1_792_037_404 };
+  const inSat = { perTapSat: 20_000, dailySat: 50_000 };
+  // £5 a tap and £20 a day are 8,150 and 32,599 sat at the rate, as cardd reports them.
+  const inGbp = { perTapSat: 8_150, dailySat: 32_599, limits: { currency: 'GBP' as const, perTapMinor: 500, dailyMinor: 2_000 } };
+
+  it('is a raise when either limit goes up in sat, and not when both stay or go down', () => {
+    expect(limitsRaise(inSat, { perTapSat: 25_000, dailySat: 50_000 }, null)).toBe(true);
+    expect(limitsRaise(inSat, { perTapSat: 20_000, dailySat: 50_001 }, null)).toBe(true);
+    expect(limitsRaise(inSat, { perTapSat: 20_000, dailySat: 50_000 }, null)).toBe(false);
+    expect(limitsRaise(inSat, { perTapSat: 10_000, dailySat: 40_000 }, null)).toBe(false);
+    // One down and the other up is still a raise.
+    expect(limitsRaise(inSat, { perTapSat: 5_000, dailySat: 60_000 }, null)).toBe(true);
+  });
+
+  it('compares limits kept in the same currency in it', () => {
+    expect(limitsRaise(inGbp, { currency: 'GBP', perTapMinor: 600, dailyMinor: 2_000 }, GBP)).toBe(true);
+    expect(limitsRaise(inGbp, { currency: 'GBP', perTapMinor: 500, dailyMinor: 1_500 }, GBP)).toBe(false);
+  });
+
+  it("compares a change of unit in sat: the card's at the last rate, the new ones at this one", () => {
+    // £12.27 and £30.68 are 19,999 and 50,007 sat: the daily limit goes up.
+    expect(limitsRaise(inSat, { currency: 'GBP', perTapMinor: 1_227, dailyMinor: 3_068 }, GBP)).toBe(true);
+    expect(limitsRaise(inSat, { currency: 'GBP', perTapMinor: 1_000, dailyMinor: 3_000 }, GBP)).toBe(false);
+    expect(limitsRaise(inGbp, { perTapSat: 8_150, dailySat: 32_599 }, GBP)).toBe(false);
+    expect(limitsRaise(inGbp, { perTapSat: 8_151, dailySat: 32_599 }, GBP)).toBe(true);
+    // Limits in another currency than the card's, compared in sat too.
+    expect(limitsRaise({ ...inGbp, limits: { currency: 'EUR', perTapMinor: 500, dailyMinor: 2_000 } }, { currency: 'GBP', perTapMinor: 500, dailyMinor: 2_000 }, GBP)).toBe(false);
+  });
+
+  it("counts limits in a currency it has no rate for as a raise: it can't tell", () => {
+    expect(limitsRaise(inSat, { currency: 'GBP', perTapMinor: 1, dailyMinor: 2 }, null)).toBe(true);
+  });
+});
+
+describe('limitsText', () => {
+  it('says limits in their own unit, the day first, as the sheet says them now', () => {
+    expect(limitsText({ perTapSat: 20_000, dailySat: 50_000 })).toBe('50,000 sat a day · 20,000 sat a tap');
+    expect(limitsText({ currency: 'GBP', perTapMinor: 500, dailyMinor: 2_050 })).toBe('£20.50 a day · £5 a tap');
   });
 });
 

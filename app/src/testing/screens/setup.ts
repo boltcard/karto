@@ -45,6 +45,7 @@ vi.mock('expo-router', async () => {
   return {
     router: { back: vi.fn(), push: vi.fn(), replace: vi.fn(), navigate: vi.fn(), dismissTo: vi.fn(), canGoBack: vi.fn(() => true) },
     useFocusEffect,
+    // A screen under test is the one in front.
     useIsFocused: vi.fn(() => true),
     useLocalSearchParams: vi.fn(() => ({})),
     useGlobalSearchParams: vi.fn(() => ({})),

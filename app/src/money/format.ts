@@ -1,6 +1,6 @@
 // How the money screens say amounts:
 // in the app's view (money/view.ts), history rows too, with a sale's price as it was set and today's value "now".
-import { CarddError, type CardLimits, type SaleDay, type Tx, type Wallet } from '../cardd/client';
+import { CarddError, type CardLimits, type LimitsRequest, type SaleDay, type Tx, type Wallet } from '../cardd/client';
 import { isNetworkFailure } from '../lightning/lightning';
 import {
   currencyOf, fiatInput, fiatMinor, fiatSpoken, fiatText, isCode, MAX_MINOR, minorInputText, minorSpoken, minorText, minorToMsat, limitToMsat, type CurrencyCode, type Rated,
@@ -70,11 +70,31 @@ export function limitsNow(
   c: { perTapSat: number; dailySat: number; limits?: CardLimits }, server: CurrencyCode | null, offer: CurrencyCode | null = server,
 ): { line: string; note: string | null } {
   const l = c.limits;
-  if (!l) return { line: `Now ${thousands(c.dailySat)} sat a day · ${thousands(c.perTapSat)} sat a tap`, note: null };
-  const said = (minor: number) => minorText(minor, l.currency, { whole: true });
-  const line = `Now ${said(l.dailyMinor)} a day · ${said(l.perTapMinor)} a tap`;
+  if (!l) return { line: `Now ${limitsText(c)}`, note: null };
+  const line = `Now ${limitsText(l)}`;
   if (l.currency === server) return { line, note: null };
   return { line, note: `Set in ${currencyOf(l.currency).major}, which is no longer your server's currency: change them in sat${offer ? ` or ${offer}` : ''}.` };
+}
+
+/** Limits in their own unit, the day first: "£20 a day · £5 a tap", "50,000 sat a day · 20,000 sat a tap". */
+export function limitsText(l: LimitsRequest): string {
+  if (!('currency' in l)) return `${thousands(l.dailySat)} sat a day · ${thousands(l.perTapSat)} sat a tap`;
+  const said = (minor: number) => minorText(minor, l.currency, { whole: true });
+  return `${said(l.dailyMinor)} a day · ${said(l.perTapMinor)} a tap`;
+}
+
+/**
+ * Whether saving `next` raises either of a card's limits, which asks for the screen lock (lowering them doesn't).
+ * Limits kept in the same currency are compared in it; any other pair in sat: the card's as cardd says a tap would
+ * take them now (perTapSat, dailySat), the new ones in a currency at r, as cardd converts a limit. New limits in a
+ * currency with no rate for it can't be compared, and count as a raise.
+ */
+export function limitsRaise(c: { perTapSat: number; dailySat: number; limits?: CardLimits }, next: LimitsRequest, r: Rated | null): boolean {
+  if (!('currency' in next)) return next.perTapSat > c.perTapSat || next.dailySat > c.dailySat;
+  const l = c.limits;
+  if (l?.currency === next.currency) return next.perTapMinor > l.perTapMinor || next.dailyMinor > l.dailyMinor;
+  if (r?.currency !== next.currency) return true;
+  return limitToMsat(next.perTapMinor, r) > c.perTapSat * 1000 || limitToMsat(next.dailyMinor, r) > c.dailySat * 1000;
 }
 
 /** What a hold reserves while a payment is on its way: its amount and fee budget, in the view. */

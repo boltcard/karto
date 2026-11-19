@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADD_STEPS } from './add';
 import { ADOPT_STEPS } from './adopt';
-import { ADD_BAR, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdSheet, NAME_HINT, nameView, sheetOpens, holdNames, holdParams, holdResult, holdSteps, holdView, leaveTo, OPS, sheetLink, wipeIntro } from './hold';
+import { ADD_BAR, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdSheet, NAME_HINT, nameView, sheetOpens, holdNames, holdParams, holdResult, holdSteps, holdView, leaveTo, OPS, sheetLink, wipeIntro } from './hold';
 import { REPOINT_STEPS } from './repoint';
 import { WIPE_STEPS } from './wipe';
 
@@ -503,5 +503,37 @@ describe("the wipe's money in the app's view", () => {
     expect(holdResult(wipe, 'fiat', GBP).view.line).toBe('Daily is blank again. Its £8.15 are in Pool.');
     expect(holdResult(wipe, 'msat', null).view.line).toBe('Daily is blank again. Its 13,291,000 msat are in Pool.');
     expect(wipeIntro({ name: 'Daily', state: 'active', balanceMsat: 13_291_000, unreachable: false }, 'fiat', GBP).body).toBe('Its £8.15 move to Pool. The card becomes blank, and can be added again.');
+  });
+});
+
+describe('holdLocked', () => {
+  it('asks for the screen lock before a card is added, an add is finished, a card is added back or wiped; not to re-point one', () => {
+    expect(OPS.filter(holdLocked)).toEqual(['add', 'finish-add', 'wipe', 'adopt']);
+  });
+});
+
+describe('addIntro', () => {
+  it('names the card, says what it can then do and what adding needs', () => {
+    expect(addIntro({ op: 'add', name: 'Daily' })).toEqual({
+      lead: 'Add Daily',
+      body: 'The blank card held to the phone next becomes one of your cards, and can spend what is moved onto it.',
+      note: 'Adding a card needs your screen lock, then Daily held to the phone.',
+      prompt: 'Add Daily',
+    });
+  });
+  it('says the card when no name was typed', () => {
+    expect(addIntro({ op: 'add', name: '' })).toMatchObject({ lead: 'Add a card', note: 'Adding a card needs your screen lock, then the card held to the phone.', prompt: 'Add a card' });
+  });
+  it('finishes an add and adds a card back in their own words', () => {
+    expect(addIntro({ op: 'finish-add', name: 'Daily' })).toMatchObject({
+      lead: 'Finish adding Daily', body: 'The card held to the phone next becomes one of your cards, and can spend what is moved onto it.', prompt: 'Finish adding Daily',
+    });
+    expect(addIntro({ op: 'finish-add', name: '' })).toMatchObject({ lead: 'Finish adding the card', prompt: 'Finish adding the card' });
+    expect(addIntro({ op: 'adopt', name: 'Card' })).toMatchObject({
+      lead: 'Add Card back', body: 'The card held to the phone next becomes one of your cards again, and can spend what is moved onto it.', prompt: 'Add Card back',
+    });
+  });
+  it('names the lock as an iPhone does when told to', () => {
+    expect(addIntro({ op: 'add', name: 'Daily', lock: 'Face ID or your passcode' }).note).toBe('Adding a card needs Face ID or your passcode, then Daily held to the phone.');
   });
 });

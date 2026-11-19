@@ -4,7 +4,7 @@ import { bolt11ExpiresAtMs } from '../lightning/lightning';
 import type { Destination } from './destination';
 import type { Rated } from './fiat';
 import {
-  afterMove, afterSend, afterWatch, destinationPanel, moveAvailable, moveBack, moveReadBack, moveStart, moveTargets, noteWho, ownTarget, resultView, sendAt, sendBack, sendNext,
+  afterMove, afterSend, afterWatch, destinationPanel, moveAvailable, moveBack, moveLock, moveReadBack, moveStart, moveTargets, noteWho, ownTarget, resultView, sendAt, sendBack, sendNext,
   sendReadBack, sendToProblem, barLabel, STEP_NAMES, stepAt, stepLabel, fixedAmount, linkAmountProblem, lookupText, needsLookup, oldServerProblem, payableFrom,
   type LinkPayable, type OfferPayable, type Ran,
 } from './steps';
@@ -216,6 +216,23 @@ describe('destinationPanel and sendReadBack', () => {
       ['Amount', { msat: 1_234_000 }],
       ['Fee', 'about 9 sat'],
     ]);
+  });
+});
+
+describe('moveLock', () => {
+  it("asks for the screen lock for money moved onto a card, from Pool or another card, with Check's button as its prompt", () => {
+    const [, , spare, kids] = moveTargets(WALLET, 'pool');
+    const lock = { prompt: 'Move 5,000 sat', needs: 'moving money onto a card' };
+    expect(moveLock(spare, 'Move 5,000 sat')).toEqual(lock);
+    expect(moveLock(kids, 'Move 5,000 sat')).toEqual(lock);
+    expect(moveLock(moveTargets(WALLET, DAILY).find((a) => a.id === KIDS)!, 'Move 5,000 sat')).toEqual(lock);
+  });
+
+  it('asks for none for money moved off a card, to Pool or Hosting', () => {
+    const [pool, hosting] = moveTargets(WALLET, DAILY);
+    expect(moveLock(pool, 'Move 5,000 sat')).toBeNull();
+    expect(moveLock(hosting, 'Move 5,000 sat')).toBeNull();
+    expect(moveLock(moveTargets(WALLET, 'pool')[0], 'Move 5,000 sat')).toBeNull();
   });
 });
 

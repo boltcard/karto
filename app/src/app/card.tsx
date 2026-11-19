@@ -1,5 +1,6 @@
-// Hold the card: add, finish an add, wipe (behind the screen
-// lock, and only the card it was opened for), re-point, or add back a card the server doesn't know.
+// Hold the card: add, finish an add, wipe (only the card it was opened for), re-point, or add back a card the
+// server doesn't know. All but a re-point are behind the screen lock (cards/hold.ts holdLocked): an add asks for it
+// as the screen opens when a press in the app led here, and a wipe, or an add a karto:// link opened, at its page's button.
 // Each tap carries on from the card's own state, so a card pulled away early only needs holding again. What the
 // screen shows at each moment, how each job ends and where leaving goes are cards/hold.ts's. On an iPhone a card is
 // read only under Apple's sheet: the screen opens it, tells
@@ -11,7 +12,7 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { addCard } from '../cards/add';
 import { adoptCard } from '../cards/adopt';
 import {
-  ADD_BAR, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdNames, holdParams, holdResult, holdSheet, holdSteps, holdView, leaveTo, sheetOpens, wipeIntro,
+  ADD_BAR, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdNames, holdParams, holdResult, holdSheet, holdSteps, holdView, leaveTo, sheetOpens, wipeIntro,
   type HoldEvent, type HoldOutcome, type HoldView,
 } from '../cards/hold';
 import { isHoldPress } from '../cards/holdPress';
@@ -46,7 +47,7 @@ export default function CardScreen() {
   const look = useAmountView();
   const link = useLocalSearchParams<{ op?: string; id?: string; name?: string; randomUid?: string; press?: string }>();
   // Fixed when the screen opens: a link that changes the params of this mounted screen
-  // must not turn an unlocked add into a wipe that skips the screen lock, or a wipe into another card's.
+  // must not turn an unlocked re-point into a job that skips the screen lock, or a wipe into another card's.
   const [params] = useState(() => holdParams(link));
   const op = params?.op ?? 'add';
   const id = params?.id;
@@ -56,7 +57,7 @@ export default function CardScreen() {
   const { shown: name, sent } = holdNames(params, row?.name);
   /** What the wallet listed on the card when the screen opened: a wipe's result says where it went. */
   const [balanceMsat] = useState(() => (id ? (snap.wallet?.cards.find((c) => c.id === id)?.balanceMsat ?? null) : null));
-  const [unlocked, setUnlocked] = useState(op !== 'wipe');
+  const [unlocked, setUnlocked] = useState(!holdLocked(op));
   const [done, setDone] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
   const [message, setMessage] = useState<{ text: string; again: boolean } | null>(null);
@@ -105,14 +106,20 @@ export default function CardScreen() {
   }, [allowed, params]);
 
   const lock = useLockKind();
-  const intro = wipeIntro({ name, state: row?.state, balanceMsat, unreachable: snap.unreachable, lock: lockName(lock) }, confirmView(look.view), look.rated);
+  // The page before the lock: none for a re-point, which asks for none.
+  const intro =
+    op === 'wipe'
+      ? { ...wipeIntro({ name, state: row?.state, balanceMsat, unreachable: snap.unreachable, lock: lockName(lock) }, confirmView(look.view), look.rated), needs: 'wiping a card', button: 'Unlock to wipe' }
+      : op === 'repoint'
+        ? null
+        : { ...addIntro({ op, name, lock: lockName(lock) }), needs: 'adding a card', button: 'Unlock to add' };
 
-  // The screen lock is required for Wipe. Set before the first await: a double tap asks once.
+  // The screen lock, for every job but a re-point. Set before the first await: a double tap asks once.
   const unlock = async () => {
-    if (asking.current) return;
+    if (asking.current || !intro) return;
     asking.current = true;
     try {
-      const why = await screenLock(intro.prompt, 'wiping a card');
+      const why = await screenLock(intro.prompt, intro.needs);
       if (why) return setMessage({ text: why, again: false });
       setMessage(null);
       setPressed(true);
@@ -121,6 +128,15 @@ export default function CardScreen() {
       asking.current = false;
     }
   };
+
+  // An add asks for the lock as the screen opens, once, when a press in the app led here (the name screen's
+  // Continue, Finish setup): a link that opened it is not one, and its page waits for the button.
+  const askedOnOpen = useRef(false);
+  useEffect(() => {
+    if (!allowed || !params || op === 'wipe' || unlocked || !pressed || askedOnOpen.current) return;
+    askedOnOpen.current = true;
+    void unlock();
+  }, [allowed, params, op, unlocked, pressed]);
 
   const onTag = async (tag: Tag) => {
     if (busy.current || !deps || !params || !unlocked || outcome) return void tag.close();
@@ -260,7 +276,7 @@ export default function CardScreen() {
   return (
     <Screen title={HOLD_TITLES[op]} back={leave}>
       {bar}
-      {v.moment === 'lock' && (
+      {v.moment === 'lock' && intro && (
         <>
           {row && (
             <View style={layout.face}>
@@ -271,7 +287,7 @@ export default function CardScreen() {
           <Body>{intro.body}</Body>
           <Body muted>{intro.note}</Body>
           {message && <ErrorText>{message.text}</ErrorText>}
-          <Button title="Unlock to wipe" kind="danger" onPress={() => void unlock()} />
+          <Button title={intro.button} kind={op === 'wipe' ? 'danger' : undefined} onPress={() => void unlock()} />
         </>
       )}
       {v.moment !== 'lock' && v.moment !== 'finished' && <HoldPicture pose={v.picture} top={!!session} />}

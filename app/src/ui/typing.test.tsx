@@ -2,13 +2,17 @@
 // types and the sats a price comes to; a card's limits set in the currency or in sat, said in their own unit.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CardLimits, CardInfo, LimitsRequest } from '../cardd/client';
 import type { Fiat } from '../money/fiat';
 import { memoryViewKv } from '../testing/viewKv';
 import { AmountViewWith, type ViewKv } from './amountView';
 import { LimitsSheet } from './LimitsSheet';
+import { screenLock } from './lock';
 import { AmountField } from './money';
+
+// The phone's screen lock, which raising a card's limits asks for: confirmed, unless a test says otherwise.
+vi.mock('./lock', () => ({ screenLock: vi.fn(async () => null) }));
 
 const GBP: Fiat = { currency: 'GBP', price: 61_352, time: Math.floor(Date.now() / 1000) };
 const With = ({ kv, fiat, children }: { kv: ViewKv; fiat: Fiat; children: ReactNode }) => (
@@ -83,6 +87,7 @@ describe('AmountField', () => {
 describe('LimitsSheet', () => {
   type Card = Pick<CardInfo, 'id'> & { perTapSat: number; dailySat: number; spent24hMsat: number; limits?: CardLimits };
   const card = (limits?: CardLimits): Card => ({ id: 'c1', perTapSat: limits ? 8_149 : 20_000, dailySat: limits ? 32_598 : 50_000, spent24hMsat: 1_500_000, limits });
+  beforeEach(() => vi.mocked(screenLock).mockClear());
   function open(c: Card, fiat: Fiat = GBP) {
     const setLimits = vi.fn(async (_id: string, _limits: LimitsRequest) => ({}) as CardInfo);
     const onSaved = vi.fn();
@@ -173,5 +178,33 @@ describe('LimitsSheet', () => {
     fireEvent.change(screen.getByDisplayValue('20000'), { target: { value: '25000' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save limits' }));
     await waitFor(() => expect(setLimits).toHaveBeenCalledWith('c1', { perTapSat: 25_000, dailySat: 50_000 }));
+  });
+  it('asks for the screen lock before limits go up, naming them, then saves them', async () => {
+    const { setLimits, onSaved } = open(card(), { currency: 'none' });
+    fireEvent.change(screen.getByDisplayValue('20000'), { target: { value: '25000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save limits' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(screenLock).toHaveBeenCalledWith('Raise limits to 50,000 sat a day · 25,000 sat a tap', "raising a card's limits");
+    expect(vi.mocked(screenLock).mock.invocationCallOrder[0]).toBeLessThan(setLimits.mock.invocationCallOrder[0]);
+  });
+
+  it('saves nothing when the screen lock is refused, and says why', async () => {
+    vi.mocked(screenLock).mockResolvedValueOnce('The screen lock was not confirmed.');
+    const { setLimits, onSaved } = open(card({ currency: 'GBP', perTapMinor: 500, dailyMinor: 2_000 }));
+    fireEvent.change(screen.getByDisplayValue('20.00'), { target: { value: '50' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save limits' }));
+    expect(await screen.findByText('The screen lock was not confirmed.')).toBeTruthy();
+    expect(screenLock).toHaveBeenCalledWith('Raise limits to £50 a day · £5 a tap', "raising a card's limits");
+    expect(setLimits).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Save limits' }).getAttribute('aria-disabled')).not.toBe('true');
+  });
+
+  it('asks for no lock to lower limits', async () => {
+    const { setLimits } = open(card({ currency: 'GBP', perTapMinor: 500, dailyMinor: 2_000 }));
+    fireEvent.change(screen.getByDisplayValue('20.00'), { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save limits' }));
+    await waitFor(() => expect(setLimits).toHaveBeenCalledWith('c1', { currency: 'GBP', perTapMinor: 500, dailyMinor: 1_000 }));
+    expect(screenLock).not.toHaveBeenCalled();
   });
 });
