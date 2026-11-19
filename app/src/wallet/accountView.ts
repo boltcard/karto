@@ -69,6 +69,8 @@ export type MoreRows = {
   photo: string;
   /** The Wipe row's line; disabled while a payment holds some of the balance (cardd refuses the wipe). */
   wipe: { line: string; disabled: boolean };
+  /** The I no longer have this card row's line; disabled as Wipe's is. */
+  giveUp: { line: string; disabled: boolean };
   /** The sheet's last line: the state and version. */
   foot: string;
 };
@@ -83,12 +85,23 @@ export function wipeLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'> | undef
   return { line: c && c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, v, r)} move to Pool; the card is blank again.` : 'The card is blank again.', disabled: false };
 }
 
+/**
+ * The red I no longer have this card row's line, and its confirm's: where the balance goes (in sat while amounts
+ * are hidden, as a wipe's), and that taps of the card are refused; off while a payment holds some of it.
+ */
+export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, v: View = 'sat', r: Rated | null = null): { line: string; disabled: boolean } {
+  if (c.heldMsat > 0) return { line: 'Wait for the payment in progress', disabled: true };
+  const refused = 'taps of it are refused.';
+  return { line: c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, confirmView(v), r)} move to Pool; ${refused}` : `Taps of it are refused.`, disabled: false };
+}
+
 /** The More sheet's rows for a card. hasPhoto: the phone holds its photo. Wipe's line confirms money: in sat while ***. */
 export function moreRows(c: Pick<WalletCard, 'state' | 'version' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, hasPhoto: boolean, v: View = 'sat', r: Rated | null = null): MoreRows {
   return {
     limits: limitsLine(c, v),
     photo: hasPhoto ? 'Take a new picture of the card' : 'Take a picture of the card',
     wipe: wipeLine(c, confirmView(v), r),
+    giveUp: giveUpLine(c, v, r),
     foot: `${STATE[c.state] ?? c.state} · version ${c.version}`,
   };
 }
