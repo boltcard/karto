@@ -254,6 +254,7 @@ type vector struct {
 	update      bool
 	test        bool
 	hosting     *hostingCase // hosting's low-funding alert
+	capped      bool         // the unpaid cap turned payers away
 	card        string       // the card's name
 	currency    string       // the server's currency, "" for none
 	title, text string
@@ -338,6 +339,7 @@ var vectors = []vector{
 	{name: "hosting-low-5", hosting: &hostingCase{1_100_000, 5}, title: "Hosting", text: "Covers about 5 days: top it up or move from Pool"},
 	{name: "hosting-low-1", hosting: &hostingCase{300_000, 1}, title: "Hosting", text: "Covers about 1 day: top it up or move from Pool"},
 	{name: "hosting-low-0", hosting: &hostingCase{50_000, 0}, title: "Hosting", text: "Covers about 0 days: top it up or move from Pool"},
+	{name: "invoices-capped", capped: true, title: "Karto", text: "Some payments in were turned away: too many unpaid invoices this hour"},
 }
 
 func (v vector) payload(t *testing.T) map[string]any {
@@ -347,6 +349,8 @@ func (v vector) payload(t *testing.T) map[string]any {
 		return asMap(t, testPayload(t0))
 	case v.hosting != nil:
 		return asMap(t, HostingLow(v.hosting.availableMsat, v.hosting.days, t0))
+	case v.capped:
+		return asMap(t, InvoicesCapped(t0))
 	case v.refusal != nil:
 		return asMap(t, refusalPayload(taken{last: *v.refusal, count: v.count, tag: v.tag, update: v.update}, v.card))
 	}

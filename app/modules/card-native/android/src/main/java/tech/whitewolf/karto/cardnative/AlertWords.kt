@@ -67,7 +67,7 @@ internal object AlertWords {
   private fun read(p: JSONObject): Alert? {
     if (p.optInt("v", 0) != 1) return null
     val kind = p.str("kind") ?: return null
-    if (kind !in listOf("received", "spent", "refused", "test", "hosting")) return null
+    if (kind !in listOf("received", "spent", "refused", "test", "hosting", "capped")) return null
     val account = p.str("account") ?: ""
     val name = p.str("name") ?: ""
     val card = p.str("card")
@@ -79,6 +79,8 @@ internal object AlertWords {
       "refused" -> refused(p.str("reason"), p.optInt("count"), sat, p.optLong("msat"))
       // Hosting's daily alert while it covers under 7 days: count is its whole days.
       "hosting" -> p.optInt("count").let { "Covers about $it ${if (it == 1) "day" else "days"}: top it up or move from Pool" }
+      // cardd's cap on unpaid invoices turned payers away (top-ups, refund links), at most once an hour.
+      "capped" -> "Some payments in were turned away: too many unpaid invoices this hour"
       else -> "Alerts work"
     }
     // The app's pages name an account as its API does: pool, hosting, shop, or a card's bare id (cardd's payload

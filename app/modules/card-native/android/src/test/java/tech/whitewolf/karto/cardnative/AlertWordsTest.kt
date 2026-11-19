@@ -48,6 +48,16 @@ class AlertWordsTest {
   }
 
   @Test
+  fun theUnpaidCapsAlertOpensTheAppOnTheReceivedChannelUnderOneTag() {
+    val a = alert("invoices-capped")
+    assertEquals("alerts-received", a.channel)
+    assertNull(a.link)
+    // A later one replaces the last.
+    assertEquals("invoices-capped", a.tag)
+    assertFalse(ownTap(a, 60_000))
+  }
+
+  @Test
   fun aPaymentOpensItsPageAndARefusalItsCard() {
     assertEquals("karto://payment?account=b1ee&tx=41", alert("topup-card").link)
     assertEquals("karto://payment?account=pool&tx=42", alert("topup-pool").link)

@@ -149,6 +149,10 @@ type Server struct {
 	// Unpaid caps the invoices those callbacks make that nobody pays, one
 	// cap for both (nil: no cap). See InvoiceUnpaidCap.
 	Unpaid *UnpaidCap
+	// Capped is told when the whole unpaid cap turns a payer away, at most
+	// once an hour, for the owner's alert (nil: no one is told). A client
+	// over only its own share isn't told of.
+	Capped func()
 
 	crediting sync.Mutex // one credit at a time: see credit
 
@@ -157,6 +161,7 @@ type Server struct {
 	limitSince  int       // invoices refused since then
 	cappedSaid  time.Time // the same for the unpaid cap
 	cappedSince int
+	cappedTold  time.Time // when Capped was last told
 }
 
 // InvoiceLimit is cardd's limit on the invoices the public callbacks make,
@@ -233,8 +238,8 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 		return bolt11, hash, true, err
 	}
 	client := ratelimit.ClientKey(r)
-	if free, retry := s.Unpaid.Reserve(client); !free {
-		s.sayCapped()
+	if free, overall, retry := s.Unpaid.Reserve(client); !free {
+		s.sayCapped(overall)
 		w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 			"reason": "This server has too many unpaid invoices just now. Try again later."})
@@ -253,14 +258,23 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 	return bolt11, hash, true, err
 }
 
-// sayCapped logs that the unpaid cap refused an invoice, as sayLimited does.
-func (s *Server) sayCapped() {
+// sayCapped logs that the unpaid cap refused an invoice, as sayLimited does,
+// and for the whole cap (overall) tells Capped, at most once an hour.
+func (s *Server) sayCapped(overall bool) {
 	s.limitLog.Lock()
-	defer s.limitLog.Unlock()
 	s.cappedSince++
-	if now := s.Now(); now.Sub(s.cappedSaid) >= time.Minute {
+	now := s.Now()
+	if now.Sub(s.cappedSaid) >= time.Minute {
 		s.Log.Printf("lnurl: invoices refused by the unpaid cap: %d since the last such line", s.cappedSince)
 		s.cappedSaid, s.cappedSince = now, 0
+	}
+	tell := overall && s.Capped != nil && (s.cappedTold.IsZero() || now.Sub(s.cappedTold) >= time.Hour)
+	if tell {
+		s.cappedTold = now
+	}
+	s.limitLog.Unlock()
+	if tell {
+		s.Capped()
 	}
 }
 
