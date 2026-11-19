@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/boltcard/karto/server/internal/lnurl"
 	"github.com/boltcard/karto/server/internal/ratelimit"
 )
 
@@ -44,7 +45,7 @@ func TestTooManyTopUpInvoicesAreRefused(t *testing.T) {
 	}
 	made := w.f.Calls("/createinvoice")
 	code, h, out := w.from("203.0.113.7", "/lnurlp/pool/cb?amount=1000")
-	if code != http.StatusTooManyRequests || out["status"] != "ERROR" || !strings.Contains(out["reason"].(string), "Try again") ||
+	if code != http.StatusTooManyRequests || out["status"] != "ERROR" || out["reason"] != "This server is asked for too many invoices just now. Try again shortly." ||
 		h.Get("Retry-After") != "10" || h.Get("Access-Control-Allow-Origin") != "*" {
 		t.Fatalf("the 3rd: %d %v %v", code, h, out)
 	}
@@ -107,5 +108,19 @@ func TestTheLimitIsLoggedNotOnEveryRefusal(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "203.0.113.7") {
 		t.Fatalf("the log names the client: %s", buf.String())
+	}
+}
+
+// cardd's own limit: 20 at once from one address, then one every 10 s.
+func TestCarddsInvoiceLimit(t *testing.T) {
+	at := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	l := lnurl.InvoiceLimit(func() time.Time { return at })
+	for i := 0; i < 20; i++ {
+		if ok, _ := l.Take("203.0.113.7"); !ok {
+			t.Fatalf("take %d refused", i+1)
+		}
+	}
+	if ok, retry := l.Take("203.0.113.7"); ok || retry != 10*time.Second {
+		t.Fatalf("the 21st: %v, retry %v", ok, retry)
 	}
 }

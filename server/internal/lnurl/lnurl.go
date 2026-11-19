@@ -152,16 +152,18 @@ type Server struct {
 }
 
 // InvoiceLimit is cardd's limit on the invoices the public callbacks make,
-// per client and overall. A payer's wallet asks once per payment, and again
-// on a retry or a changed amount: 5 at once and then one every 10 s is more
-// than one person needs. Overall, 60 at once covers many payers together (a
-// shop's refunds, a crowd topping up cards), and one a second after that is
-// still far beyond a personal server's real traffic, while a flood makes
-// phoenixd at most 86,400 invoices a day instead of as many as it can.
+// per client and overall. The overall bucket is what bounds phoenixd: 60 at
+// once covers payers at several addresses together (a shop's refunds, a
+// crowd topping up cards), and one a second after that is still far beyond a
+// personal server's real traffic, while a flood makes phoenixd at most
+// 86,400 invoices a day instead of as many as it can. Per client, 20 at once
+// and then one every 10 s: a wallet asks once per payment, and again on a
+// retry or a changed amount, and a group behind one address (a custodial
+// wallet's servers, a venue's Wi-Fi, carrier NAT) shares a bucket.
 // At most 4,096 clients are kept (well under a megabyte): more at once
 // than that is a flood the overall limit already holds.
 func InvoiceLimit(now func() time.Time) *ratelimit.Limiter {
-	return ratelimit.New(ratelimit.Rate{Burst: 5, Every: 10 * time.Second}, ratelimit.Rate{Burst: 60, Every: time.Second}, 4096, now)
+	return ratelimit.New(ratelimit.Rate{Burst: 20, Every: 10 * time.Second}, ratelimit.Rate{Burst: 60, Every: time.Second}, 4096, now)
 }
 
 // Routes adds the public endpoints to mux.
@@ -204,7 +206,7 @@ func (s *Server) mayInvoice(w http.ResponseWriter, r *http.Request) bool {
 	s.sayLimited()
 	w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
 	writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
-		"reason": "This server is asked for too many invoices just now. Try again in a minute."})
+		"reason": "This server is asked for too many invoices just now. Try again shortly."})
 	return false
 }
 
