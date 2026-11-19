@@ -209,7 +209,7 @@ func newServer(args []string) (*server, error) {
 	pd := phoenixd.New(*pdURL, conf.HTTPPassword)
 	l := ledger.New(st, pd, logger)
 	ln := &lnurl.Server{Cards: svc, Store: st, Ledger: l, Invoices: pd, Host: *host, Log: logger, Now: time.Now, QuickLook: 2 * time.Second,
-		Limit: lnurl.InvoiceLimit(time.Now)}
+		Limit: lnurl.InvoiceLimit(time.Now), Unpaid: lnurl.InvoiceUnpaidCap(time.Now)}
 	sweep := func(ctx context.Context) error { return ln.Sweep(ctx, 0) }
 	l.Liquidity, l.Sweep = pd.Liquidity, sweep
 	l.BooksSet = booksSet(ln, func(msg string) { logger.Print(msg) })

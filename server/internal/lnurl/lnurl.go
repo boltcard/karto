@@ -143,12 +143,17 @@ type Server struct {
 	// refund links, one limit for both): each is a row in phoenixd's
 	// database, asked for by anyone (nil: no limit). See InvoiceLimit.
 	Limit *ratelimit.Limiter
+	// Unpaid caps the invoices those callbacks make that nobody pays, one
+	// cap for both (nil: no cap). See InvoiceUnpaidCap.
+	Unpaid *UnpaidCap
 
 	crediting sync.Mutex // one credit at a time: see credit
 
 	limitLog   sync.Mutex
 	limitSaid  time.Time // when the log last said invoices were refused
 	limitSince int       // invoices refused since then
+	cappedSaid  time.Time // the same for the unpaid cap
+	cappedSince int
 }
 
 // InvoiceLimit is cardd's limit on the invoices the public callbacks make,
@@ -208,6 +213,42 @@ func (s *Server) mayInvoice(w http.ResponseWriter, r *http.Request) bool {
 	writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 		"reason": "This server is asked for too many invoices just now. Try again shortly."})
 	return false
+}
+
+// reserveUnpaid takes a place under the unpaid cap for an invoice about to
+// be made; false after the refusal is answered: LNURL's error, with HTTP 429
+// and when the oldest unpaid invoice leaves the count. made gives the place
+// the invoice's hash, or gives it back with "" (no invoice was made).
+func (s *Server) reserveUnpaid(w http.ResponseWriter) (made func(hash string), ok bool) {
+	if s.Unpaid == nil {
+		return func(string) {}, true
+	}
+	ok, retry := s.Unpaid.Reserve()
+	if !ok {
+		s.sayCapped()
+		w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
+		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
+			"reason": "This server has too many unpaid invoices just now. Try again later."})
+		return nil, false
+	}
+	return func(hash string) {
+		if hash == "" {
+			s.Unpaid.Release()
+		} else {
+			s.Unpaid.Made(hash)
+		}
+	}, true
+}
+
+// sayCapped logs that the unpaid cap refused an invoice, as sayLimited does.
+func (s *Server) sayCapped() {
+	s.limitLog.Lock()
+	defer s.limitLog.Unlock()
+	s.cappedSince++
+	if now := s.Now(); now.Sub(s.cappedSaid) >= time.Minute {
+		s.Log.Printf("lnurl: invoices refused by the unpaid cap: %d since the last such line", s.cappedSince)
+		s.cappedSaid, s.cappedSince = now, 0
+	}
 }
 
 // sayLimited logs that the limit refused an invoice: the first at once, then
@@ -303,10 +344,15 @@ func (s *Server) payCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.mayInvoice(w, r) {
 		return
 	}
+	made, ok := s.reserveUnpaid(w)
+	if !ok {
+		return
+	}
 	// The invoice's description hash stays sha256(metadata): the note isn't
 	// part of the invoice, so cardd keeps it by the payment hash.
 	sum := sha256.Sum256([]byte(s.metadata(name, label)))
 	bolt11, hash, err := s.Invoices.CreateInvoice(r.Context(), msat/1000, hex.EncodeToString(sum[:]), string(acct), invoiceExpiry)
+	made(hash)
 	if err != nil {
 		s.Log.Printf("lnurl: invoice for %s: %v", name, err)
 		fail(w, "The server can't make an invoice right now.")
@@ -413,6 +459,9 @@ func (s *Server) credit(ctx context.Context, p phoenixd.Incoming) error {
 	acct, ok := parseAccount(external)
 	if !ok && !isSale {
 		return nil // not one of cardd's invoices
+	}
+	if s.Unpaid != nil {
+		s.Unpaid.Paid(p.PaymentHash)
 	}
 	s.crediting.Lock()
 	defer s.crediting.Unlock()
@@ -948,8 +997,13 @@ func (s *Server) backCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.mayInvoice(w, r) {
 		return
 	}
+	made, ok := s.reserveUnpaid(w)
+	if !ok {
+		return
+	}
 	sum := sha256.Sum256([]byte(refundMetadata))
 	bolt11, hash, err := s.Invoices.CreateInvoice(r.Context(), msat/1000, hex.EncodeToString(sum[:]), "refund:"+string(acct), invoiceExpiry)
+	made(hash)
 	if err != nil {
 		s.Log.Printf("lnurl: invoice for a refund link: %v", err)
 		fail(w, "The server can't make an invoice right now.")
