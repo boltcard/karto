@@ -30,7 +30,7 @@ export default function Welcome() {
       <ListGroup>
         <ListRow lead={<NumberLead n={1} />} name="Write down 12 words" line="Your recovery phrase: the only way back to the server and its money." />
         <ListRow lead={<NumberLead n={2} />} name="Pay for the server" line="Over Lightning, from a wallet you already have. You choose how many days." divider />
-        <ListRow lead={<NumberLead n={3} />} name="Wait while it installs" line="About 10 to 15 minutes. Keep the app open while it does." divider />
+        <ListRow lead={<NumberLead n={3} />} name="Wait while it installs" line="Up to about an hour: LNVPS has to confirm the new server before your wallet seed goes to it. You can leave the app while it waits." divider />
       </ListGroup>
       {note && <ErrorText>{note}</ErrorText>}
       <Button title="Set up a new server" onPress={() => router.push('/phrase')} />

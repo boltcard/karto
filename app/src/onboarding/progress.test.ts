@@ -220,6 +220,10 @@ describe('progress', () => {
     // A clock set back never shows minutes below nought; a state saved mid-install by an older build has no start.
     expect(installFoot({ ...s, installSince: 1_000_000 }, 900_000)).toBe('0 min so far. Keep the app open: the screen stays on. If you leave, it carries on when you come back.');
     expect(installFoot(s, 1_000_000)).toBe('Keep the app open: the screen stays on. If you leave, it carries on when you come back.');
+    // During the wait for LNVPS: no third count of minutes beside the status line's and the row's.
+    expect(installFoot({ ...s, installSince: 1_000_000, waiting: 'host_key_confirm' }, 1_000_000 + 14 * 60_000)).toBe(
+      'You can leave the app while LNVPS confirms your server: the install carries on when you come back.',
+    );
   });
 
   it('shows how far an upload has got', () => {

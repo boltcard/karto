@@ -288,12 +288,15 @@ export function newInstallLogLines(prev: OnboardingState | null, s: OnboardingSt
   return s.installed.filter((step) => !before.has(step) && s.stepMs?.[step] !== undefined).map((step) => installLogLine(run, step, s.stepMs![step]!));
 }
 
-/** Under the install's steps: its whole minutes so far (from installSince, when the state has it) and what to do meanwhile. */
+/**
+ * Under the install's steps: its whole minutes so far (from installSince, when the state has it) and what to do
+ * meanwhile. During the wait for LNVPS the minutes are left out: the status line and the step's row already count the
+ * wait's own, and a third count from the install's start read as a clock that disagreed with them.
+ */
 export function installFoot(s: OnboardingState, nowMs: number): string {
   // The wait for LNVPS can take an hour: the app needn't stay open for it.
-  const keep = s.waiting === 'host_key_confirm'
-    ? 'You can leave the app while LNVPS confirms your server: the install carries on when you come back.'
-    : 'Keep the app open: the screen stays on. If you leave, it carries on when you come back.';
+  if (s.waiting === 'host_key_confirm') return 'You can leave the app while LNVPS confirms your server: the install carries on when you come back.';
+  const keep = 'Keep the app open: the screen stays on. If you leave, it carries on when you come back.';
   return s.installSince === undefined ? keep : `${Math.floor(Math.max(0, nowMs - s.installSince) / 60_000)} min so far. ${keep}`;
 }
 
