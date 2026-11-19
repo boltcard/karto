@@ -11,6 +11,8 @@ export const RELEASES_PAGE = 'https://github.com/boltcard/karto/releases/latest'
 export const LATEST_RELEASE_API = 'https://api.github.com/repos/boltcard/karto/releases/latest';
 /** How long an answer stands before GitHub is asked again. */
 export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
+/** How long after an ask that failed (no answer, a refusal, an answer that couldn't be kept) before the next. */
+export const RETRY_AFTER_MS = 60 * 60 * 1000;
 /** expo-secure-store's key: letters, digits, '.', '-' and '_' only. */
 export const SAVED_KEY = 'karto.appUpdate';
 
@@ -35,10 +37,15 @@ export function isNewer(a: string, b: string): boolean {
   return false;
 }
 
-/** The latest full release's version (X.Y.Z), or null when there is none or the answer isn't one. Throws when GitHub can't be reached. */
+/**
+ * The latest full release's version (X.Y.Z), or null when there is none (404) or the answer names none. Throws when
+ * GitHub can't be reached or refuses (a 403 or 429 when the addresses behind one carrier's or shop's network have
+ * used up the hour's 60 asks), so a refusal is never taken for "no newer release".
+ */
 export async function latestRelease(fetch: FetchFn): Promise<string | null> {
   const r = await fetch(LATEST_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
-  if (!r.ok) return null;
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
   const body: unknown = await r.json();
   if (typeof body !== 'object' || body === null) return null;
   const { tag_name: tag, draft, prerelease } = body as { tag_name?: unknown; draft?: unknown; prerelease?: unknown };
@@ -64,20 +71,41 @@ async function readSaved(kv: KeyValue): Promise<Saved | null> {
   }
 }
 
+/** What one app remembers between checks while it runs: the last answer had, and when an ask last failed. */
+export type Memory = { saved: Saved | null; failedAt: number | null };
+
+const due = (at: number, every: number, nowMs: number) => nowMs - at >= every || nowMs < at;
+
 /**
  * The newer version to tell the person about, or null. GitHub is asked when the last answer is a day old (or from a
- * clock that has since gone back); an answer that couldn't be had leaves the last one standing, and is asked for again
- * at the next check.
+ * clock that has since gone back), and not within an hour of an ask that failed; a failed ask leaves the last answer
+ * standing. The answer is kept in the secure store, and in memory too, in case the store can't keep it.
  */
-export async function newerRelease(kv: KeyValue, fetch: FetchFn, current: string, nowMs: number): Promise<string | null> {
-  let saved = await readSaved(kv);
-  if (!saved || nowMs - saved.checkedAt >= CHECK_EVERY_MS || nowMs < saved.checkedAt) {
+export async function newerRelease(kv: KeyValue, fetch: FetchFn, current: string, nowMs: number, memory: Memory): Promise<string | null> {
+  const kept = await readSaved(kv);
+  let saved = kept && (!memory.saved || kept.checkedAt >= memory.saved.checkedAt) ? kept : memory.saved;
+  if ((!saved || due(saved.checkedAt, CHECK_EVERY_MS, nowMs)) && (memory.failedAt === null || due(memory.failedAt, RETRY_AFTER_MS, nowMs))) {
     try {
       saved = { checkedAt: nowMs, latest: await latestRelease(fetch) };
-      await kv.setItemAsync(SAVED_KEY, JSON.stringify(saved)).catch(() => {});
+      memory.saved = saved;
+      memory.failedAt = null;
+      await kv.setItemAsync(SAVED_KEY, JSON.stringify(saved));
     } catch {
-      // Not reached: the last answer, if any, stands.
+      // No answer, a refusal, or one the store couldn't keep: the last answer stands, and GitHub waits an hour.
+      memory.failedAt = nowMs;
     }
   }
   return saved?.latest && isNewer(saved.latest, current) ? saved.latest : null;
+}
+
+/** One app's checks: two that overlap (the screen opening as the app comes to the front) share one ask. */
+export function updateChecker(kv: KeyValue, fetch: FetchFn): (current: string, nowMs: number) => Promise<string | null> {
+  const memory: Memory = { saved: null, failedAt: null };
+  let running: Promise<string | null> | null = null;
+  return (current, nowMs) => {
+    running ??= newerRelease(kv, fetch, current, nowMs, memory).finally(() => {
+      running = null;
+    });
+    return running;
+  };
 }

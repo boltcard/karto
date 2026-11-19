@@ -5,9 +5,9 @@ import * as SecureStore from 'expo-secure-store';
 import { useEffect, useState } from 'react';
 import { AppState, Platform } from 'react-native';
 import { withTimeout } from '../lightning/lightning';
-import { asksGithub, newerRelease } from './appUpdate';
+import { asksGithub, updateChecker } from './appUpdate';
 
-const githubFetch = withTimeout((url, init) => fetch(url, init), 15_000);
+const check = updateChecker(SecureStore, withTimeout((url, init) => fetch(url, init), 15_000));
 // Metro inlines these two where they are written out in full.
 const BUILD = { os: Platform.OS, release: process.env.EXPO_PUBLIC_KARTO_RELEASE, store: process.env.EXPO_PUBLIC_KARTO_STORE };
 
@@ -17,12 +17,12 @@ export function useAppUpdate(): string | null {
     const current = Constants.expoConfig?.version;
     if (!asksGithub(BUILD) || !current) return;
     let live = true;
-    const check = () =>
-      void newerRelease(SecureStore, githubFetch, current, Date.now())
+    const ask = () =>
+      void check(current, Date.now())
         .then((v) => live && setNewer(v))
         .catch(() => {});
-    check();
-    const sub = AppState.addEventListener('change', (s) => s === 'active' && check());
+    ask();
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && ask());
     return () => {
       live = false;
       sub.remove();

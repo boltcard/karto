@@ -223,7 +223,7 @@ describe('walletBanners', () => {
 
   it('says a newer release is on GitHub, last and amber, opening the releases', () => {
     expect(banners({ appUpdate: '1.0.1' })).toEqual([
-      { key: 'app-update', tone: 'amber', text: 'Karto Wallet 1.0.1 is out: tap to get it from GitHub', target: { kind: 'github-releases' } },
+      { key: 'app-update', tone: 'amber', text: 'Karto Wallet 1.0.1 is out on GitHub', target: { kind: 'github-releases' } },
     ]);
     expect(banners({ appUpdate: '1.0.1', nfc: 'off' }).map((b) => b.key)).toEqual(['nfc-off', 'app-update']);
     expect(banners({ appUpdate: null })).toEqual([]);

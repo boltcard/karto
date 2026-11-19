@@ -88,7 +88,7 @@ export function walletBanners(i: BannerInput): Banner[] {
   if (dns === 'missing' || dns === 'other') b.push(amber('dns', "Your server can't be reached on some networks", SERVER));
   if (i.status?.kind === 'ok' && i.status.updateAvailable && !i.updating) b.push(amber('update', 'This app carries a newer version of the server', SERVER));
   if (i.updating) b.push(amber('updating', `Updating the server · ${elapsed(i.updating.startedAt, i.nowMs)}`, SERVER));
-  if (i.appUpdate) b.push(amber('app-update', `Karto Wallet ${i.appUpdate} is out: tap to get it from GitHub`, { kind: 'github-releases' }));
+  if (i.appUpdate) b.push(amber('app-update', `Karto Wallet ${i.appUpdate} is out on GitHub`, { kind: 'github-releases' }));
   return b;
 }
 

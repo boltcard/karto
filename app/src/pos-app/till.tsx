@@ -132,8 +132,14 @@ export default function Till() {
       {error && error !== note && <ErrorText>{error}</ErrorText>}
       <Small>{tillLine(pos.paired)}</Small>
       {newer && (
-        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(RELEASES_PAGE).catch(() => {})} style={({ pressed }) => pressed && layout.dim}>
-          <Small>{`Karto PoS ${newer} is out: tap to get it from GitHub ›`}</Small>
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={`Karto PoS ${newer} is out on GitHub`}
+          hitSlop={12}
+          onPress={() => void Linking.openURL(RELEASES_PAGE).catch(() => {})}
+          style={({ pressed }) => pressed && layout.dim}
+        >
+          <Small>{`Karto PoS ${newer} is out on GitHub ›`}</Small>
         </Pressable>
       )}
       {/* Space under the name, so the pad doesn't sit on the screen's foot on a short phone. */}
