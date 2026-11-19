@@ -7,10 +7,12 @@
 import { CarddError } from '../cardd/error';
 import { isNetworkFailure, type CardDeps } from './deps';
 
-export const GIVE_UP_UNREACHABLE = "Can't reach your server: nothing was changed. Try again when it answers.";
+// No answer may still mean the start reached the server (its answer was lost): the money may have moved, so the words
+// don't say nothing did. Pressing again finishes it: the start can be repeated.
+export const GIVE_UP_UNREACHABLE = "Can't reach your server, so the card may not be removed yet. Try again when it answers.";
 export const GIVE_UP_BUSY = 'A payment on this card is in progress: try again once it has finished.';
 
-/** unreachable: the start didn't reach the server, so nothing changed. busy: a payment holds some of the card's balance. */
+/** unreachable: no answer to the start (it may have reached the server). busy: a payment holds some of the card's balance. */
 export class GiveUpError extends Error {
   constructor(readonly why: 'unreachable' | 'busy') {
     super(why === 'unreachable' ? GIVE_UP_UNREACHABLE : GIVE_UP_BUSY);
