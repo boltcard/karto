@@ -1,5 +1,5 @@
 #!/bin/sh
-# Makes an Android release of Karto Wallet and Karto PoS as a DRAFT pre-release on GitHub, for a person to look at
+# Makes an Android release of Karto Wallet and Karto PoS as a DRAFT release on GitHub, for a person to look at
 # and publish. Run on the computer that holds the project's signing key (deploy/signing/README.md), from a clean
 # checkout of main as it is on GitHub:
 #   sh deploy/release/android-release.sh           build, check, and make the draft
@@ -139,7 +139,7 @@ else
 	: >"$out/notes.md"
 fi
 cat >>"$out/notes.md" <<EOF
-**Beta.** Karto Wallet and Karto PoS handle real bitcoin. Use amounts you can afford to lose while the apps are in beta.
+Karto Wallet and Karto PoS handle real bitcoin. Use amounts you can afford to lose.
 
 | File | App | Android | Phones |
 |---|---|---|---|
@@ -158,7 +158,7 @@ Signer #1 certificate SHA-256 digest: $pin
 
 (the same certificate as \`$fingerprint\`, as keytool and Android's settings write it), and \`sha256sum -c SHA256SUMS\` checks the files. An app signed by any other key can't update these, and these can't update it.
 
-Updates: install the next release's APK over this one. With Obtainium, add this repository, allow pre-releases, and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
+Updates: each app says on its main screen when a newer release is here (it asks GitHub once a day). Install the next release's APK over this one, or with Obtainium add this repository and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
 EOF
 
 if [ -n "$is_local" ]; then
@@ -170,8 +170,8 @@ step "nothing changed while it built"
 [ -z "$(git status --porcelain)" ] || stop "the checkout changed during the build: no draft made"
 [ "$(git rev-parse HEAD)" = "$sha" ] || stop "HEAD moved during the build: no draft made"
 
-step "the draft pre-release on GitHub"
-url=$(gh release create "$tag" -R "$REPO" --draft --prerelease --target "$sha" --title "Karto $tag" --notes-file "$out/notes.md" \
+step "the draft release on GitHub"
+url=$(gh release create "$tag" -R "$REPO" --draft --target "$sha" --title "Karto $tag" --notes-file "$out/notes.md" \
 	"$out/karto-wallet-$tag-arm64-v8a.apk" "$out/karto-wallet-$tag-armeabi-v7a.apk" \
 	"$out/karto-pos-$tag-arm64-v8a.apk" "$out/karto-pos-$tag-armeabi-v7a.apk" "$out/SHA256SUMS")
 step "done"
