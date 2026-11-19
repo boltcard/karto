@@ -816,6 +816,79 @@ func TestNoChannelAfterARestoreWaitsForThePerson(t *testing.T) {
 	}
 }
 
+// A backup that owes nothing, restored where phoenixd has no channel at all:
+// no money can be missing, so the books are set at once instead of after
+// RestoreWait and a scare; a channel that comes back later (money received
+// after the backup) is booked then, as after the person's restore-books.
+func TestARestoreOwingNothingWithNoChannelSetsTheBooksAtOnce(t *testing.T) {
+	ctx := context.Background()
+	w := setup(t)
+	if err := w.st.AdjustPool(ctx, -100_000_000, "spent before the backup"); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	l := w.restored(t, &now)
+	w.f.BalanceSat, w.f.Channel = 0, false
+	step(t, l)
+	r := restoreState(t, l)
+	if r.State != "done" || r.ReconciledMsat != 0 || r.ReconciledAt != now.Unix() {
+		t.Fatalf("owing nothing, no channel: %+v", r)
+	}
+	if paused, reason := l.Paused(); paused {
+		t.Fatalf("paused: %q", reason)
+	}
+	if _, err := w.st.GetMeta(ctx, "restore.channel_later"); err != nil {
+		t.Fatalf("a late channel isn't awaited: %v", err)
+	}
+	w.f.BalanceSat, w.f.Channel, w.f.ChannelState = 7_000, true, "Normal"
+	now = now.Add(time.Hour)
+	step(t, l)
+	if r := restoreState(t, l); r.State != "done" || r.ReconciledMsat != 7_000_000 || available(t, w.st, store.Pool) != -93_000_000 {
+		t.Fatalf("a late channel: %+v, pool %d", r, available(t, w.st, store.Pool))
+	}
+}
+
+// Owing nothing but with a channel coming up, or with phoenixd holding a
+// snapshot's hold open, the restore waits as before.
+func TestARestoreOwingNothingWaitsForAChannelComingUp(t *testing.T) {
+	ctx := context.Background()
+	w := setup(t)
+	w.st.AdjustPool(ctx, -100_000_000, "spent before the backup")
+	now := time.Now()
+	l := w.restored(t, &now)
+	w.f.BalanceSat, w.f.Channel, w.f.ChannelState = 0, true, "Offline"
+	step(t, l)
+	if r := restoreState(t, l); r.State != "pending" {
+		t.Fatalf("a channel not up: %+v", r)
+	}
+	w.f.Channel = false
+	step(t, l)
+	if r := restoreState(t, l); r.State != "done" {
+		t.Fatalf("no channel at all: %+v", r)
+	}
+
+	// The books owe nothing only because a snapshot's hold reserves it all:
+	// it may yet be released, so the restore waits for that first.
+	w = setup(t)
+	w.st.Move(ctx, card, store.Pool, 100_000_000, "")
+	w.st.AdjustPool(ctx, -99_000_000, "spent before the backup")
+	l = w.restored(t, &now)
+	w.f.BalanceSat, w.f.Channel = 0, false
+	bolt11, hash := w.f.Invoice(995_000)
+	if _, err := w.st.OpenHold(ctx, store.HoldRequest{Account: store.Pool, Kind: store.KindSend, AmountMsat: 995_000, FeeBudgetMsat: 5_000, PaymentHash: hash, Invoice: bolt11}); err != nil {
+		t.Fatal(err)
+	}
+	if owed, _ := w.st.OwedMsat(ctx); owed != 0 {
+		t.Fatalf("owed %d", owed)
+	}
+	if err := l.CheckRestore(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if r := restoreState(t, l); r.State != "pending" {
+		t.Fatalf("a hold open: %+v", r)
+	}
+}
+
 // noChannel is w's restore stopped at no_channel: phoenixd answered with no
 // channel for RestoreWait.
 func (w *world) noChannel(t *testing.T, now *time.Time) *ledger.Ledger {

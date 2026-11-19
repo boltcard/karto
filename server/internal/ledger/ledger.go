@@ -329,6 +329,24 @@ func (l *Ledger) CheckRestore(ctx context.Context) error {
 	if liq.Usable {
 		return l.booksOnceUsable(ctx, liq, restorePending)
 	}
+	if !liq.Channel {
+		// Books that owe nothing, with no hold open, have nothing a missing
+		// channel could hold: set them now, and book a channel that comes
+		// back later (money received after the backup) then.
+		owed, err := l.store.OwedMsat(ctx)
+		if err != nil {
+			return err
+		}
+		holds, err := l.store.OpenHolds(ctx)
+		if err != nil {
+			return err
+		}
+		if owed <= 0 && len(holds) == 0 {
+			l.log.Printf("ledger: restore: the backup owes nothing and phoenixd has no channel; setting the books now")
+			_, err := l.setRestoreBooks(ctx, restorePending, true)
+			return err
+		}
+	}
 	if now.Before(time.Unix(since, 0).Add(l.RestoreWait)) {
 		return nil
 	}
