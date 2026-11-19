@@ -595,6 +595,27 @@
       "title": "Hosting",
       "text": "Covers about 0 days: top it up or move from Pool",
       "link": "karto://account?id=hosting"
+    },
+    {
+      "name": "invoices-capped",
+      "payload": {
+        "account": "",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": null,
+        "kind": "capped",
+        "msat": 0,
+        "name": "",
+        "reason": null,
+        "sat": 0,
+        "tag": "invoices-capped",
+        "tx": null,
+        "v": 1
+      },
+      "title": "Karto",
+      "text": "Some payments in were turned away: too many unpaid invoices this hour",
+      "link": ""
     }
   ]
 }

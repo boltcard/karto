@@ -253,6 +253,11 @@ func newServer(args []string) (*server, error) {
 		sender.Refused(alerts.Refusal{CardID: r.CardID, Reason: alerts.RefusalReason(r.Reason), AmountMsat: r.AmountMsat, At: r.At})
 	}
 	money.Push = sender
+	ln.Capped = func() { // payers turned away by the unpaid cap
+		if !sender.Send(alerts.InvoicesCapped(time.Now()), alerts.UrgencyNormal) {
+			logger.Printf("alerts: the queue is full: the unpaid cap's alert is dropped")
+		}
+	}
 	renewer.Alerts = sender // hosting's daily low-funding alert
 	// Snapshots next to the database: /data/backups in the container.
 	snaps := &backup.Snapshotter{Store: st, Dir: filepath.Join(filepath.Dir(*dbPath), "backups"), Now: time.Now, Log: logger}

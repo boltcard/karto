@@ -235,6 +235,13 @@ func HostingLow(availableMsat int64, days int, now time.Time) Payload {
 		Count: days, At: now.Unix(), Tag: "hosting-low"}
 }
 
+// InvoicesCapped is the alert when cardd's cap on unpaid invoices turned
+// payers away (top-ups and refund links), at most once an hour. Its tag
+// makes a later one replace the last on the phone.
+func InvoicesCapped(now time.Time) Payload {
+	return Payload{V: 1, Kind: "capped", At: now.Unix(), Tag: "invoices-capped"}
+}
+
 // testPayload is the alert Settings' test sends ("Alerts work").
 func testPayload(now time.Time) Payload {
 	return Payload{V: 1, Kind: "test", At: now.Unix()}

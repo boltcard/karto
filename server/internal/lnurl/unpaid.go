@@ -48,9 +48,11 @@ func InvoiceUnpaidCap(now func() time.Time) *UnpaidCap {
 }
 
 // Reserve takes a place for an invoice about to be made for client; false,
-// with how long until a place should be free, when there is none. The
-// caller then calls Made with the invoice's hash, or Release.
-func (c *UnpaidCap) Reserve(client string) (bool, time.Duration) {
+// with how long until a place should be free, when there is none: overall
+// true when the whole cap is full (every payer is turned away), false when
+// only client's share is. The caller then calls Made with the invoice's
+// hash, or Release.
+func (c *UnpaidCap) Reserve(client string) (ok, overall bool, retry time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
@@ -82,13 +84,13 @@ func (c *UnpaidCap) Reserve(client string) (bool, time.Duration) {
 		return from.Add(c.window).Sub(now)
 	}
 	if len(c.made)+reserved >= c.max {
-		return false, free(oldest)
+		return false, true, free(oldest)
 	}
 	if mine >= c.perClient {
-		return false, free(oldestMine)
+		return false, false, free(oldestMine)
 	}
 	c.reserved[client]++
-	return true, 0
+	return true, false, 0
 }
 
 // Made fills client's reserved place with the invoice phoenixd made.

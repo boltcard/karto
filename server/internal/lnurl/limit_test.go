@@ -254,27 +254,65 @@ func TestAFailedInvoiceTakesNoPlace(t *testing.T) {
 func TestUnpaidCapCountsInvoicesBeingMade(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
 	c := lnurl.NewUnpaidCap(2, 2, time.Hour, func() time.Time { return at })
-	if ok, _ := c.Reserve("a"); !ok {
+	if ok, _, _ := c.Reserve("a"); !ok {
 		t.Fatal("first")
 	}
-	if ok, _ := c.Reserve("b"); !ok {
+	if ok, _, _ := c.Reserve("b"); !ok {
 		t.Fatal("second")
 	}
-	if ok, retry := c.Reserve("c"); ok || retry != time.Second {
+	if ok, overall, retry := c.Reserve("c"); ok || !overall || retry != time.Second {
 		t.Fatalf("third while two are being made: %v %v", ok, retry)
 	}
 	c.Release("a")
 	c.Made("b", "bb")
 	at = at.Add(10 * time.Minute)
-	if ok, _ := c.Reserve("a"); !ok {
+	if ok, _, _ := c.Reserve("a"); !ok {
 		t.Fatal("after a release")
 	}
 	c.Made("a", "aa")
-	if ok, retry := c.Reserve("c"); ok || retry != 50*time.Minute {
+	if ok, _, retry := c.Reserve("c"); ok || retry != 50*time.Minute {
 		t.Fatalf("full: %v %v", ok, retry)
 	}
 	c.Paid("bb")
-	if ok, _ := c.Reserve("c"); !ok {
+	if ok, _, _ := c.Reserve("c"); !ok {
 		t.Fatal("after a payment")
+	}
+}
+
+// The owner is told when the whole cap turns payers away, at most once an hour; never for one client over its share.
+func TestTheOwnerIsToldWhenTheCapTurnsPayersAway(t *testing.T) {
+	w := setup(t)
+	at := time.Now()
+	w.capped(&at)
+	w.s.Now = func() time.Time { return at }
+	told := 0
+	w.s.Capped = func() { told++ }
+	for _, addr := range []string{"203.0.113.1", "203.0.113.1", "203.0.113.1"} {
+		w.from(addr, "/lnurlp/pool/cb?amount=1000")
+	}
+	if told != 0 {
+		t.Fatalf("told for a client over its share: %d", told)
+	}
+	w.from("203.0.113.2", "/lnurlp/pool/cb?amount=1000") // the cap's 3rd: full now
+	for _, addr := range []string{"203.0.113.3", "203.0.113.4"} {
+		if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests {
+			t.Fatalf("%s: %d", addr, code)
+		}
+	}
+	if told != 1 {
+		t.Fatalf("told %d times", told)
+	}
+	at = at.Add(59 * time.Minute)
+	w.from("203.0.113.5", "/lnurlp/pool/cb?amount=1000")
+	if told != 1 {
+		t.Fatalf("told again within the hour: %d", told)
+	}
+	// An hour on, the first ones have left the count: new ones fill it again, and it is said again.
+	at = at.Add(time.Minute)
+	for _, addr := range []string{"203.0.113.6", "203.0.113.7", "203.0.113.8", "203.0.113.9"} {
+		w.from(addr, "/lnurlp/pool/cb?amount=1000")
+	}
+	if told != 2 {
+		t.Fatalf("an hour on: told %d times", told)
 	}
 }
