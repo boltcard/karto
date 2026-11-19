@@ -35,10 +35,13 @@ TaskManager.defineTask(KEY_WATCH_TASK, async () => {
         return key ? new LnvpsClient({ fetch: fetch40, nostrSecretKey: key }) : null;
       },
       notify: (n) => CardNative.postSetupNotice?.(n.tag, n.title, n.text),
-      // The backup job gets its hour back once the app is in front (backupHourAgain): not from inside the worker's run.
+      // The copy of the key goes first. The task itself is unregistered by the app once in front (settleKeyWatch),
+      // which also gives the backup job its hour back: from inside the worker's own run, either would cancel it.
       end: async () => {
-        if (await endKeyWatch()) await record.noteEnded();
+        await record.remove();
+        await record.noteEnded();
       },
+      now: Date.now,
     });
     log({ ended });
     return BackgroundTask.BackgroundTaskResult.Success;
@@ -50,27 +53,45 @@ TaskManager.defineTask(KEY_WATCH_TASK, async () => {
   }
 });
 
-/** Whether the watch runs (its task is registered). */
-export const keyWatchArmed = (): Promise<boolean> => TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK);
+/** Whether the watch runs: its task registered, with its record (a watch that ended itself has none). */
+export const keyWatchArmed = async (): Promise<boolean> =>
+  (await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK)) && (await record.get()) !== null;
 
 /**
- * Starts the watch: the record (the Nostr key LNVPS requests are signed with), then the task. The task shares
- * expo-background-task's one worker with the backup job, whose interval becomes the watch's 15 minutes while it runs
- * (the backup job does nothing while a setup runs); settleKeyWatch gives the backup job its hour back.
+ * Starts the watch: the record (the Nostr key LNVPS requests are signed with), then the task; if the task can't be
+ * registered, the record is removed again. A mark of an earlier watch's own end is dropped, so it can't end this one.
+ * The task shares expo-background-task's one worker with the backup job, whose interval becomes the watch's 15
+ * minutes while it runs (the backup job does nothing while a setup runs); settleKeyWatch gives it its hour back.
  */
 export async function armKeyWatch(nostrSecretKey: string): Promise<void> {
   if (!setupNotices(CardNative)) throw new Error("this phone can't post notifications from the background");
+  await record.takeEnded();
   await record.set(nostrSecretKey);
-  if (!(await keyWatchArmed())) await BackgroundTask.registerTaskAsync(KEY_WATCH_TASK, { minimumInterval: KEY_WATCH_MINUTES });
+  try {
+    if (!(await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK))) {
+      await BackgroundTask.registerTaskAsync(KEY_WATCH_TASK, { minimumInterval: KEY_WATCH_MINUTES });
+    }
+  } catch (e) {
+    await record.remove();
+    throw e;
+  }
   armedHere = true;
 }
 
-/** Ends the watch: the task, then the record. Safe to repeat. Returns whether the task was registered. */
+/** Unregisters the task if it is registered; returns whether it was. */
+async function unregister(): Promise<boolean> {
+  const registered = await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK);
+  if (registered) await BackgroundTask.unregisterTaskAsync(KEY_WATCH_TASK);
+  return registered;
+}
+
+/**
+ * Ends the watch from the app: the copy of the key first, then the task. Safe to repeat. Returns whether the task
+ * was registered. Never from inside the task's own run (runKeyWatch's end).
+ */
 export async function endKeyWatch(): Promise<boolean> {
-  const armed = await keyWatchArmed();
-  if (armed) await BackgroundTask.unregisterTaskAsync(KEY_WATCH_TASK);
   await record.remove();
-  return armed;
+  return unregister();
 }
 
 /**
@@ -85,19 +106,24 @@ async function backupHourAgain(): Promise<void> {
   await registerBackupTask();
 }
 
-// Once a state past the wait is seen, the watch is ended: on the first state of each run of the app (a watch left
-// from before), then after any state in which this run started it.
-let settled = false;
+// The first state of each run of the app settles what an earlier run, or the watch itself, left; after that, a state
+// past the wait ends a watch this run started.
+let checked = false;
 let armedHere = false;
 
-/** For each state the onboarding runner hands the screen: ends the watch once the setup no longer waits for LNVPS. */
+/**
+ * For each state the onboarding runner hands the screen: ends the watch once the setup no longer waits for LNVPS,
+ * and unregisters one that ended itself in the background (its mark), then gives the backup job its hour back.
+ */
 export function settleKeyWatch(s: OnboardingState): void {
-  if (waitsForHostKey(s) || (settled && !armedHere)) return;
-  settled = true;
-  armedHere = false;
+  const first = !checked;
+  checked = true;
+  const past = !waitsForHostKey(s);
+  if (!first && !(past && armedHere)) return;
+  if (past) armedHere = false;
   (async () => {
-    const ended = await endKeyWatch();
-    // Its own end in the background left a mark (record.noteEnded): taken whichever way, so it doesn't stay.
-    if ((await record.takeEnded()) || ended) await backupHourAgain();
+    const endedItself = await record.takeEnded();
+    const unregistered = past ? await endKeyWatch() : endedItself && (await record.get()) === null ? await unregister() : false;
+    if (endedItself || unregistered) await backupHourAgain();
   })().catch((error) => log({ ended: 'failed', error }));
 }

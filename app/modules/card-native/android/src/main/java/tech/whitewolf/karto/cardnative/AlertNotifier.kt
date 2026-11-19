@@ -61,6 +61,8 @@ internal object AlertNotifier {
         .setColor(CHARCOAL)
         .setContentTitle(alert.title)
         .setContentText(alert.text)
+        // The whole text when the notification is opened out: a setup notice runs to three sentences.
+        .setStyle(NotificationCompat.BigTextStyle().bigText(alert.text))
         .setContentIntent(opening(app, alert))
         .setAutoCancel(true)
         // Below Android 8, where there are no channels: the channel's importance.

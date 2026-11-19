@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { HOST_KEY, world } from '../testing/world';
-import { KEY_WATCH_NOTICES, keyWaitNotifyView, keyWatchRecord, runKeyWatch, waitsForHostKey, type KeyWatchDeps } from './keyWatch';
+import { KEY_WATCH_MAX_MS, KEY_WATCH_NOTICES, keyWaitNotifyView, keyWatchRecord, runKeyWatch, waitsForHostKey, type KeyWatchDeps } from './keyWatch';
 import { advance, initialState, type OnboardingState } from './machine';
 
 /** A setup waiting at host-key: the key trusted on first use, LNVPS listing none yet. */
@@ -31,6 +31,7 @@ function watch(t: ReturnType<typeof world>, state: OnboardingState | null) {
       ended++;
       record = null;
     },
+    now: () => t.w.nowMs,
   };
   return { deps, posted, ended: () => ended };
 }
@@ -69,6 +70,45 @@ describe('the background check while the setup waits for LNVPS', () => {
     expect(w.posted[0].text).toContain('The server’s SSH key is not the one LNVPS published');
     expect(w.posted[0].text).toContain('Stop using this server');
     expect(w.ended()).toBe(1);
+  });
+
+  // An older app's install, which didn't wait for LNVPS: the seed may have gone, and the notice says so.
+  it('says the seed may have been sent when an older app set the server up', async () => {
+    const { t, s } = await waiting();
+    t.lnvps.publishHostKeys(s.vmId!, [impostor]);
+    const older: OnboardingState = { ...s, host: { ...s.host!, secretsHeld: undefined }, installed: [...s.installed, 'seed', 'issuer-key'] };
+    const w = watch(t, older);
+    expect(await runKeyWatch(w.deps)).toBe('mismatch');
+    expect(w.posted).toEqual([{ tag: 'host-key', ...KEY_WATCH_NOTICES.mismatchOlder }]);
+    expect(w.posted[0].text).toContain('may have been sent to it');
+    expect(w.posted[0].text).not.toContain('were not sent');
+  });
+
+  it('ends untold, its key copy gone, once the wait began 6 hours ago', async () => {
+    const { t, s } = await waiting();
+    t.w.nowMs += KEY_WATCH_MAX_MS - 1;
+    const w = watch(t, s);
+    expect(await runKeyWatch(w.deps)).toBe('not_yet');
+    t.w.nowMs += 1;
+    t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+    expect(await runKeyWatch(w.deps)).toBe('expired');
+    expect(w.posted).toEqual([]);
+    expect(w.ended()).toBe(1);
+  });
+
+  // A rebuild in place on the old server's own VM waits at boot, before anything there is retired or wiped.
+  it('watches a rebuild\'s boot waiting for LNVPS, and says so once LNVPS lists the VM\'s key', async () => {
+    const { t, s } = await waiting();
+    const atBoot: OnboardingState = {
+      ...s, step: 'boot', waiting: 'host_key_confirm', installed: [], runningSince: t.w.nowMs, stepStartedAt: undefined,
+      rebuild: { source: 'server_page', target: { kind: 'in_place', vmId: s.vmId! }, oldVm: { id: s.vmId! } },
+    };
+    expect(waitsForHostKey(atBoot)).toBe(true);
+    const w = watch(t, atBoot);
+    expect(await runKeyWatch(w.deps)).toBe('not_yet');
+    t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+    expect(await runKeyWatch(w.deps)).toBe('confirmed');
+    expect(w.posted).toEqual([{ tag: 'host-key', ...KEY_WATCH_NOTICES.confirmed }]);
   });
 
   it('logs in to nothing and sends the server nothing', async () => {

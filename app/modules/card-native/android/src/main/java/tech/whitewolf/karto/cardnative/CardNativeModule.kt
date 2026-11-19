@@ -371,7 +371,10 @@ class CardNativeModule : Module() {
     Function("pushEndpoint") { AlertEndpoint.saved(context())?.toMap() }
     Function("notificationsAllowed") { NotificationManagerCompat.from(context()).areNotificationsEnabled() }
     // A notice of the setup's own, worded by the app (onboarding/keyWatch.ts): posted by the background check while
-    // the setup waits for LNVPS to confirm the server. A tap opens the wallet, which carries on the install.
+    // the setup waits for LNVPS to confirm the server. A tap opens the wallet, which carries on the install. Called
+    // from a task expo-task-manager runs with no activity: context() is still there, as the module's JavaScript runs
+    // in a React instance, whose ReactApplicationContext wraps the application's (expo-modules-core AppContext
+    // .reactContext), and AlertNotifier.post goes by its applicationContext.
     Function("postSetupNotice") { tag: String, title: String, text: String ->
       AlertNotifier.post(context(), Alert(title, text, AlertWords.CHANNEL_SETUP, tag, null, null, false))
     }
