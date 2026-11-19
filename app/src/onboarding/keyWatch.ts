@@ -87,23 +87,34 @@ export async function runKeyWatch(d: KeyWatchDeps): Promise<KeyWatchOutcome> {
 }
 
 const RECORD = 'host-key-watch';
+const ENDED = 'host-key-watch-ended';
 
 /**
  * The watch's record in expo-secure-store: the Nostr key that signs the phrase's LNVPS requests (hex), and nothing
  * else, so the background check reads neither the phrase nor any other key. Removed when the watch ends.
+ * noteEnded and takeEnded: a mark that the watch ended itself in the background, so the app, once in front, gives the
+ * backup job its own interval back (keyWatchTask.ts).
  */
 export function keyWatchRecord(ss: Pick<SecureStoreApi, 'getItemAsync' | 'setItemAsync' | 'deleteItemAsync' | 'WHEN_UNLOCKED_THIS_DEVICE_ONLY'>) {
   return {
     get: () => ss.getItemAsync(RECORD),
     set: (nostrSecretKey: string) => ss.setItemAsync(RECORD, nostrSecretKey, { keychainAccessible: ss.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
     remove: () => ss.deleteItemAsync(RECORD),
+    noteEnded: () => ss.setItemAsync(ENDED, '1'),
+    /** Whether the mark was there; it is removed. */
+    takeEnded: async () => {
+      const ended = (await ss.getItemAsync(ENDED)) !== null;
+      if (ended) await ss.deleteItemAsync(ENDED);
+      return ended;
+    },
   };
 }
 
 /**
- * The wait's offer to be told: unsupported (this phone can't post the notice: an iPhone), offer (the button),
- * asking (the permission's dialog is up), armed (the watch runs), refused (notifications are off), failed (the watch
- * couldn't be started, with why).
+ * The wait's offer to be told: unsupported (this phone can't post the notice: an iPhone), offer (notifications aren't
+ * allowed yet: the button asks), asking (the permission's dialog is up), armed (the watch runs: started by itself
+ * where notifications were allowed already), refused (notifications are off: the button asks again, which Android
+ * shows only while it still may), failed (the watch couldn't be started, with why).
  */
 export type KeyWaitNotify = { kind: 'unsupported' | 'offer' | 'asking' | 'armed' | 'refused' } | { kind: 'failed'; why: string };
 
@@ -127,7 +138,7 @@ export function keyWaitNotifyView(n: KeyWaitNotify): { line: string; button: str
         button: null,
       };
     case 'refused':
-      return { line: `Notifications are off for Karto Wallet, so ${later}`, button: null };
+      return { line: `Notifications are off for Karto Wallet, so ${later}`, button: NOTIFY_BUTTON };
     case 'failed':
       return { line: `Karto Wallet couldn’t set up the notification (${n.why}), so ${later}`, button: null };
   }

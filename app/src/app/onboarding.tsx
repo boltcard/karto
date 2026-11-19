@@ -6,8 +6,13 @@ import { SetupDone } from '../ui/SetupDone';
 import { SetupSteps } from '../ui/SetupSteps';
 import { ErrorText, Screen } from '../ui/ui';
 
+/** The install runs for minutes over SSH: the screen lock mustn't cut it short. */
+function KeepAwake() {
+  useKeepAwake();
+  return null;
+}
+
 export default function Onboarding() {
-  useKeepAwake(); // the install runs for minutes over SSH; don't let the screen lock cut it short
   const allowed = useRouteGuard('/onboarding');
   const { runner, state: s, error, upload } = useOnboardingRunner(allowed);
   const title = s?.rebuild ? 'Rebuilding your server' : 'Setting up your server';
@@ -18,6 +23,8 @@ export default function Onboarding() {
   if (!s || !runner) return <Screen busy />;
   return (
     <Screen title={title}>
+      {/* Not through the wait for LNVPS to confirm the server, up to an hour, which the app may be left for. */}
+      {s.waiting !== 'host_key_confirm' && <KeepAwake />}
       <SetupSteps s={s} runner={runner} upload={upload} />
     </Screen>
   );

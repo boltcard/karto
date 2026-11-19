@@ -24,7 +24,10 @@ import { downloadLatest, notNewest, olderNotice, SnapshotRefused, timeText } fro
 import { HostKeyMismatchError, SshAuthError, SshDropped, type PinnedHostKey, type SshConnect, type SshScan, type SshSession } from './ssh';
 
 // backup, where and retire are a rebuild's: onboarding never visits them.
-// The old server is retired once the new one has booted and its key is pinned, just before the install.
+// The old server is retired before the new one is given the seed, so the two never run phoenixd on it at once. On a
+// new VM the install first runs the steps that carry no secret and waits for LNVPS to confirm the new server's key
+// (install, up to host-key), then step 4 retires the old server, then the install goes on (install, from the seed):
+// until then the old server keeps running, and stays if the new one is never confirmed. In place, step 4 comes first.
 export const STEPS = ['country', 'email', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done'] as const;
 export type Step = (typeof STEPS)[number];
 export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
@@ -676,8 +679,9 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
       keySource,
       ...(keySource === 'first_use' && { trustedAt: d.now() }),
     },
-    // A rebuild retires the old server now, before anything starts on this one.
-    step: s.rebuild ? 'retire' : 'install',
+    // In place, step 4 (retire) comes first: its final snapshot is taken before the install's wipe. On a new VM the
+    // install's steps that carry no secret come first, and step 4 just before the seed (installStep).
+    step: s.rebuild?.target?.kind === 'in_place' ? 'retire' : 'install',
   };
 }
 
@@ -773,6 +777,12 @@ const nextInstallStep = (s: OnboardingState) => INSTALL_STEPS.find((x) => !s.ins
 /** host-key's check found the key still unconfirmed: the install stops there, before any secret. */
 class HostKeyUnconfirmed extends Error {}
 
+/** A rebuild whose step 4 hasn't retired the old server: no secret goes to the new one yet. */
+const retireDue = (s: OnboardingState) => !!s.rebuild && !s.rebuild.retire;
+
+/** The install reached the seed of a rebuild whose old server still runs: step 4 now, then the install goes on. */
+class RetireFirst extends Error {}
+
 /**
  * The wait at host-key for LNVPS to publish the server's key, timed from when the step began (kept across a
  * closed app); past HOST_KEY_CONFIRM_LIMIT_MS, Try again, which waits as long again.
@@ -795,6 +805,8 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
   // Waiting at host-key: LNVPS is asked again, and nothing is sent to the server, not even a login.
   const next = nextInstallStep(s);
   if (keyUnconfirmed(s) && (next === 'host-key' || (next !== undefined && SECRET_STEPS.includes(next)))) return awaitHostKey(s, d);
+  // Back from a closed app with the key confirmed and the old server not yet retired: step 4, before connecting here.
+  if (retireDue(s) && next !== undefined && INSTALL_STEPS.indexOf(next) > INSTALL_STEPS.indexOf('host-key')) return { ...s, stepStartedAt: undefined, step: 'retire' };
   const rebuild = await rebuildOptions(s, d);
   const session = await connect(s, d);
   let current = s;
@@ -811,6 +823,10 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
         current = await checkedHost(current, d);
         if (current.hostKeyMismatch) throw new HostKeyMismatchError(current.hostKeyMismatch);
         if (keyUnconfirmed(current)) throw new HostKeyUnconfirmed();
+      },
+      // A rebuild onto a new VM retires the old server (step 4) only now, with the new server ready and confirmed.
+      beforeSecret: async () => {
+        if (retireDue(current)) throw new RetireFirst();
       },
       beforeUp: () => checkPhraseVms(s, d),
       done: s.installed,
@@ -836,6 +852,7 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
   } catch (e) {
     if (e instanceof SshDropped) return dropped(e, current); // a wait, from the steps saved
     if (e instanceof HostKeyUnconfirmed) return awaitHostKey(current, d); // a wait, from host-key's start
+    if (e instanceof RetireFirst) return { ...current, stepStartedAt: undefined, step: 'retire' };
     if (isNetworkFailure(e)) throw e; // LNVPS, asked before up: wait, from the steps saved
     // In place, a recovery check on this (old) server holds wipe and up: advance waits for it, from the steps saved.
     if (e instanceof RecoveryCheckRunning) throw e;
@@ -865,8 +882,9 @@ async function rebuildOptions(s: OnboardingState, d: Deps): Promise<Pick<Install
   if (!r) return {};
   const backup = r.backup;
   if (!backup) throw new StepError('fatal', 'A rebuild reached the install without a backup chosen');
-  // The look before up reads step 4's record: without one it would let any old server be.
-  if (!r.retire) throw new StepError('fatal', "A rebuild reached the install without step 4's record");
+  // In place, step 4 comes before the install's wipe; on a new VM, before the seed (installStep). The look before up
+  // reads its record: without one it would let any old server be.
+  if (!r.retire && r.target?.kind !== 'new') throw new StepError('fatal', "A rebuild reached the install without step 4's record");
   return {
     wipe: r.target?.kind === 'in_place' || !!r.rewipe,
     restore: s.installed.includes('restore') ? undefined : () => restoreOf(backup, d),
@@ -1257,7 +1275,8 @@ export function overridePrompt(s: OnboardingState): { text: string; title: strin
 }
 
 /**
- * Step 4, just before the install: the old server must never run phoenixd beside the new one.
+ * Step 4, before the install sends the new server the seed (on a new VM, once its steps that carry no secret are
+ * done and LNVPS has confirmed its key): the old server must never run phoenixd beside the new one.
  * Over SSH when it answers; otherwise LNVPS says what
  * it is. Each branch that acts waits for the person's confirmation first.
  */

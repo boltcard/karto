@@ -10,6 +10,7 @@ import { getVmOrNull, type LnvpsClient, type Vm } from '../lnvps/client';
 import { CARDD_SCHEMA_VERSION } from '../deploy/schema';
 import { dateText, shortDate, whenText } from '../money/format';
 import { satText } from '../cards/labels';
+import { SECRET_STEPS } from './install';
 import type { ChosenBackup, Deps, OnboardingState, Rebuild } from './machine';
 
 /** A time (unix seconds) as the phone shows it, in its own time zone. */
@@ -100,19 +101,26 @@ export async function importedChoice(name: string, backups: Pick<Deps['backups']
   return { kind: 'kept', name, created: x.created, cards: x.cards, totalMsat: x.totalMsat };
 }
 
-/** The screen stays on while the old server is retired and the new one installed and paired, not through LNVPS's hour. */
-export const keepsAwake = (s: OnboardingState) => s.step === 'retire' || s.step === 'install' || s.step === 'pair';
+/**
+ * The screen stays on while the old server is retired and the new one installed and paired, not through LNVPS's
+ * hours: neither the boot's wait for its scan nor the install's for it to confirm the new server's key.
+ */
+export const keepsAwake = (s: OnboardingState) => (s.step === 'retire' || s.step === 'install' || s.step === 'pair') && s.waiting !== 'host_key_confirm';
 
 /** Before any VM is paid for: the steps at which Cancel rebuild is offered. */
 const CANCELLABLE: readonly OnboardingState['step'][] = ['backup', 'where', 'order', 'pay'];
 
 /**
  * Whether Cancel rebuild puts the server page back: a rebuild started
- * there, before step 4 has run (nothing has touched the old server) and before a VM is paid for.
+ * there, before step 4 has run (nothing has touched the old server), and before a VM is paid for; or, on a new VM,
+ * once its install has stopped on an error before any secret reached it (LNVPS published another key for it, or
+ * hasn't confirmed it in 3 hours, say): the old server still runs, and the new VM, paid for, holds no wallet.
  */
 export function canCancel(s: OnboardingState): boolean {
   const r = s.rebuild;
-  return !!r?.before && r.source === 'server_page' && !r.retire && !r.backupLocked && CANCELLABLE.includes(s.step);
+  if (!r?.before || r.source !== 'server_page' || r.retire || r.backupLocked) return false;
+  if (CANCELLABLE.includes(s.step)) return true;
+  return s.step === 'install' && r.target?.kind === 'new' && !!s.error && !s.installed.some((x) => SECRET_STEPS.includes(x));
 }
 
 /** The server page as it was before the rebuild; s itself when it can't be cancelled. */

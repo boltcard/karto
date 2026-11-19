@@ -89,6 +89,8 @@ export type InstallOptions = {
    * there. Onboarding's check that LNVPS has confirmed the server's SSH key; Update server has none.
    */
   confirmHostKey?: () => Promise<void>;
+  /** Runs before each step that sends a secret (SECRET_STEPS) still to run: throwing stops the install there (a rebuild's retire). */
+  beforeSecret?: () => Promise<void>;
   /** Runs just before up starts anything; throwing stops the install there (a rebuild's last look at the old VM). */
   beforeUp?: () => Promise<void>;
   /** A new token for each start of a step (stepCommand.ts): 32 hex digits, random unless a test says. */
@@ -182,6 +184,7 @@ export async function install(ssh: SshSession, o: InstallOptions): Promise<void>
 
   for (const step of INSTALL_STEPS) {
     if (o.done.includes(step)) continue;
+    if (SECRET_STEPS.includes(step)) await o.beforeSecret?.();
     await o.onStart?.(step);
     await steps[step]();
     await o.onStep(step);

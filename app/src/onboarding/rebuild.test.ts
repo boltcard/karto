@@ -94,6 +94,8 @@ describe('the rebuild screen\'s choices', () => {
   it('keeps the screen awake only while retiring, installing and pairing', () => {
     for (const step of ['retire', 'install', 'pair'] as const) expect(keepsAwake({ ...at(), step })).toBe(true);
     for (const step of ['backup', 'where', 'order', 'pay', 'boot', 'done'] as const) expect(keepsAwake({ ...at(), step })).toBe(false);
+    expect(keepsAwake({ ...at(), step: 'install', waiting: 'host_key_confirm' })).toBe(false); // up to an hour, the app may be left
+    expect(keepsAwake({ ...at(), step: 'install', waiting: 'reconnect' })).toBe(true);
   });
 });
 
@@ -144,6 +146,21 @@ describe('Cancel rebuild', () => {
       expect(canCancel(s)).toBe(false);
       expect(cancelRebuild(s)).toBe(s);
     }
+  });
+
+  // A new VM's install stopped before any secret reached it, the old server never touched: going back is safe.
+  it('puts the server page back when a new VM\'s install stopped before any secret, the old server untouched', () => {
+    const SYSTEM = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe'] as const;
+    const stopped = (o: Partial<OnboardingState> = {}, r: Partial<NonNullable<OnboardingState['rebuild']>> = {}) =>
+      rebuilding({ step: 'install', vmId: 1001, installed: [...SYSTEM], hostKeyMismatch: 'LNVPS published SHA256:other', error: { kind: 'fatal', message: 'x' }, ...o }, { target: { kind: 'new' }, ...r });
+    expect(canCancel(stopped())).toBe(true);
+    expect(cancelRebuild(stopped())).toEqual(page);
+    expect(canCancel(stopped({ hostKeyMismatch: undefined, error: { kind: 'retry', message: 'LNVPS still hasn’t confirmed your server after 3 hours' } }))).toBe(true);
+    // Not while it runs or waits, nor once a secret went, nor after step 4, nor in place.
+    expect(canCancel(stopped({ error: undefined, waiting: 'host_key_confirm' }))).toBe(false);
+    expect(canCancel(stopped({ installed: [...SYSTEM, 'host-key', 'seed'] }))).toBe(false);
+    expect(canCancel(stopped({}, { retire: { result: 'retired', at: 1 } }))).toBe(false);
+    expect(canCancel(stopped({}, { target: { kind: 'in_place', vmId: 1012 } }))).toBe(false);
   });
 
   // After a finished rebuild the record stays, so the old VM keeps being watched: a cancelled second rebuild mustn't lose it.

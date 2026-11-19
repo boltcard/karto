@@ -1,40 +1,51 @@
-// Under the wait for LNVPS to confirm the server (the install's step host-key): the offer to be told when it is
-// over, so the person can leave the app. On a phone whose module can post the notice (Android), a button asks for
-// Android 13's notification permission and starts the background watch (onboarding/keyWatchTask.ts); elsewhere,
-// and when notifications are off, it says to come back in about an hour. onboarding/keyWatch.ts words it.
+// Under the wait for LNVPS to confirm the server (the install's step host-key): being told when it is over, so the
+// person can leave the app. On a phone whose module can post the notice (Android), the background watch
+// (onboarding/keyWatchTask.ts) starts by itself where notifications are allowed already; otherwise a button asks for
+// Android 13's notification permission first. Elsewhere, and when notifications stay off, it says to come back in about
+// an hour. onboarding/keyWatch.ts words it.
 import { useEffect, useState } from 'react';
 import { keyWaitNotifyView, setupNotices, type KeyWaitNotify as Notify } from '../onboarding/keyWatch';
 import { armKeyWatch, keyWatchArmed } from '../onboarding/keyWatchTask';
-import { useServices } from '../services/services';
+import { useServices, type Services } from '../services/services';
 import { Body, Button } from './ui';
+
+/** Starts the watch, signing LNVPS requests with the phrase's Nostr key, unless it runs already. */
+async function arm(sv: Pick<Services, 'phrase' | 'keys'>): Promise<void> {
+  if (await keyWatchArmed()) return;
+  const phrase = await sv.phrase.get();
+  if (!phrase) throw new Error('this phone has no recovery phrase');
+  await armKeyWatch(sv.keys(phrase).nostrPrivateKey);
+}
+
+const failed = (e: unknown): Notify => ({ kind: 'failed', why: e instanceof Error ? e.message : String(e) });
 
 export function KeyWaitNotify() {
   const sv = useServices();
-  const notices = setupNotices(sv.native);
-  const supported = notices !== null;
-  const [n, setN] = useState<Notify>(supported ? { kind: 'offer' } : { kind: 'unsupported' });
-  // A watch started before (the app closed and opened again) still runs while notifications may show.
+  const supported = setupNotices(sv.native) !== null;
+  const [n, setN] = useState<Notify>(supported ? { kind: 'asking' } : { kind: 'unsupported' });
+  // Notifications allowed already: the watch starts (or runs on, after the app was closed) with no press.
   useEffect(() => {
-    if (!supported) return;
+    const notices = setupNotices(sv.native);
+    if (!notices) return;
     let live = true;
-    keyWatchArmed().then(
-      (armed) => live && armed && setupNotices(sv.native)!.notificationsAllowed() && setN({ kind: 'armed' }),
-      () => {},
-    );
+    const set = (x: Notify) => live && setN(x);
+    if (!notices.notificationsAllowed()) set({ kind: 'offer' });
+    else arm(sv).then(() => set({ kind: 'armed' }), (e) => set(failed(e)));
     return () => void (live = false);
-  }, [sv, supported]);
+    // Once for the phone's module: sv itself is the same object throughout the app's run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sv.native]);
 
   const press = async () => {
+    const notices = setupNotices(sv.native);
     if (!notices) return;
     setN({ kind: 'asking' });
     try {
       if (!(await notices.requestNotifications())) return setN({ kind: 'refused' });
-      const phrase = await sv.phrase.get();
-      if (!phrase) throw new Error('this phone has no recovery phrase');
-      await armKeyWatch(sv.keys(phrase).nostrPrivateKey);
+      await arm(sv);
       setN({ kind: 'armed' });
     } catch (e) {
-      setN({ kind: 'failed', why: e instanceof Error ? e.message : String(e) });
+      setN(failed(e));
     }
   };
 

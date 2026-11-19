@@ -117,6 +117,12 @@ describe('the background check while the setup waits for LNVPS', () => {
     expect(options).toEqual([{ keychainAccessible: 7 }]);
     await record.remove();
     expect(await record.get()).toBeNull();
+    // The mark of a watch that ended itself, taken once.
+    expect(await record.takeEnded()).toBe(false);
+    await record.noteEnded();
+    expect(await record.takeEnded()).toBe(true);
+    expect(await record.takeEnded()).toBe(false);
+    expect(items.size).toBe(0);
   });
 });
 
@@ -134,7 +140,7 @@ describe('the wait\'s offer to be told', () => {
     expect(keyWaitNotifyView({ kind: 'armed' }).line).toContain('You’ll get a notification when LNVPS has confirmed your server.');
     expect(keyWaitNotifyView({ kind: 'refused' })).toEqual({
       line: 'Notifications are off for Karto Wallet, so come back in about an hour: the install carries on when you open the app.',
-      button: null,
+      button: 'Tell me when it’s ready', // to ask again, where Android still shows the question
     });
     expect(keyWaitNotifyView({ kind: 'failed', why: 'no record' }).line).toContain('(no record)');
   });

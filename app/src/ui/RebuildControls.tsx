@@ -46,7 +46,7 @@ export function RebuildControls({ s, runner }: { s: OnboardingState; runner: Onb
     return (
       <>
         <Body>
-          The old server (VM {oldId}) is retired first, so two Lightning wallets never run on one seed: a final snapshot, then its
+          The old server (VM {oldId}) is retired before the new one gets the wallet seed, so two Lightning wallets never run on one seed: a final snapshot, then its
           services removed and a marker that stops them starting again. If it doesn&apos;t answer, LNVPS starts it first.
         </Body>
         <Button title={`Retire VM ${oldId}`} onPress={() => act((x) => withConfirm(x, { retire: true }))} />

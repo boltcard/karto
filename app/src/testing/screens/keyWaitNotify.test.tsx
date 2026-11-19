@@ -1,5 +1,5 @@
-// The offer under the wait for LNVPS to confirm the server: a button that asks for the notification permission and
-// starts the background watch, where the phone can post the notice; honest words where it can't, or may not.
+// Under the wait for LNVPS to confirm the server: the background watch starts by itself where notifications are
+// allowed; otherwise a button asks for the permission first. Honest words where the phone can't post the notice, or may not.
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { KeyWaitNotify } from '../../ui/KeyWaitNotify';
@@ -35,6 +35,15 @@ describe('the offer to be told when LNVPS has confirmed the server', () => {
     keyWatchArmed.mockResolvedValue(false);
   });
 
+  it('starts the watch by itself, with no button, where notifications are allowed already', async () => {
+    android.notificationsAllowed.mockReturnValue(true);
+    render(<KeyWaitNotify />);
+    expect(await screen.findByText(/You’ll get a notification when LNVPS has confirmed your server/, undefined, WAIT)).toBeTruthy();
+    expect(armKeyWatch).toHaveBeenCalledWith(NOSTR);
+    expect(android.requestNotifications).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
   it('asks for the permission, starts the watch with the LNVPS key alone, and says a notification will come', async () => {
     render(<KeyWaitNotify />);
     expect(await screen.findByText(/can send you a notification when LNVPS has confirmed your server/, undefined, WAIT)).toBeTruthy();
@@ -45,12 +54,17 @@ describe('the offer to be told when LNVPS has confirmed the server', () => {
     expect(screen.queryByRole('button', { name: BUTTON })).toBeNull();
   });
 
-  it('says to come back in about an hour when notifications are refused, and starts no watch', async () => {
+  it('says to come back in about an hour when notifications are refused, starts no watch, and can ask again', async () => {
     android.requestNotifications.mockResolvedValue(false);
     render(<KeyWaitNotify />);
     await press(BUTTON);
     expect(await screen.findByText(/Notifications are off for Karto Wallet, so come back in about an hour/, undefined, WAIT)).toBeTruthy();
     expect(armKeyWatch).not.toHaveBeenCalled();
+    // Asked again, and allowed this time.
+    android.requestNotifications.mockResolvedValue(true);
+    await press(BUTTON);
+    expect(await screen.findByText(/You’ll get a notification when LNVPS has confirmed your server/, undefined, WAIT)).toBeTruthy();
+    expect(armKeyWatch).toHaveBeenCalledTimes(1);
   });
 
   it('says why when the watch can\'t start', async () => {
@@ -68,11 +82,12 @@ describe('the offer to be told when LNVPS has confirmed the server', () => {
     expect(screen.queryByText(/You’ll get a notification/)).toBeNull();
   });
 
-  it('says the watch runs when it was started before the app was closed', async () => {
+  it('says the watch runs when it was started before the app was closed, without starting another', async () => {
     keyWatchArmed.mockResolvedValue(true);
     android.notificationsAllowed.mockReturnValue(true);
     render(<KeyWaitNotify />);
     expect(await screen.findByText(/You’ll get a notification when LNVPS has confirmed your server/, undefined, WAIT)).toBeTruthy();
     expect(screen.queryByRole('button', { name: BUTTON })).toBeNull();
+    expect(armKeyWatch).not.toHaveBeenCalled();
   });
 });
