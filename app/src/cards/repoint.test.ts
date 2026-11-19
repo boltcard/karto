@@ -5,7 +5,7 @@ import { cardId } from '../boltcard/cardkeys';
 import { TagLostError } from '../ntag424/apdu';
 import { urlHost } from '../ntag424/ndef';
 import { cardAt, cardWorld } from '../testing/cardWorld';
-import { checkTap } from './check';
+import { checkTap, NOT_THE_CARD } from './check';
 import { identify } from './identify';
 import { readCard } from './read';
 import { repointCard, REPOINT_STEPS, type RepointStep } from './repoint';
@@ -79,12 +79,13 @@ describe('repointCard', () => {
 describe('checkTap', () => {
   it('checks one of the person\'s cards with cardd, and says why a tap fails', async () => {
     const t = await onOtherServer('vm-1.lnvps.cloud');
-    const first = await identify(t.tap().card, t.deps);
-    expect(await checkTap(first, t.deps)).toMatchObject({ ok: true, card: { id: t.id } });
-    expect(await checkTap(first, t.deps)).toEqual({ ok: false, reason: 'This tap was seen before: the card may have been copied.' });
+    const held = t.tap().card;
+    const first = await identify(held, t.deps);
+    expect(await checkTap(first, t.deps, held)).toMatchObject({ ok: true, card: { id: t.id } });
+    expect(await checkTap(first, t.deps, held)).toEqual({ ok: false, reason: 'This tap was seen before: the card may have been copied.' });
     t.w.carddDown = true;
     const offline = await identify(t.tap().card, t.deps);
-    expect(await checkTap(offline, t.deps)).toEqual({ ok: false, reason: "Can't reach your server to check this tap." });
+    expect(await checkTap(offline, t.deps, t.tap().card)).toEqual({ ok: false, reason: "Can't reach your server to check this tap." });
   });
 
   // A card held to the phone after a restore onto the same server (nothing to re-point): the tap check is the
@@ -92,10 +93,38 @@ describe('checkTap', () => {
   it("clears a restore's need for a check", async () => {
     const t = await onOtherServer('vm-1.lnvps.cloud');
     t.cardd.cards.get(t.id)!.needsCheck = true;
-    const i = await identify(t.tap().card, t.deps);
+    const held = t.tap().card;
+    const i = await identify(held, t.deps);
     expect(i.needsRepoint).toBe(false);
-    const check = await checkTap(i, t.deps);
+    const check = await checkTap(i, t.deps, held);
     expect(check.ok && check.card.needsCheck).toBeFalsy();
     expect(t.cardd.cards.get(t.id)!.needsCheck).toBeUndefined();
+  });
+
+  // Something that answers as an NTAG 424 with a tap recorded after the backup, but without the card's key 0 (a
+  // phone playing the card back, say): the check after a restore is refused, cardd is never asked, and the
+  // recorded taps after it stay unusable.
+  it("refuses the check after a restore to a tag that can't prove key 0, asking cardd nothing", async () => {
+    const t = await onOtherServer('vm-1.lnvps.cloud');
+    t.cardd.cards.get(t.id)!.needsCheck = true;
+    t.sim.keys[0] = new Uint8Array(16).fill(7);
+    const held = t.tap().card;
+    const i = await identify(held, t.deps);
+    expect(i).toMatchObject({ kind: 'ours', known: { needsCheck: true } });
+    expect(await checkTap(i, t.deps, held)).toEqual({ ok: false, reason: NOT_THE_CARD });
+    expect(t.cardd.cards.get(t.id)).toMatchObject({ needsCheck: true, counter: 0 });
+    expect(t.cardd.http.requests.some((r) => r.url.endsWith('/cards/check'))).toBe(false);
+    // Nor does a re-point of it, which checks the card too.
+    await expect(repointCard(t.tap().card, t.deps)).rejects.toThrow();
+    expect(t.cardd.cards.get(t.id)).toMatchObject({ needsCheck: true, counter: 0 });
+    expect(t.cardd.http.requests.some((r) => r.url.endsWith('/cards/check'))).toBe(false);
+  });
+
+  // A card that needs no check is checked from its tap alone, as before: no key is asked of it.
+  it('checks a card that needs no check without its key', async () => {
+    const t = await onOtherServer('vm-1.lnvps.cloud');
+    t.sim.keys[0] = new Uint8Array(16).fill(7);
+    const held = t.tap().card;
+    expect(await checkTap(await identify(held, t.deps), t.deps, held)).toMatchObject({ ok: true });
   });
 });

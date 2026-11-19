@@ -212,7 +212,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
     try {
       const read = await readTap({
         identify: () => identify(card, deps),
-        checkTap: (identity) => checkTap(identity, deps),
+        checkTap: (identity) => checkTap(identity, deps, card),
         held: () => !sv.nfcSlot.screenClaimed(),
       });
       tell({ on: 'read', tap: read });

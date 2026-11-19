@@ -13,8 +13,11 @@ import { readCard, type CardRead } from './read';
 
 /** not-a-card: a tag with no Bolt Card's link on it. */
 export type Kind = 'blank' | 'ours' | 'half-added' | 'half-wiped' | 'unknown-ours' | 'foreign' | 'not-a-card';
-/** host: the server cardd records the card's URL at (cardd only: the cache has none). */
-export type Known = { state: CardState; version: number; name: string; host?: string };
+/**
+ * host: the server cardd records the card's URL at (cardd only: the cache has none). needsCheck: cardd's, after a
+ * restore: the card pays again only once checked, with the card's proof (check.ts).
+ */
+export type Known = { state: CardState; version: number; name: string; host?: string; needsCheck?: boolean };
 
 export type Identity = {
   kind: Kind;
@@ -60,7 +63,7 @@ export function versionSearch(issuer: Uint8Array, uid: Uint8Array, picc: Picc, c
 }
 
 async function lookup(d: CardDeps, id: string): Promise<{ known?: Known; serverDown: boolean }> {
-  const pick = (c?: Known) => (c ? { state: c.state, version: c.version, name: c.name, host: c.host } : undefined);
+  const pick = (c?: Known) => (c ? { state: c.state, version: c.version, name: c.name, host: c.host, ...(c.needsCheck && { needsCheck: true }) } : undefined);
   try {
     return { known: pick((await d.held.cards()).find((c) => c.id === id)), serverDown: false };
   } catch (e) {

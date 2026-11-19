@@ -14,7 +14,7 @@ import { cardWorld } from '../testing/cardWorld';
 import { PhoneCardTag } from '../testing/phoneCardTag';
 import { addCard } from './add';
 import { adoptCard } from './adopt';
-import { checkTap } from './check';
+import { checkTap, NOT_THE_CARD } from './check';
 import { CardFlowError } from './deps';
 import { identify, NOT_A_CARD, PLAIN_REFUSAL } from './identify';
 import { repointCard } from './repoint';
@@ -169,15 +169,37 @@ describe('identify, for a tag that is not an NTAG 424', () => {
   });
 });
 
+describe('a plain tag and the check after a restore', () => {
+  // A terminal kept a tap of the person's card made after the backup, and wrote its link to a plain tag (or a
+  // phone plays it): held to the wallet, it would move cardd's counter past the copied tap only, and every later
+  // copied tap would pay. A plain tag never gives the check after a restore.
+  it("never clears a restore's need for a check, and asks cardd nothing", async () => {
+    const t = await setup();
+    const uid = hexToBytes('04a39493cc8680');
+    const id = bytesToHex(cardId(t.deps.issuer, uid));
+    const k = deriveCardKeys(t.deps.issuer, uid, 0);
+    const { p, c } = buildSun(k.k1, k.k2, uid, 11, new Uint8Array(5));
+    t.cardd.cards.set(id, { id, version: 0, state: 'active', counter: 10, name: 'Daily', host: HOST, created: 0, updated: 0, needsCheck: true });
+    t.phone.load([fileOf(`lnurlw://${HOST}/ln?p=${p}&c=${c}`)]);
+    const card = t.card();
+    const i = await identify(card, t.deps);
+    expect(i).toMatchObject({ kind: 'ours', plain: true, id });
+    expect(await checkTap(i, t.deps, card)).toEqual({ ok: false, reason: NOT_THE_CARD });
+    expect(t.cardd.cards.get(id)).toMatchObject({ needsCheck: true, counter: 10 });
+    expect(t.cardd.http.requests.some((r) => r.url.endsWith('/cards/check'))).toBe(false);
+  });
+});
+
 describe('a plain tag and the card jobs', () => {
   it("has its tap checked by the server as any card's is", async () => {
     const t = await setup();
     t.register('active');
     t.load();
-    const i = await identify(t.card(), t.deps);
-    expect(await checkTap(i, t.deps)).toMatchObject({ ok: true, card: { id: t.id, counter: FIRST } });
+    const card = t.card();
+    const i = await identify(card, t.deps);
+    expect(await checkTap(i, t.deps, card)).toMatchObject({ ok: true, card: { id: t.id, counter: FIRST } });
     // The same tap again is used up.
-    expect(await checkTap(i, t.deps)).toMatchObject({ ok: false });
+    expect(await checkTap(i, t.deps, card)).toMatchObject({ ok: false });
   });
 
   it('is refused by add, wipe, re-point and add back, whatever it is, with nothing written to it', async () => {

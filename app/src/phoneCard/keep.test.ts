@@ -307,6 +307,22 @@ describe("steps 5 and 6: this phone's card, where the server and the phone diffe
     expect(t.cardd.cards.get(t.id(0))!.needsCheck).toBeUndefined();
   });
 
+  // The server refusing the check (a key version it doesn't know, say) is let be known, as any refusal is: the card
+  // stays unable to pay, the tap's counter is never used again, and the next run tries once more past it.
+  it('lets a refused check be known, keeping the counter it used, and tries again at the next run', async () => {
+    const t = await setup({ record: { n: 0, version: 0, next: 400_001 } });
+    t.put(0, 'active', { counter: 300_000, needsCheck: true });
+    const refusal = new CarddError(422, 'bad_mac', 'sun: bad MAC');
+    t.s.refuse.set('checkCard', refusal);
+    await expect(t.run()).rejects.toBe(refusal);
+    expect(t.cardd.cards.get(t.id(0))).toMatchObject({ counter: 300_000, needsCheck: true });
+    expect(await t.stored()).toEqual({ n: 0, version: 0, next: 400_002 });
+    t.s.refuse.delete('checkCard');
+    expect(await t.run()).toEqual(NOTHING);
+    expect(t.cardd.cards.get(t.id(0))).toMatchObject({ counter: 400_002 });
+    expect(t.cardd.cards.get(t.id(0))!.needsCheck).toBeUndefined();
+  });
+
   it("takes the server's key version into the record", async () => {
     const t = await setup({ record: { n: 0, version: 0, next: 200 } });
     t.put(0, 'active', { version: 3 });

@@ -149,8 +149,9 @@ describe('the cap on a call made with the card held', () => {
   it('answers a tap check that gets no answer as it does for a server out of reach', async () => {
     const t = await cardWorld();
     await add(t);
-    const identity = await identify(t.tap().card, t.deps);
-    const r = await withNoAnswer(t, 'POST', /\/cards\/check$/, () => checkTap(identity, t.deps));
+    const { card } = t.tap();
+    const identity = await identify(card, t.deps);
+    const r = await withNoAnswer(t, 'POST', /\/cards\/check$/, () => checkTap(identity, t.deps, card));
     expect(r.value).toEqual({ ok: false, reason: "Can't reach your server to check this tap." });
   });
 });
@@ -184,8 +185,9 @@ describe('which client a job asks', () => {
     const deps = { ...t.deps, cardd: untouchable('cardd') };
     const { card, tagUid } = t.tap();
     const { id } = await addCard(card, tagUid, deps, { name: 'Daily', randomUid: true });
-    const identity = await identify(t.tap().card, deps);
-    expect(await checkTap(identity, deps)).toMatchObject({ ok: true });
+    const held = t.tap().card;
+    const identity = await identify(held, deps);
+    expect(await checkTap(identity, deps, held)).toMatchObject({ ok: true });
     expect(await repointCard(t.tap().card, deps)).toMatchObject({ id });
     expect(await wipeCard(t.tap().card, deps)).toMatchObject({ serverTold: true });
     t.use(cardAt(t.deps.issuer, 1, { host: 'vm-9.lnvps.cloud', uid: hexToBytes('04112233445566') }));
