@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Wallet, WalletCard } from '../cardd/client';
 import { cardColour } from './colours';
-import { stackOrder, stripTag, type Row } from './stack';
+import { stackOrder, stripLabel, stripTag, type Row } from './stack';
 
 const HOST = 'vm-1001.lnvps.cloud';
 const row = (id: string, o: Partial<Row> = {}): Row => ({ id, name: id, state: 'active', version: 1, host: HOST, created: 1_790_000_000, ...o });
@@ -85,6 +85,9 @@ describe('stackOrder', () => {
       expect(stripTag(of({ state: 'wiping' }))).toEqual({ text: 'Being removed', tone: 'plain' });
       expect(stripTag(of({ state: 'frozen' }))).toEqual({ text: 'Frozen', tone: 'plain' });
       expect(stripTag(of({}))).toBeNull();
+      // The tag isn't said twice where it is the label.
+      expect(stripLabel(of({ state: 'programming' }))).toBe('mine, Being set up');
+      expect(stripLabel(of({ state: 'frozen' }))).toBe('mine, Frozen');
     });
 
     it('is never one to re-point, though the server records it at another host', () => {
@@ -121,6 +124,8 @@ describe('stackOrder', () => {
       null,
       { text: 'hold to phone', tone: 'warn' },
     ]);
+    // A screen reader hears the tag too.
+    expect(stack.map(stripLabel)).toEqual(['a, Active, hold to phone', 'b, Active, re-point', 'c, Active', 'd, Frozen, hold to phone']);
     // A phone's card is checked by the wallet itself.
     const phones = { ids: new Set(['a']), own: 'a' };
     expect(stackOrder([row('a', { needsCheck: true })], null, HOST, phones)[0].check).toBe(false);

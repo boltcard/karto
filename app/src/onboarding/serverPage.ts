@@ -44,7 +44,14 @@ export function rebuildSuggestion(o: {
  * doesn't answer); with no channel, notUp when the server would refuse the books for a channel that isn't
  * up yet (it sets them itself once it is).
  */
-export type RestoreView = { from: string; line: string; red: boolean; setBooks: boolean; phoenixd?: string; notUp?: string };
+export type RestoreView = {
+  from: string; line: string; red: boolean; setBooks: boolean; phoenixd?: string; notUp?: string;
+  /** From a backup (not the phrase alone): the cards are as the backup had them, so a freeze made since is undone. */
+  refreeze?: string;
+};
+
+/** The restore's line for the cards' freezes: cardd has no record of one made after the backup. */
+export const REFREEZE = 'Cards you froze after this backup was made are active again: freeze them again.';
 
 export function restoreView(
   r: RestoreInfo | null,
@@ -61,7 +68,7 @@ export function restoreView(
       : created !== undefined
         ? `Restored from the backup of ${whenText(created, nowS, offsetMin)}`
         : 'Restored from a backup';
-  const view = (line: string, red = false, setBooks = false) => ({ from, line, red, setBooks });
+  const view = (line: string, red = false, setBooks = false): RestoreView => ({ from, line, red, setBooks, ...(r.from !== 'phrase' && { refreeze: REFREEZE }) });
   switch (r.state) {
     case 'pending':
       return { ...view('Waiting for the channel to come back'), phoenixd: phoenixdNow(liquidity).phoenixd };

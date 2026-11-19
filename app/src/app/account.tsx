@@ -32,7 +32,7 @@ import { TopUpSheet } from '../ui/TopUpSheet';
 import { BandMenu, Body, Button, ErrorText, goBack, GroupLabel, Panel, Screen } from '../ui/ui';
 import { CardPhotoView, SmallCard } from '../ui/wallet';
 import { accountButtons, accountId, fixedName, type AccountAction, type AccountKind } from '../wallet/account';
-import { cardLimits, headerNote, hostingCard, moreRows } from '../wallet/accountView';
+import { cardLimits, checkLine, headerNote, hostingCard, moreRows } from '../wallet/accountView';
 import { moneyOff } from '../wallet/banners';
 import { colourOf } from '../wallet/colours';
 import { historyAsk, walletAsk } from '../wallet/follow';
@@ -273,6 +273,8 @@ export default function Account() {
   const feeCredit = feeCreditText(wallet?.liquidity?.feeCreditSat ?? 0, look.view, look.rated);
   // A phone has no photo.
   const photo = phone ? undefined : snap.photos[id];
+  // The wallet's list doesn't say it: the server's list of cards does.
+  const restoreLine = checkLine(snap.cards?.find((c) => c.id === id)?.needsCheck, phone);
 
   return (
     // The account's name in the band: the card's (from the cache until the wallet answers), Pool, Hosting or Shop.
@@ -310,6 +312,7 @@ export default function Account() {
       )}
       {card && <ReadBack rows={cardLimits(card, look.view, look.rated)} />}
       {card?.state === 'frozen' && <Body>Frozen: can&apos;t pay; still takes top-ups.</Body>}
+      {card && restoreLine && <Body>{restoreLine}</Body>}
       {card && tapCheck && (tapCheck.ok ? <Body>{tapCheckText(tapCheck)}</Body> : <ErrorText>{tapCheckText(tapCheck)}</ErrorText>)}
       {id === 'hosting' && <HostingPanel card={hostingCard(hosting.status, hostingSyncer.lnvpsExpires, nowS)} />}
 

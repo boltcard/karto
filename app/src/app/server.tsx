@@ -189,6 +189,7 @@ export default function Server() {
             <Body muted>{r.from}</Body>
             {r.red ? <ErrorText>{r.line}</ErrorText> : <Body muted>{r.line}</Body>}
             {r.phoenixd && <Body muted>{r.phoenixd}</Body>}
+            {r.refreeze && <Body>{r.refreeze}</Body>}
             {r.setBooks && <Button title="Set the books to phoenixd's balance" kind="secondary" onPress={restoreBooks} disabled={c.booksOff} />}
             {r.notUp && <Body muted>{r.notUp}</Body>}
             {booksNotes}

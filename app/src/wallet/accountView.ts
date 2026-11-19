@@ -54,6 +54,14 @@ export function headerNote(state: CardState, phone: 'own' | 'other' | null = nul
   return { tag: state === 'frozen', text: STATE[state] ?? state };
 }
 
+/**
+ * The line under a card's limits after a restore (cardd's needsCheck), as Frozen has its own: it can't pay until held
+ * to the phone. Never a phone's card: the wallet checks its own itself, and removes another phone's.
+ */
+export function checkLine(needsCheck: boolean | undefined, phone: 'own' | 'other' | null = null): string | null {
+  return needsCheck && !phone ? "After the restore: can't pay until you hold it to the phone; still takes top-ups." : null;
+}
+
 export type MoreRows = {
   /** The Limits row's line. */
   limits: string;

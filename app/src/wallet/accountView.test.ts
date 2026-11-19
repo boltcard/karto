@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HostingStatus } from '../cardd/client';
-import { cardLimits, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
+import { cardLimits, checkLine, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
 
 const NOW = 1_790_000_000; // 2026-09-21 14:13 UTC
 const card = { state: 'active' as const, version: 1, perTapSat: 20_000, dailySat: 50_000, spent24hMsat: 2_950_400, balanceMsat: 13_291_000, heldMsat: 0 };
@@ -196,5 +196,19 @@ describe("a card's amounts in the app's view", () => {
     });
     expect(moreRows(card, true, 'fiat', GBP).wipe.line).toBe('Its £8.15 move to Pool; the card is blank again.');
     expect(wipeLine(card, 'msat', null).line).toBe('Its 13,291,000 msat move to Pool; the card is blank again.');
+  });
+});
+
+// After a restore a card shows Active but can't pay until it is held to the phone: its page says so, as Frozen's does.
+describe('checkLine', () => {
+  it("says a card can't pay until it is held to the phone, only when the server says it needs the check", () => {
+    expect(checkLine(true)).toBe("After the restore: can't pay until you hold it to the phone; still takes top-ups.");
+    expect(checkLine(false)).toBeNull();
+    expect(checkLine(undefined)).toBeNull();
+  });
+
+  it("says nothing for a phone's card: the wallet checks its own itself, and removes another phone's", () => {
+    expect(checkLine(true, 'own')).toBeNull();
+    expect(checkLine(true, 'other')).toBeNull();
   });
 });

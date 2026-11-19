@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CardInfo } from '../cardd/client';
 import type { Vm } from '../lnvps/client';
 import { initialState, type OnboardingState } from './machine';
-import { cardsToRepoint, oldVmWarning, rebuildSuggestion, restoreView, UNREACHABLE_SUGGEST_MS } from './serverPage';
+import { cardsToRepoint, oldVmWarning, rebuildSuggestion, REFREEZE, restoreView, UNREACHABLE_SUGGEST_MS } from './serverPage';
 
 const NOW = 1_790_000_000_000;
 const vm = (o: Partial<Vm> = {}): Vm => ({
@@ -48,6 +48,14 @@ describe('rebuildSuggestion', () => {
 
 // After the rebuild, on the server page.
 describe('restoreView', () => {
+  // A backup's cards are as it had them: a card frozen after it was made is active again, and cardd can't know.
+  it('says that cards frozen after the backup need freezing again, except for a fresh start from the phrase', () => {
+    expect(REFREEZE).toBe('Cards you froze after this backup was made are active again: freeze them again.');
+    for (const state of ['pending', 'no_channel'] as const) expect(restoreView({ state, from: 'backup' })!.refreeze).toBe(REFREEZE);
+    expect(restoreView({ state: 'done', from: 'backup', reconciledMsat: 0, reconciledAt: 1 })!.refreeze).toBe(REFREEZE);
+    expect(restoreView({ state: 'pending', from: 'phrase' })!.refreeze).toBeUndefined();
+  });
+
   const from = '0123456789abcdef0123456789abcdef-7-1789990000';
   const NOW_S = 1_790_000_000;
 
@@ -83,6 +91,7 @@ describe('restoreView', () => {
       red: true,
       setBooks: true,
       phoenixd: "The server's Lightning wallet (phoenixd) has no channel.",
+      refreeze: REFREEZE,
     });
     // The server refuses the books then (409 channel_not_up): it sets them itself once the channel is up.
     expect(restoreView({ state: 'no_channel', from }, liquidity(true, false))).toMatchObject({
@@ -100,7 +109,7 @@ describe('restoreView', () => {
     const liquidity = (channel: boolean, usable: boolean) => ({ channel, usable, inboundSat: 0, feeCreditSat: 0, firstChannelFeeSat: 0 });
     expect(restoreView({ state: 'pending', from }, null, NOW_S, 0)).toEqual({
       from: 'Restored from the backup of today at 11:26', line: 'Waiting for the channel to come back', red: false, setBooks: false,
-      phoenixd: "The server's Lightning wallet (phoenixd) didn't answer just now.",
+      phoenixd: "The server's Lightning wallet (phoenixd) didn't answer just now.", refreeze: REFREEZE,
     });
     expect(restoreView({ state: 'pending', from }, liquidity(false, false))!.phoenixd).toBe("The server's Lightning wallet (phoenixd) has no channel.");
     expect(restoreView({ state: 'pending', from }, liquidity(true, false))).toMatchObject({ setBooks: false, phoenixd: "The server's Lightning wallet (phoenixd) has a channel that isn't up yet." });

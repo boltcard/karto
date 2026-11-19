@@ -27,7 +27,7 @@ import { walletBanners, type Banner } from '../wallet/banners';
 import { payButton, removedNotice } from '../wallet/phoneCardView';
 import { serverView } from '../wallet/serverView';
 import { shopTile } from '../wallet/shop';
-import { stackOrder, stripTag, type StackEntry } from '../wallet/stack';
+import { stackOrder, stripLabel, stripTag, type StackEntry } from '../wallet/stack';
 import { askedThisRun, nameAskDue } from '../wallet/walletName';
 
 const openAccount = (id: string) => router.push({ pathname: '/account', params: { id } });
@@ -168,7 +168,7 @@ export default function Home() {
               <Pressable
                 key={c.id}
                 accessibilityRole="button"
-                accessibilityLabel={`${c.name}, ${c.label}`}
+                accessibilityLabel={stripLabel(c)}
                 onPress={() => openCard(c)}
                 // A card the wallet doesn't list (the server is down) has no page to open.
                 disabled={!c.partWay && c.availableMsat === null}

@@ -4,6 +4,7 @@ import type { ResultView } from '../money/steps';
 import { INSTALL_STEPS, installStepsFor, type InstallStep, type UploadProgress } from './install';
 import { HOST_KEY_CONFIRM_WAIT_MS, INVOICE_RENEW_BEFORE_MS, REBUILD_STEPS, STOP_INVOICING_BEFORE_DEADLINE_MS, STEPS, type OnboardingState, type Step, type Waiting } from './machine';
 import { chosenLine } from './rebuild';
+import { REFREEZE } from './serverPage';
 
 export const STEP_LABELS: Record<Step, string> = {
   country: 'Country',
@@ -281,7 +282,13 @@ export function readyView(s: OnboardingState, lnvpsExpires: number | null, nowS:
     return view('Your server is rebuilt', [paid && `${paid}.`, 'No cards are listed yet: hold each card to the phone to add it back. All the money is in Pool.']);
   }
   if (s.rebuild) {
-    return view('Your server is rebuilt', [paid && `${paid}.`, 'Any card that still points at the old server is marked in the wallet: hold it to the phone to re-point it.']);
+    // cardd lets no restored card pay until it has been held to the phone (the card's own check), and has no record of a
+    // freeze made after the backup.
+    return view('Your server is rebuilt', [
+      paid && `${paid}.`,
+      'No card can pay until you hold it to the phone: each one is marked in the wallet, and one that still points at the old server is re-pointed then.',
+      REFREEZE,
+    ]);
   }
   if (s.restoring) return view('Your server is ready', ['This phone is now paired with your server.', paid && `${paid}.`]);
   return view('Your server is ready', [paid ? `${paid}, and this phone is paired with it.` : 'This phone is paired with it.', 'Next, add your first card.']);

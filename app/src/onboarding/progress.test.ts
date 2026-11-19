@@ -391,8 +391,10 @@ describe('readyView', () => {
     expect(readyView(done({ restoring: true }), null, NOW, 0).line).toBe('This phone is now paired with your server.');
   });
 
-  it('says after a rebuild from a backup that cards may need re-pointing, from the server page or a new phone', () => {
-    const line = 'Any card that still points at the old server is marked in the wallet: hold it to the phone to re-point it.';
+  it('says after a rebuild from a backup that each card must be held to the phone, and frozen again if it was frozen since, from the server page or a new phone', () => {
+    const line =
+      'No card can pay until you hold it to the phone: each one is marked in the wallet, and one that still points at the old server is re-pointed then. ' +
+      'Cards you froze after this backup was made are active again: freeze them again.';
     for (const s of [done({ rebuild: { source: 'server_page', backup: KEPT } }), done({ restoring: true, rebuild: { source: 'new_phone', backup: KEPT } })]) {
       expect(readyView(s, OCT17, NOW, 0)).toEqual({ tone: 'ok', mark: 'check', title: 'Your server is rebuilt', line: `It’s paid for until 17 Oct. ${line}` });
       expect(readyView(s, null, NOW, 0).line).toBe(line);

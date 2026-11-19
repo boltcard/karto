@@ -3,7 +3,7 @@
 // re-point says "re-point" alone: its re-point is the check. The watch's snapshot is given as Home reads it, with
 // the real banners and stack; serverView, the alerts' offer and the phone's card are left out (their own tests
 // cover them).
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import Home from '../../app/home';
 import type { CardInfo, Wallet } from '../../cardd/client';
@@ -53,5 +53,12 @@ describe('Home after a restore', () => {
     }
     const gift = [...container.querySelectorAll('[role="button"]')].find((b) => b.getAttribute('aria-label')?.startsWith('Gift,'));
     expect(gift?.textContent).not.toContain('hold to phone');
+  });
+
+  it('names each card with its tag for a screen reader', () => {
+    render(<Home />);
+    for (const name of ['Daily, Active, hold to phone', 'Travel, Frozen, hold to phone', 'Spare, Active, re-point', 'Gift, Active']) {
+      expect(screen.getByRole('button', { name })).toBeTruthy();
+    }
   });
 });

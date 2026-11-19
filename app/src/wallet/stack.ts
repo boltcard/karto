@@ -70,3 +70,9 @@ export function stripTag(e: StackEntry): { text: string; tone: 'warn' | 'plain' 
   if (e.state === 'frozen') return { text: 'Frozen', tone: 'plain' };
   return null;
 }
+
+/** A card's button's accessible name: its name, its state, and its strip's tag when that says more ("Daily, Active, hold to phone"). */
+export function stripLabel(e: StackEntry): string {
+  const tag = stripTag(e)?.text;
+  return [e.name, e.label, ...(tag && tag !== e.label ? [tag] : [])].join(', ');
+}
