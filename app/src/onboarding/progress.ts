@@ -3,7 +3,7 @@ import { shortDate } from '../money/format';
 import type { ResultView } from '../money/steps';
 import { INSTALL_STEPS, installStepsFor, type InstallStep, type UploadProgress } from './install';
 import {
-  HOST_KEY_CONFIRM_WAIT_MS, INVOICE_RENEW_BEFORE_MS, REBUILD_STEPS, secretsAt, STOP_INVOICING_BEFORE_DEADLINE_MS, STEPS, type OnboardingState, type Step, type Waiting,
+  HOST_KEY_CONFIRM_WAIT_MS, INVOICE_RENEW_BEFORE_MS, onOldVm, REBUILD_STEPS, secretsAt, STOP_INVOICING_BEFORE_DEADLINE_MS, STEPS, type OnboardingState, type Step, type Waiting,
 } from './machine';
 import { chosenLine } from './rebuild';
 import { REFREEZE } from './serverPage';
@@ -115,7 +115,19 @@ const findsServer = (s: OnboardingState) => !!s.restoring && !s.rebuild;
  * The steps the setup counts: the machine's for this state, without done. A rebuild's own step in a state with no
  * rebuild (the machine never makes one) is counted among all ten, so the number is never nought.
  */
-const countedSteps = (s: OnboardingState): Step[] => (stepsFor(s).includes(s.step) ? stepsFor(s) : STEPS).filter((x) => x !== 'done');
+const countedSteps = (s: OnboardingState): Step[] => runOrder(s, (stepsFor(s).includes(s.step) ? stepsFor(s) : STEPS).filter((x) => x !== 'done'));
+
+/**
+ * The steps in the order this state runs them. A rebuild onto a new VM, or in place on another, runs the install's
+ * steps that carry no secret before step 4 retires the old server: while they run, step 4 comes after the install,
+ * so the count goes by the steps finished (install 8, retire 8, then install 9) and never names step 4 done early.
+ */
+function runOrder(s: OnboardingState, steps: Step[]): Step[] {
+  if (s.step !== 'install' || !s.rebuild || s.rebuild.retire || onOldVm(s) || !steps.includes('retire')) return steps;
+  const rest: Step[] = steps.filter((x) => x !== 'retire');
+  rest.splice(rest.indexOf('install') + 1, 0, 'retire');
+  return rest;
+}
 
 /** The heading over the current step; the order step says so when it orders nothing. */
 export function stepHeading(s: OnboardingState): string {
@@ -161,8 +173,9 @@ export function doneSummary(s: OnboardingState): string | null {
 
 export function stepStatus(s: OnboardingState, step: Step): 'done' | 'current' | 'todo' {
   if (s.step === 'done') return 'done';
-  const at = STEPS.indexOf(s.step);
-  const i = STEPS.indexOf(step);
+  const order = runOrder(s, [...STEPS]);
+  const at = order.indexOf(s.step);
+  const i = order.indexOf(step);
   return i < at ? 'done' : i === at ? 'current' : 'todo';
 }
 
