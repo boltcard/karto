@@ -498,6 +498,9 @@ describe('onboarding', () => {
         'Waiting for LNVPS to confirm your server: 25 min so far. LNVPS checks a new server’s identity (its SSH key) within minutes of ' +
           'it starting, then every hour. Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.',
       );
+      // In place on another VM, long running: LNVPS's hourly scan, not a new VM's quick one.
+      const inPlace = { ...s, rebuild: { ...s.rebuild, target: { kind: 'in_place', vmId: 1001 } } } as OnboardingState;
+      expect(statusLine(inPlace, t.w.nowMs)).toContain('LNVPS checks a server’s identity (its SSH key) at least once an hour. Your wallet seed');
       expect(installFoot(s, t.w.nowMs)).toContain('You can leave the app while LNVPS confirms your server');
       noSecretSent(t);
     });
@@ -600,6 +603,7 @@ describe('onboarding', () => {
       const line = statusLine(s, t.w.nowMs)!;
       expect(line).toContain('so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.');
       expect(line).not.toContain('sent only once');
+      expect(line).toContain('LNVPS checks a server’s identity (its SSH key) at least once an hour.'); // not a new VM
       // Past 3 hours: Try again, in the same words.
       const late = await advance({ ...s }, { ...t.deps, now: () => t.w.nowMs + HOST_KEY_CONFIRM_LIMIT_MS });
       expect(late.error).toEqual({ kind: 'retry', message: HOST_KEY_UNCONFIRMED_OLDER });

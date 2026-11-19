@@ -1,4 +1,4 @@
-// While the setup waits for LNVPS to confirm the server's SSH key (the install's step host-key: usually minutes, at worst about an hour;
+// While the setup waits for LNVPS to confirm the server's SSH key (the install's step host-key: usually minutes, sometimes up to an hour;
 // or a rebuild's boot in place on the old server's own VM), the person may leave the app. This is the watch that tells
 // them when the wait is over: a background check, about every 15 minutes on Android, asks LNVPS for the VM's
 // published key and compares it with the one the app pinned, then posts a notification. It never logs in to the server and sends it nothing: the install itself carries on only with

@@ -211,7 +211,13 @@ function hostKeyWaitLine(s: OnboardingState, now: number): string {
   const held = secretsAt(s) === 'maybe_sent'
     ? 'This server was set up before Karto Wallet waited for LNVPS, so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.'
     : 'Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.';
-  return `${head}LNVPS checks a new server’s identity (its SSH key) within minutes of it starting, then every hour. ${held}`;
+  // LNVPS scans quickly only a VM created, started or reinstalled in the last 30 minutes: in place on another VM, or
+  // an older app's server, the VM has been running for a while, so the hourly scan is what it waits for.
+  const old = s.rebuild?.target?.kind === 'in_place' || secretsAt(s) === 'maybe_sent';
+  const checks = old
+    ? 'LNVPS checks a server’s identity (its SSH key) at least once an hour.'
+    : 'LNVPS checks a new server’s identity (its SSH key) within minutes of it starting, then every hour.';
+  return `${head}${checks} ${held}`;
 }
 
 /**
