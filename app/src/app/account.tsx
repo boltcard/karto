@@ -345,7 +345,7 @@ export default function Account() {
       )}
       {sheet === 'photo' && photo && <CardPhotoView photo={photo} onClose={() => setSheet(null)} />}
       {sheet === 'more' && card && !phone && (
-        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated)} off={off} onLimits={() => setSheet('limits')} onClose={() => setSheet(null)} />
+        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated)} off={off} onLimits={() => setSheet('limits')} onGiveUp={() => {}} onClose={() => setSheet(null)} />
       )}
       {sheet === 'more' && card && phone && (
         <PhoneMoreSheet

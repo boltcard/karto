@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HostingStatus } from '../cardd/client';
-import { cardLimits, checkLine, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
+import { cardLimits, checkLine, giveUpLine, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
 
 const NOW = 1_790_000_000; // 2026-09-21 14:13 UTC
 const card = { state: 'active' as const, version: 1, perTapSat: 20_000, dailySat: 50_000, spent24hMsat: 2_950_400, balanceMsat: 13_291_000, heldMsat: 0 };
@@ -55,6 +55,25 @@ describe('moreRows', () => {
 
   it('greys Wipe while a payment holds some of the balance: cardd refuses it', () => {
     expect(moreRows({ ...card, heldMsat: 2_105_000 }, true).wipe).toEqual({ line: 'Wait for the payment in progress', disabled: true });
+  });
+});
+
+// "I no longer have this card": the money that moves, said in sat even while amounts are hidden, as Wipe's is.
+describe('giveUpLine', () => {
+  it('names the money that moves to Pool, and that taps of the card are refused', () => {
+    expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 0 })).toEqual({ line: 'Its 5,000 sat move to Pool; taps of it are refused.', disabled: false });
+    expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 0 }, 'hidden')).toEqual({ line: 'Its 5,000 sat move to Pool; taps of it are refused.', disabled: false });
+  });
+  it('says only that taps are refused with under a sat on the card', () => {
+    expect(giveUpLine({ balanceMsat: 0, heldMsat: 0 })).toEqual({ line: 'Taps of it are refused.', disabled: false });
+    expect(giveUpLine({ balanceMsat: 999, heldMsat: 0 })).toEqual({ line: 'Taps of it are refused.', disabled: false });
+  });
+  it('is off while a payment holds some of the balance: the server refuses it', () => {
+    expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 1 })).toEqual({ line: 'Wait for the payment in progress', disabled: true });
+  });
+  it("is More's row", () => {
+    expect(moreRows(card, true).giveUp).toEqual(giveUpLine(card));
+    expect(moreRows(card, true, 'hidden').giveUp).toEqual(giveUpLine(card, 'hidden'));
   });
 });
 

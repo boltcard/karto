@@ -8,8 +8,8 @@ import type { MoreRows } from '../wallet/accountView';
 import { ListGroup, ListRow, Sheet, Small, Title } from './ui';
 
 /** rows: wallet/accountView.ts moreRows; off: cardd can't be reached (Wipe works without it; Limits and Change photo don't); onLimits: open the Limits sheet. */
-export function MoreSheet({ card, rows, off, onLimits, onClose }: {
-  card: { id: string; name: string }; rows: MoreRows; off: boolean; onLimits: () => void; onClose: () => void;
+export function MoreSheet({ card, rows, off, onLimits, onGiveUp, onClose }: {
+  card: { id: string; name: string }; rows: MoreRows; off: boolean; onLimits: () => void; onGiveUp: () => void; onClose: () => void;
 }) {
   const photo = () => {
     onClose();
@@ -28,6 +28,19 @@ export function MoreSheet({ card, rows, off, onLimits, onClose }: {
       </ListGroup>
       <ListGroup>
         <ListRow icon="wipe" name="Wipe the card" line={rows.wipe.line} onPress={wipe} disabled={rows.wipe.disabled} danger />
+        {/* No card held: the server must answer, as a wipe's start needn't (giveUp.ts). */}
+        <ListRow
+          icon="wipe"
+          name="I no longer have this card"
+          line={rows.giveUp.line}
+          onPress={() => {
+            onClose();
+            onGiveUp();
+          }}
+          disabled={rows.giveUp.disabled || off}
+          danger
+          divider
+        />
       </ListGroup>
       <Small>{rows.foot}</Small>
     </Sheet>
