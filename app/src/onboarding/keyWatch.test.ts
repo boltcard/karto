@@ -19,13 +19,13 @@ async function waiting() {
 }
 
 /** The watch's deps over a saved state and a record that end() removes, with what it posted. */
-function watch(t: ReturnType<typeof world>, state: OnboardingState | null) {
+function watch(t: ReturnType<typeof world>, state: OnboardingState | null, armedAt = t.w.nowMs) {
   const posted: { tag: string; title: string; text: string }[] = [];
   let record: string | null = t.keys.nostrPrivateKey;
   let ended = 0;
   const deps: KeyWatchDeps = {
     state: async () => state,
-    lnvps: async () => (record ? t.deps.lnvps : null),
+    watch: async () => (record ? { lnvps: t.deps.lnvps, armedAt } : null),
     notify: (n) => void posted.push(n),
     end: async () => {
       ended++;
@@ -97,18 +97,65 @@ describe('the background check while the setup waits for LNVPS', () => {
   });
 
   // A rebuild in place on the old server's own VM waits at boot, before anything there is retired or wiped.
-  it('watches a rebuild\'s boot waiting for LNVPS, and says so once LNVPS lists the VM\'s key', async () => {
-    const { t, s } = await waiting();
-    const atBoot: OnboardingState = {
-      ...s, step: 'boot', waiting: 'host_key_confirm', installed: [], runningSince: t.w.nowMs, stepStartedAt: undefined,
-      rebuild: { source: 'server_page', target: { kind: 'in_place', vmId: s.vmId! }, oldVm: { id: s.vmId! } },
-    };
-    expect(waitsForHostKey(atBoot)).toBe(true);
-    const w = watch(t, atBoot);
-    expect(await runKeyWatch(w.deps)).toBe('not_yet');
-    t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
-    expect(await runKeyWatch(w.deps)).toBe('confirmed');
-    expect(w.posted).toEqual([{ tag: 'host-key', ...KEY_WATCH_NOTICES.confirmed }]);
+  describe('at a rebuild\'s boot in place on the old server\'s own VM', () => {
+    /** An older wallet's first-use key pinned for VM 1001, which is the old server; the wait begun now. */
+    async function atBoot() {
+      const { t, s } = await waiting();
+      const at: OnboardingState = {
+        ...s, step: 'boot', waiting: 'host_key_confirm', installed: [], runningSince: t.w.nowMs, stepStartedAt: undefined,
+        host: { ...s.host!, secretsHeld: undefined },
+        rebuild: { source: 'server_page', target: { kind: 'in_place', vmId: s.vmId! }, oldVm: { id: s.vmId! } },
+      };
+      return { t, s: at };
+    }
+
+    it('says so once LNVPS lists the key pinned', async () => {
+      const { t, s } = await atBoot();
+      expect(waitsForHostKey(s)).toBe(true);
+      const w = watch(t, s);
+      expect(await runKeyWatch(w.deps)).toBe('not_yet');
+      t.lnvps.publishHostKeys(s.vmId!, [HOST_KEY]);
+      expect(await runKeyWatch(w.deps)).toBe('confirmed');
+      expect(w.posted).toEqual([{ tag: 'host-key', ...KEY_WATCH_NOTICES.confirmed }]);
+    });
+
+    // Never "confirmed" for a key LNVPS contradicts: boot stops there too (machine.ts inPlaceMismatch).
+    it('says the server can\'t be trusted when LNVPS lists another key than the one pinned, the seed perhaps given', async () => {
+      const { t, s } = await atBoot();
+      t.lnvps.publishHostKeys(s.vmId!, [impostor]);
+      const w = watch(t, s);
+      expect(await runKeyWatch(w.deps)).toBe('mismatch');
+      expect(w.posted).toEqual([{ tag: 'host-key', ...KEY_WATCH_NOTICES.mismatchOlder }]);
+    });
+
+    it('with no key pinned, says so once LNVPS lists any', async () => {
+      const { t, s } = await atBoot();
+      t.lnvps.publishHostKeys(s.vmId!, [impostor]);
+      const w = watch(t, { ...s, host: undefined });
+      expect(await runKeyWatch(w.deps)).toBe('confirmed');
+    });
+
+    // From what the saved state holds for good, not its waiting, which a failed poll or a VM stopped a moment replaces.
+    it('keeps watching through a failed poll or a VM stopped a moment, and not once a key is LNVPS\'s or boot is past', async () => {
+      const { s } = await atBoot();
+      for (const waiting of ['network', 'boot', undefined] as const) expect(waitsForHostKey({ ...s, waiting })).toBe(true);
+      expect(waitsForHostKey({ ...s, host: { ...s.host!, keySource: 'lnvps' } })).toBe(false);
+      expect(waitsForHostKey({ ...s, hostKeyMismatch: 'LNVPS published SHA256:other' })).toBe(false);
+      expect(waitsForHostKey({ ...s, step: 'retire' })).toBe(false);
+      expect(waitsForHostKey({ ...s, rebuild: { ...s.rebuild!, oldVm: { id: 1012 } } })).toBe(false); // in place on another VM
+    });
+
+    // runningSince can be gone (a Try again after 3 hours clears it): the watch's own start still ends it.
+    it('ends after 6 hours from when the watch was started, when the state says no start', async () => {
+      const { t, s } = await atBoot();
+      const noStart: OnboardingState = { ...s, runningSince: undefined, host: undefined };
+      const w = watch(t, noStart, t.w.nowMs);
+      t.w.nowMs += KEY_WATCH_MAX_MS - 1;
+      expect(await runKeyWatch(w.deps)).toBe('not_yet');
+      t.w.nowMs += 1;
+      expect(await runKeyWatch(w.deps)).toBe('expired');
+      expect(w.posted).toEqual([]);
+    });
   });
 
   it('logs in to nothing and sends the server nothing', async () => {
@@ -151,12 +198,15 @@ describe('the background check while the setup waits for LNVPS', () => {
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: 7,
     });
     expect(await record.get()).toBeNull();
-    await record.set('ab'.repeat(32));
-    expect(await record.get()).toBe('ab'.repeat(32));
+    await record.set('ab'.repeat(32), 1_000);
+    expect(await record.get()).toEqual({ key: 'ab'.repeat(32), armedAt: 1_000 });
     expect([...items.keys()]).toEqual(['host-key-watch']);
     expect(options).toEqual([{ keychainAccessible: 7 }]);
     await record.remove();
     expect(await record.get()).toBeNull();
+    items.set('host-key-watch', 'not a record');
+    expect(await record.get()).toBeNull();
+    items.delete('host-key-watch');
     // The mark of a watch that ended itself, taken once.
     expect(await record.takeEnded()).toBe(false);
     await record.noteEnded();

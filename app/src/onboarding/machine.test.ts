@@ -20,8 +20,8 @@ import { vectors } from '../testing/vectors';
 
 type World = ReturnType<typeof world>;
 
-/** The install's steps that carry no secret, and host-key: what a rebuild onto a new VM runs before step 4. */
-const BEFORE_SECRETS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key'] as const;
+/** The install's steps that carry no secret, host-key and the wipe after it: what a rebuild onto a new VM runs before step 4. */
+const BEFORE_SECRETS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe'] as const;
 
 /** A verification link as LNVPS builds it (LNVPS/api, routes.rs). */
 const LINK = (token: string) => `https://api.lnvps.net/api/v1/account/verify-email?token=${token}`;
@@ -77,7 +77,7 @@ describe('onboarding', () => {
     expect(t.ssh.connects.every((c) => c.hostKey.publicKey === HOST_KEY.public_key && c.host === '45.67.89.164' && c.user === 'debian')).toBe(true);
     expect(t.ssh.connects[0].ed25519Seed).toBe(t.keys.sshEd25519Seed);
     // Installed, with the meta the backups need, and paired.
-    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/install.sh prepare 'vm-1001.lnvps.cloud'`)).toBe(true);
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/cardd-ctl meta set 'mailtm.address' '${t.keys.mailtmName}@uberip.com'`)).toBe(true);
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/cardd-ctl meta set 'account.pubkey' '${vectors.phrase.nostrPublicKey}'`)).toBe(true);
@@ -455,7 +455,7 @@ describe('onboarding', () => {
   // Security review H1: a key trusted on first use could be anyone's on the network path to the server, so the
   // seed, the issuer key and a backup wait for LNVPS to publish the same key; the steps that carry no secret don't.
   describe('holds every secret back until LNVPS confirms a key trusted on first use', () => {
-    const SYSTEM = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe'] as InstallStep[];
+    const SYSTEM = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare'] as InstallStep[];
     const impostor = { ...HOST_KEY, public_key: 'AAAAimpostor', fingerprint_sha256: 'SHA256:other' };
     const MINUTE = 60_000;
 
@@ -510,7 +510,7 @@ describe('onboarding', () => {
       t.lnvps.publishHostKeys(s.vmId!, [{ key_type: 'ssh-rsa', public_key: 'AAAAB3', fingerprint_sha256: 'SHA256:x' }, HOST_KEY]);
       s = await advance(s, t.deps);
       expect(s).toMatchObject({ step: 'pair', host: { keySource: 'lnvps' } });
-      expect(s.installed).toEqual([...SYSTEM, 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+      expect(s.installed).toEqual([...SYSTEM, 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
       expect(t.ssh.commands.find((c) => /install\.sh seed$/.test(c.command))!.stdin).toBe(t.keys.phoenixdSeed);
       expect(t.ssh.commands.find((c) => /install\.sh issuer-key$/.test(c.command))!.stdin).toBe(t.keys.issuerKey);
       expect((await drive(s, t)).step).toBe('done');
@@ -797,7 +797,7 @@ describe('onboarding', () => {
     t.ssh.when(/install\.sh up/, { code: 1, stderr: 'dependency failed to start' }, 1);
     let s = await drive(initialState('GBR'), t);
     expect(s).toMatchObject({ step: 'install', error: { kind: 'retry' } });
-    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
+    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore']);
     expect(t.checkpoints.at(-1)!.installed).toEqual(s.installed);
     s = await drive({ ...s, error: undefined }, t);
     expect(s.step).toBe('done');
@@ -945,7 +945,7 @@ describe('onboarding', () => {
     t.ssh.closeFails = true;
     const s = await drive(initialState('GBR'), t, (x) => x.step === 'pair');
     expect(s.error).toBeUndefined();
-    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
   });
 
   it('refuses an arm64 VM', async () => {
@@ -1149,7 +1149,7 @@ describe('rebuild', () => {
     const s = await drive(at, t);
     expect(s.error).toBeUndefined();
     expect(s).toMatchObject({ step: 'done', vmId: 1001, othersRevoked: true, deviceKeyId: vectors.deviceAuth.keyId });
-    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(t.cardd.restored).toEqual({ kind: 'db', db: PLAIN, device: vectors.deviceAuth.publicKey.toLowerCase(), from: NAME.replace(/\.age$/, '') });
     expect(t.cardd.meta.get('restore.from')).toBe(NAME.replace(/\.age$/, ''));
     expect(t.cardd.meta.get('vm.id')).toBe('1001');
@@ -1202,7 +1202,7 @@ describe('rebuild', () => {
     t.ssh.when(/install\.sh up/, { code: 1, stderr: 'dependency failed to start' }, 1);
     s = await drive(s, t);
     expect(s).toMatchObject({ step: 'install', error: { kind: 'retry' } });
-    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
+    expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore']);
     s = await drive({ ...s, error: undefined }, t);
     expect(s).toMatchObject({ step: 'done', othersRevoked: true });
     const ran = t.ssh.commands.slice(before).map((c) => c.command);
@@ -1313,12 +1313,27 @@ describe('rebuild', () => {
       expect(t.ssh.scans).toBe(0);
     });
 
-    it("in place, takes LNVPS's key when it lists another than the first-use one pinned", async () => {
+    // An older wallet's first-use key that LNVPS now contradicts: never swapped for LNVPS's without a word.
+    it('in place, stops for good when LNVPS lists another key than the first-use one pinned, saying why it may be', async () => {
       const { t, s: at } = await rebuildAt('boot', OWN);
-      const s = await advance({ ...at, host: firstUse('AAAAC3NzaC1lZDI1NTE5AAAAIfirstuse') }, t.deps);
-      expect(s).toMatchObject({ step: 'retire', host: { hostKey: { publicKey: HOST_KEY.public_key }, keySource: 'lnvps' } });
-      expect(s.host!.trustedAt).toBeUndefined();
-      expect(t.ssh.scans).toBe(0);
+      const other = { ...HOST_KEY, fingerprint_sha256: 'SHA256:lnvps' };
+      t.lnvps.publishHostKeys(1001, [other]);
+      let s = await advance({ ...at, host: firstUse('AAAAC3NzaC1lZDI1NTE5AAAAIfirstuse') }, t.deps);
+      expect(s).toMatchObject({ step: 'boot', error: { kind: 'fatal' }, host: { keySource: 'first_use', hostKey: { publicKey: 'AAAAC3NzaC1lZDI1NTE5AAAAIfirstuse' } } });
+      expect(s.hostKeyMismatch).toBe('LNVPS published SHA256:lnvps, but the key this app trusted for VM 1001 is another');
+      expect(s.error!.message).toBe(
+        "The server's SSH key is not the one LNVPS published (LNVPS published SHA256:lnvps, but the key this app trusted for VM 1001 is another). " +
+          'If you re-installed this VM through LNVPS, that changed its key; otherwise another server may have answered in its place. ' +
+          'Your wallet seed and card key may have been sent to it. Stop using this server and this recovery phrase. ' +
+          "Don't rebuild on this VM: rebuild onto a new one.",
+      );
+      // Advanced again (an app opened anew), it stays stopped: nothing is retired, wiped or restored onto that VM.
+      s = await advance({ ...s, error: undefined }, t.deps);
+      expect(s).toMatchObject({ step: 'boot', error: { kind: 'fatal' } });
+      expect([t.ssh.connects, t.ssh.scans]).toEqual([[], 0]);
+      // A key this app trusted, holding the secrets back, and nothing sent: the words say so.
+      const held = await advance({ ...at, host: { ...firstUse('AAAAC3NzaC1lZDI1NTE5AAAAIfirstuse'), secretsHeld: true } }, t.deps);
+      expect(held.error!.message).toContain('Your wallet seed and card key were not sent to it. Stop using this server.');
     });
   });
 
@@ -1355,7 +1370,7 @@ describe('rebuild', () => {
       const read = t.deps.backups.read;
       t.deps.backups.read = async (name) => (decrypts++, read(name));
       let s = await advance(at, t.deps);
-      expect(s).toMatchObject({ step: 'install', waiting: 'host_key_confirm', installed: ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe'] });
+      expect(s).toMatchObject({ step: 'install', waiting: 'host_key_confirm', installed: ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare'] });
       expect(t.ssh.ran(SECRET)).toBe(0);
       expect(t.ssh.sent.every((c) => !c.stdin?.includes(t.keys.phoenixdSeed) && !c.stdin?.includes(t.keys.issuerKey))).toBe(true);
       expect(decrypts).toBe(0); // the backup isn't even opened while the wait lasts
@@ -1395,7 +1410,7 @@ describe('rebuild', () => {
       expect(s.error!.message).toContain('old server is running again');
       expect(s.rebuild).toMatchObject({ retire: undefined, confirm: { older: true } });
       expect(s.rebuild!.confirm!.override).toBeUndefined();
-      expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
+      expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore']);
       expect(t.ssh.ran(/install\.sh up/)).toBe(0);
       expect(t.cardd.restored).toMatchObject({ kind: 'db' }); // restored, and kept for the install's next try
     });
@@ -1690,7 +1705,7 @@ describe('rebuild', () => {
     // needs nothing of it, so the old one runs on through the wait, and stays if the new one is never confirmed.
     describe('keeps the old server running while the new one waits for LNVPS', () => {
       const SECRET = /install\.sh (seed|issuer-key|restore|restore-fresh)( |$)/;
-      const SYSTEM = BEFORE_SECRETS.filter((x) => x !== 'host-key');
+      const SYSTEM = BEFORE_SECRETS.filter((x) => x !== 'host-key' && x !== 'wipe');
 
       /** At the wait: steps 1 and 2 done, VM 1001 paid and booted, its key trusted on first use, LNVPS listing none. */
       async function atWait() {
@@ -2918,7 +2933,7 @@ describe('rebuild', () => {
         };
         const s = await drive(f.s, f.t);
         expect(s).toMatchObject({ step: 'retire', error: { kind: 'retry', message: expect.stringContaining('old server is running again') } });
-        expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
+        expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore']);
         expect(f.t.cardd.restored).toMatchObject({ kind: 'db', from: f.name.replace(/\.age$/, '') });
         return { ...f, s: confirmed({ ...s, error: undefined }, { retire: true }), decrypts: () => decrypts };
       }
@@ -2985,7 +3000,7 @@ describe('rebuild', () => {
     describe('every other VM of the phrase, just before up', () => {
       const UP = /install\.sh up$/;
       const RETIRED = /install\.sh retired$/;
-      const BEFORE_UP = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore'];
+      const BEFORE_UP = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore'];
 
       /** Step 4 retired VM 1012 over SSH, so the rebuild onto VM 1001 is at the install. */
       async function installing() {

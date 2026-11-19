@@ -11,12 +11,13 @@ import { shellQuote, SshDropped, SshUploadRefused, type SshSession } from './ssh
 import { STEP_NOT_RUN, stepCommand } from './stepCommand';
 
 export const DIR = 'card-app';
-export const INSTALL_STEPS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta'] as const;
+export const INSTALL_STEPS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta'] as const;
 export type InstallStep = (typeof INSTALL_STEPS)[number];
 
 /**
  * The steps that send a secret to the server: phoenixd's seed, the issuer key, and a backup's whole ledger. They all
- * come after host-key, so none runs on a server whose SSH key LNVPS has not confirmed.
+ * come after host-key, so none runs on a server whose SSH key LNVPS has not confirmed. So does the wipe, which sends
+ * nothing but destroys what a VM rebuilt in place held: never on one LNVPS hasn't confirmed, and never before the wait.
  */
 export const SECRET_STEPS: readonly InstallStep[] = ['seed', 'issuer-key', 'restore'];
 

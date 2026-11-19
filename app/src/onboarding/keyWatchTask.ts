@@ -30,9 +30,9 @@ TaskManager.defineTask(KEY_WATCH_TASK, async () => {
     const fetch40 = withTimeout((url, init) => fetch(url, init), 40_000);
     const ended = await runKeyWatch({
       state: () => store.onboarding(),
-      lnvps: async () => {
-        const key = await record.get();
-        return key ? new LnvpsClient({ fetch: fetch40, nostrSecretKey: key }) : null;
+      watch: async () => {
+        const r = await record.get();
+        return r && { lnvps: new LnvpsClient({ fetch: fetch40, nostrSecretKey: r.key }), armedAt: r.armedAt };
       },
       notify: (n) => CardNative.postSetupNotice?.(n.tag, n.title, n.text),
       // The copy of the key goes first. The task itself is unregistered by the app once in front (settleKeyWatch),
@@ -53,29 +53,41 @@ TaskManager.defineTask(KEY_WATCH_TASK, async () => {
   }
 });
 
+// The app's own changes to the watch (arming it, ending it, settling what a run left) one after another, so that a
+// settle begun as a state passed can't end a watch armed a moment later, nor the screen say "armed" with no task.
+let queue: Promise<unknown> = Promise.resolve();
+function queued<T>(work: () => Promise<T>): Promise<T> {
+  const done = queue.then(work);
+  queue = done.catch(() => {});
+  return done;
+}
+
 /** Whether the watch runs: its task registered, with its record (a watch that ended itself has none). */
-export const keyWatchArmed = async (): Promise<boolean> =>
-  (await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK)) && (await record.get()) !== null;
+export const keyWatchArmed = (): Promise<boolean> => queued(armed);
+
+const armed = async () => (await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK)) && (await record.get()) !== null;
 
 /**
- * Starts the watch: the record (the Nostr key LNVPS requests are signed with), then the task; if the task can't be
- * registered, the record is removed again. A mark of an earlier watch's own end is dropped, so it can't end this one.
- * The task shares expo-background-task's one worker with the backup job, whose interval becomes the watch's 15
- * minutes while it runs (the backup job does nothing while a setup runs); settleKeyWatch gives it its hour back.
+ * Starts the watch: the record (the Nostr key LNVPS requests are signed with, and now), then the task; if the task
+ * can't be registered, the record is removed again. A mark of an earlier watch's own end is dropped, so it can't end
+ * this one. The task shares expo-background-task's one worker with the backup job, whose interval becomes the watch's
+ * 15 minutes while it runs (the backup job does nothing while a setup runs); settleKeyWatch gives it its hour back.
  */
-export async function armKeyWatch(nostrSecretKey: string): Promise<void> {
-  if (!setupNotices(CardNative)) throw new Error("this phone can't post notifications from the background");
-  await record.takeEnded();
-  await record.set(nostrSecretKey);
-  try {
-    if (!(await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK))) {
-      await BackgroundTask.registerTaskAsync(KEY_WATCH_TASK, { minimumInterval: KEY_WATCH_MINUTES });
+export function armKeyWatch(nostrSecretKey: string): Promise<void> {
+  return queued(async () => {
+    if (!setupNotices(CardNative)) throw new Error("this phone can't post notifications from the background");
+    await record.takeEnded();
+    await record.set(nostrSecretKey, Date.now());
+    try {
+      if (!(await TaskManager.isTaskRegisteredAsync(KEY_WATCH_TASK))) {
+        await BackgroundTask.registerTaskAsync(KEY_WATCH_TASK, { minimumInterval: KEY_WATCH_MINUTES });
+      }
+    } catch (e) {
+      await record.remove();
+      throw e;
     }
-  } catch (e) {
-    await record.remove();
-    throw e;
-  }
-  armedHere = true;
+    armedHere = true;
+  });
 }
 
 /** Unregisters the task if it is registered; returns whether it was. */
@@ -85,14 +97,17 @@ async function unregister(): Promise<boolean> {
   return registered;
 }
 
+/** The record first, then the task; whether the task was registered. */
+async function end(): Promise<boolean> {
+  await record.remove();
+  return unregister();
+}
+
 /**
  * Ends the watch from the app: the copy of the key first, then the task. Safe to repeat. Returns whether the task
  * was registered. Never from inside the task's own run (runKeyWatch's end).
  */
-export async function endKeyWatch(): Promise<boolean> {
-  await record.remove();
-  return unregister();
-}
+export const endKeyWatch = (): Promise<boolean> => queued(end);
 
 /**
  * The shared worker keeps the last interval a task was registered with, the watch's 15 minutes, until the app's
@@ -114,16 +129,18 @@ let armedHere = false;
 /**
  * For each state the onboarding runner hands the screen: ends the watch once the setup no longer waits for LNVPS,
  * and unregisters one that ended itself in the background (its mark), then gives the backup job its hour back.
+ * Queued with arming, and armedHere read when its turn comes, so a watch armed after this state isn't ended for it.
  */
 export function settleKeyWatch(s: OnboardingState): void {
   const first = !checked;
   checked = true;
   const past = !waitsForHostKey(s);
-  if (!first && !(past && armedHere)) return;
-  if (past) armedHere = false;
-  (async () => {
+  if (!first && !past) return;
+  queued(async () => {
+    if (!first && !armedHere) return;
+    if (past) armedHere = false;
     const endedItself = await record.takeEnded();
-    const unregistered = past ? await endKeyWatch() : endedItself && (await record.get()) === null ? await unregister() : false;
+    const unregistered = past ? await end() : endedItself && (await record.get()) === null ? await unregister() : false;
     if (endedItself || unregistered) await backupHourAgain();
-  })().catch((error) => log({ ended: 'failed', error }));
+  }).catch((error) => log({ ended: 'failed', error }));
 }

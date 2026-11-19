@@ -162,7 +162,7 @@ describe('install', () => {
     expect(err).toBeInstanceOf(InstallError);
     expect(err.kind).toBe('retry');
     expect(err.message).toContain('cardd-1 is unhealthy');
-    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore']);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore']);
     await install(await session(ssh), opts);
     expect(ssh.ran(/install\.sh (first-boot|swap|docker|docker-setup)$/)).toBe(4);
     expect(ssh.ran(/install\.sh up/)).toBe(2);
@@ -181,7 +181,7 @@ describe('install', () => {
     };
     const err = await install(await session(ssh), { ...base, done, onStep: async (s) => void done.push(s), confirmHostKey }).catch((e) => e);
     expect(err).toBe(unconfirmed);
-    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe']);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare']);
     expect(ranBefore.some((c) => /install\.sh prepare /.test(c))).toBe(true);
     expect(ssh.ran(/install\.sh (seed|issuer-key|restore|restore-fresh)( |$)/)).toBe(0);
     expect(ssh.commands.some((c) => c.stdin === base.phoenixdSeed || c.stdin === base.issuerKey)).toBe(false);
@@ -207,7 +207,7 @@ describe('install', () => {
     // Stopped before the restore: nothing of it runs, and the steps before it stay done.
     const ssh2 = new FakeSsh();
     const stop = new Error('step 4 first');
-    const done2: InstallStep[] = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key'];
+    const done2: InstallStep[] = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key'];
     const err = await install(await session(ssh2), {
       ...base, restore, device: 'ab'.repeat(32), done: done2, onStep: async (s) => void done2.push(s), beforeSecret: async () => { throw stop; },
     }).catch((e) => e);
@@ -268,7 +268,7 @@ describe('install for a rebuild', () => {
       onStep: async (x) => void done.push(x),
       beforeUp: async () => void seen.push(`beforeUp after ${ssh.commands.at(-1)!.command}`),
     });
-    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
+    expect(done).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(done).toEqual([...INSTALL_STEPS]);
     expect(ssh.commands.map((c) => c.command).slice(4, 14)).toEqual([
       'sh card-app/install.sh first-boot',

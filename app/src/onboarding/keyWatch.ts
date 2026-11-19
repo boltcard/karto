@@ -1,12 +1,12 @@
 // While the setup waits for LNVPS to confirm the server's SSH key (the install's step host-key, up to about an hour;
-// or a rebuild's boot in place on the old server's own VM), the person may leave the app. This is the watch that tells them when the wait is over: a background check, about every
-// 15 minutes on Android, asks LNVPS for the VM's published key and compares it with the one the app pinned, then
-// posts a notification. It never logs in to the server and sends it nothing: the install itself carries on only with
+// or a rebuild's boot in place on the old server's own VM), the person may leave the app. This is the watch that tells
+// them when the wait is over: a background check, about every 15 minutes on Android, asks LNVPS for the VM's
+// published key and compares it with the one the app pinned, then posts a notification. It never logs in to the server and sends it nothing: the install itself carries on only with
 // the app in front. Its words, its decision and the record it reads are here; keyWatchTask.ts wires it to the phone.
 import type { LnvpsClient } from '../lnvps/client';
 import type { SetupNoticeNativeApi } from '../native/api';
 import type { SecureStoreApi } from '../store/secrets';
-import { secretsAt, verifyHostKey, type OnboardingState } from './machine';
+import { onOldVm, secretsAt, verifyHostKey, type OnboardingState } from './machine';
 
 /** The background task's name (expo-task-manager). */
 export const KEY_WATCH_TASK = 'karto-host-key-watch';
@@ -37,8 +37,13 @@ export const KEY_WATCH_NOTICES = {
   },
 } as const;
 
-/** A rebuild's boot waiting for LNVPS to publish the key of the old server's own VM, before step 4 retires and wipes it. */
-const waitsAtBoot = (s: OnboardingState) => s.step === 'boot' && s.waiting === 'host_key_confirm' && !!s.rebuild && s.vmId !== undefined;
+/**
+ * A rebuild's boot waiting for LNVPS to publish the key of the old server's own VM, before step 4 retires and wipes
+ * it: from what the saved state holds for good (boot, in place on that VM, no key of LNVPS's pinned, none contradicted),
+ * not its waiting, which a failed poll (network) or the VM stopped a moment (boot) replaces.
+ */
+const waitsAtBoot = (s: OnboardingState) =>
+  s.step === 'boot' && onOldVm(s) && s.vmId !== undefined && !s.hostKeyMismatch && (!s.host || s.host.keySource === 'first_use');
 
 /**
  * Whether the setup waits for LNVPS to confirm the server: at the install, with a key trusted on first use that
@@ -48,9 +53,9 @@ const waitsAtBoot = (s: OnboardingState) => s.step === 'boot' && s.waiting === '
 export const waitsForHostKey = (s: OnboardingState | null | undefined): s is OnboardingState =>
   !!s && (waitsAtBoot(s) || (s.step === 'install' && s.host?.keySource === 'first_use' && !s.hostKeyMismatch && !s.installed.includes('host-key')));
 
-/** When the wait began (ms): host-key's start, boot's, or else when the key was trusted. */
+/** When the wait began (ms), as the state says: host-key's start, boot's, or else when the key was trusted. */
 const waitStart = (s: OnboardingState): number | undefined =>
-  s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : s.step === 'boot' ? s.runningSince : s.host?.trustedAt;
+  (s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : s.step === 'boot' ? s.runningSince : undefined) ?? s.host?.trustedAt;
 
 /** The native calls the watch needs, where the phone has them: Android's module; an iPhone's posts no notification yet. */
 export function setupNotices(native: Partial<SetupNoticeNativeApi>): SetupNoticeNativeApi | null {
@@ -67,11 +72,16 @@ export type KeyWatchOutcome = 'past' | 'expired' | 'not_yet' | 'confirmed' | 'mi
 
 /**
  * What LNVPS says now of the key the setup waits on: 'past' when the setup no longer waits for it. At a rebuild's
- * boot any key LNVPS lists ends the wait (boot then takes LNVPS's key, whatever was pinned before).
+ * boot, LNVPS's key against the one pinned (boot stops on another: machine.ts inPlaceMismatch); with none pinned, any
+ * key LNVPS lists ends the wait.
  */
 export async function keyWatchCheck(s: OnboardingState | null, lnvps: Pick<LnvpsClient, 'getVm'>): Promise<KeyWatchOutcome> {
   if (!waitsForHostKey(s)) return 'past';
-  if (waitsAtBoot(s)) return (await lnvps.getVm(s.vmId!)).host_ssh_keys.some((k) => k.key_type === 'ssh-ed25519') ? 'confirmed' : 'not_yet';
+  if (waitsAtBoot(s)) {
+    const published = (await lnvps.getVm(s.vmId!)).host_ssh_keys.find((k) => k.key_type === 'ssh-ed25519');
+    if (!published) return 'not_yet';
+    return !s.host || published.public_key === s.host.hostKey.publicKey ? 'confirmed' : 'mismatch';
+  }
   const v = await verifyHostKey(s, lnvps);
   if (v.hostKeyMismatch) return 'mismatch';
   return v.host?.keySource === 'lnvps' ? 'confirmed' : 'not_yet';
@@ -80,8 +90,8 @@ export async function keyWatchCheck(s: OnboardingState | null, lnvps: Pick<Lnvps
 export type KeyWatchDeps = {
   /** The saved onboarding state (read only: the watch writes nothing to it). */
   state(): Promise<OnboardingState | null>;
-  /** LNVPS for the phrase's account, from the watch's record; null when there is no record. */
-  lnvps(): Promise<Pick<LnvpsClient, 'getVm'> | null>;
+  /** LNVPS for the phrase's account, from the watch's record, and when the watch was started; null with no record. */
+  watch(): Promise<{ lnvps: Pick<LnvpsClient, 'getVm'>; armedAt: number } | null>;
   notify(n: { tag: string; title: string; text: string }): void;
   /**
    * Ends the watch from inside its own run: its record removed first, then the end marked for the app, which
@@ -94,21 +104,21 @@ export type KeyWatchDeps = {
 /**
  * One run of the background check. LNVPS's answer, either way, is told once: the watch then ends, so a later
  * run, should Android start one before it is unregistered, finds no record and says nothing. A setup past the wait
- * (or a wallet gone), or a wait begun KEY_WATCH_MAX_MS ago, ends it too, untold.
+ * (or a wallet gone), or a wait begun KEY_WATCH_MAX_MS ago (by the state, or else since the watch was started), ends
+ * it too, untold.
  */
 export async function runKeyWatch(d: KeyWatchDeps): Promise<KeyWatchOutcome> {
   const s = await d.state();
-  const lnvps = waitsForHostKey(s) ? await d.lnvps() : null;
-  if (!lnvps) {
+  const watch = waitsForHostKey(s) ? await d.watch() : null;
+  if (!watch) {
     await d.end();
     return 'past';
   }
-  const start = waitStart(s!);
-  if (start !== undefined && d.now() - start >= KEY_WATCH_MAX_MS) {
+  if (d.now() - (waitStart(s!) ?? watch.armedAt) >= KEY_WATCH_MAX_MS) {
     await d.end();
     return 'expired';
   }
-  const outcome = await keyWatchCheck(s, lnvps);
+  const outcome = await keyWatchCheck(s, watch.lnvps);
   if (outcome === 'not_yet') return outcome;
   if (outcome === 'confirmed') d.notify({ tag: KEY_WATCH_NOTICES.tag, ...KEY_WATCH_NOTICES.confirmed });
   if (outcome === 'mismatch') {
@@ -123,14 +133,25 @@ const ENDED = 'host-key-watch-ended';
 
 /**
  * The watch's record in expo-secure-store: the Nostr key that signs the phrase's LNVPS requests (hex), and nothing
- * else, so the background check reads neither the phrase nor any other key. Removed when the watch ends.
+ * else secret, so the background check reads neither the phrase nor any other key; and when the watch was started
+ * (ms), so that its end after KEY_WATCH_MAX_MS can always come. Removed when the watch ends.
  * noteEnded and takeEnded: a mark that the watch ended itself in the background, so the app, once in front, gives the
  * backup job its own interval back (keyWatchTask.ts).
  */
 export function keyWatchRecord(ss: Pick<SecureStoreApi, 'getItemAsync' | 'setItemAsync' | 'deleteItemAsync' | 'WHEN_UNLOCKED_THIS_DEVICE_ONLY'>) {
   return {
-    get: () => ss.getItemAsync(RECORD),
-    set: (nostrSecretKey: string) => ss.setItemAsync(RECORD, nostrSecretKey, { keychainAccessible: ss.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
+    /** The record, or null for none (or one this app can't read). */
+    get: async (): Promise<{ key: string; armedAt: number } | null> => {
+      const raw = await ss.getItemAsync(RECORD);
+      try {
+        const r = raw === null ? null : (JSON.parse(raw) as { key?: unknown; armedAt?: unknown });
+        return r && typeof r.key === 'string' && typeof r.armedAt === 'number' ? { key: r.key, armedAt: r.armedAt } : null;
+      } catch {
+        return null;
+      }
+    },
+    set: (nostrSecretKey: string, armedAt: number) =>
+      ss.setItemAsync(RECORD, JSON.stringify({ key: nostrSecretKey, armedAt }), { keychainAccessible: ss.WHEN_UNLOCKED_THIS_DEVICE_ONLY }),
     remove: () => ss.deleteItemAsync(RECORD),
     noteEnded: () => ss.setItemAsync(ENDED, '1'),
     /** Whether the mark was there; it is removed. */

@@ -26,8 +26,9 @@ import { HostKeyMismatchError, SshAuthError, SshDropped, type PinnedHostKey, typ
 // backup, where and retire are a rebuild's: onboarding never visits them.
 // The old server is retired before the new one is given the seed, so the two never run phoenixd on it at once. On a
 // new VM, or in place on another VM, the install first runs the steps that carry no secret and waits for LNVPS to
-// confirm the new server's key (install, up to host-key), then step 4 retires the old server, then the install goes
-// on (install, from the seed): until then the old server keeps running, and stays if the new one is never confirmed.
+// confirm the new server's key (install, up to host-key), wipes a VM rebuilt in place, then step 4 retires the old
+// server, then the install goes on (install, from the seed): until then the old server keeps running, and stays if
+// the new one is never confirmed.
 // In place on the old server's own VM, step 4 comes first, its final snapshot before the wipe, once LNVPS has
 // confirmed that VM's key (boot waits for it).
 export const STEPS = ['country', 'email', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done'] as const;
@@ -427,10 +428,7 @@ function classify(e: unknown, s: OnboardingState): { kind: ErrorKind; message: s
     return { kind, message: e.message };
   }
   // What the server may have been given, said only as far as it is known (secretsAt).
-  const given = (head: string) => {
-    const words = secretsWords(s);
-    return { kind: 'fatal' as const, message: words ? `${head}. ${words}` : head };
-  };
+  const given = (head: string) => ({ kind: 'fatal' as const, message: `${head}. ${secretsWords(s) ?? 'Stop using this server.'}` });
   if (e instanceof HostKeyMismatchError && s.host?.keySource === 'first_use' && !s.hostKeyMismatch) {
     return given(`The server's SSH key changed since this app first trusted it: ${e.message}`);
   }
@@ -663,6 +661,8 @@ async function pay(s: OnboardingState, d: Deps): Promise<OnboardingState> {
 }
 
 async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
+  // A rebuild in place stopped on a key LNVPS contradicted (below) stays stopped: nothing goes on to that VM.
+  if (s.rebuild && s.hostKeyMismatch) throw new StepError('fatal', inPlaceMismatch(s, s.hostKeyMismatch));
   const vm = await d.lnvps.getVm(s.vmId!);
   checkArch(vm);
   const v4 = vm.ip_assignments.find((a) => !a.ip.includes(':'));
@@ -671,13 +671,15 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   const published = vm.host_ssh_keys.find((k) => k.key_type === 'ssh-ed25519');
   const ownVm = onOldVm(s);
   if (s.rebuild) {
-    // In place, the key pinned for this VM stays, LNVPS's or one trusted on first use, unless LNVPS lists another.
-    if (s.rebuild.target?.kind === 'in_place' && s.host && !s.hostKeyMismatch) {
+    // In place, the key pinned for this VM stays, LNVPS's or one trusted on first use; one LNVPS confirms becomes
+    // LNVPS's. One LNVPS contradicts stops the rebuild there: nothing is retired, wiped or restored onto that VM.
+    if (s.rebuild.target?.kind === 'in_place' && s.host) {
       const listed = published && { keyType: published.key_type, publicKey: published.public_key };
-      const host: ServerHost =
-        s.host.keySource !== 'first_use' || !listed ? s.host
-        : listed.publicKey === s.host.hostKey.publicKey ? { ...s.host, keySource: 'lnvps', trustedAt: undefined }
-        : { ...s.host, hostKey: listed, keySource: 'lnvps', trustedAt: undefined };
+      if (s.host.keySource === 'first_use' && listed && listed.publicKey !== s.host.hostKey.publicKey) {
+        const hostKeyMismatch = `LNVPS published ${published!.fingerprint_sha256}, but the key this app trusted for VM ${vm.id} is another`;
+        return { ...s, hostKeyMismatch, runningSince: undefined, error: { kind: 'fatal', message: inPlaceMismatch(s, hostKeyMismatch) } };
+      }
+      const host: ServerHost = s.host.keySource !== 'first_use' || !listed ? s.host : { ...s.host, keySource: 'lnvps', trustedAt: undefined };
       // The old server's own VM is retired and wiped first: only once LNVPS has confirmed its key (an older wallet's
       // first-use key LNVPS never confirmed).
       if (ownVm && host.keySource === 'first_use') return bootKeyWait({ ...s, host, hostKeyTypes: undefined }, d);
@@ -731,7 +733,19 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
 }
 
 /** A rebuild in place on the old server's own VM (not on another VM of the phrase). */
-const onOldVm = (s: OnboardingState) => s.rebuild?.target?.kind === 'in_place' && s.rebuild.target.vmId === s.rebuild.oldVm?.id;
+export const onOldVm = (s: OnboardingState) => s.rebuild?.target?.kind === 'in_place' && s.rebuild.target.vmId === s.rebuild.oldVm?.id;
+
+/**
+ * Why a rebuild in place stopped at boot on a first-use key LNVPS contradicts (mismatch: the record), what the VM may
+ * have been given (secretsWords), and the innocent reason there can be.
+ */
+export function inPlaceMismatch(s: Pick<OnboardingState, 'host' | 'installed'>, mismatch: string): string {
+  return (
+    `The server's SSH key is not the one LNVPS published (${mismatch}). If you re-installed this VM through LNVPS, that ` +
+    `changed its key; otherwise another server may have answered in its place. ${secretsWords(s) ?? 'Stop using this server.'} ` +
+    "Don't rebuild on this VM: rebuild onto a new one."
+  );
+}
 
 /**
  * Boot's wait for LNVPS to publish the key of the old server's own VM, before step 4 retires and wipes it, timed
@@ -866,8 +880,9 @@ async function installStep(s: OnboardingState, d: Deps): Promise<OnboardingState
   // Waiting at host-key: LNVPS is asked again, and nothing is sent to the server, not even a login.
   const next = nextInstallStep(s);
   if (keyUnconfirmed(s) && (next === 'host-key' || (next !== undefined && SECRET_STEPS.includes(next)))) return awaitHostKey(s, d);
-  // Back from a closed app with the key confirmed and the old server not yet retired: step 4, before connecting here.
-  if (retireDue(s) && next !== undefined && INSTALL_STEPS.indexOf(next) > INSTALL_STEPS.indexOf('host-key')) return { ...s, stepStartedAt: undefined, step: 'retire' };
+  // Back from a closed app with the key confirmed, the wipe done and the old server not yet retired: step 4, before
+  // connecting here (an install that runs on reaches it at the seed: beforeSecret).
+  if (retireDue(s) && next !== undefined && INSTALL_STEPS.indexOf(next) > INSTALL_STEPS.indexOf('wipe')) return { ...s, stepStartedAt: undefined, step: 'retire' };
   const rebuild = await rebuildOptions(s, d);
   const session = await connect(s, d);
   let current = s;
