@@ -234,6 +234,14 @@ describe('moveLock', () => {
     expect(moveLock(hosting, 'Move 5,000 sat')).toBeNull();
     expect(moveLock(moveTargets(WALLET, 'pool')[0], 'Move 5,000 sat')).toBeNull();
   });
+
+  it("asks for none for money moved onto this phone's own card, by its id; another card still asks", () => {
+    const [, , spare, kids] = moveTargets(WALLET, 'pool');
+    expect(moveLock(spare, 'Move 5,000 sat', SPARE)).toBeNull();
+    expect(moveLock(kids, 'Move 5,000 sat', SPARE)).toEqual({ prompt: 'Move 5,000 sat', needs: 'moving money onto a card' });
+    // By id, not by name: a card named as the phone's is still asked for.
+    expect(moveLock({ ...kids, name: spare.name }, 'Move 5,000 sat', SPARE)).not.toBeNull();
+  });
 });
 
 describe('moveReadBack', () => {

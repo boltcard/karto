@@ -151,10 +151,12 @@ const within = (a: MoveAccount) => `${a.card ? 'on' : 'in'} ${a.name}`;
 
 /**
  * The screen lock a move asks for: money moved onto a card is money that card can then spend at any till, so it is
- * confirmed as Send out's is, its prompt Check's button. Money moved off a card, to Pool or Hosting, asks for none.
+ * confirmed as Send out's is, its prompt Check's button. Money moved off a card, to Pool or Hosting, asks for none,
+ * and so does money moved onto this phone's own card (ownPhoneCard: its id, the watch's phoneCard.own), which pays
+ * only behind the lock each time it is armed. Another phone's card asks, as a plastic one does.
  */
-export const moveLock = (to: MoveAccount, title: string): { prompt: string; needs: string } | null =>
-  to.card ? { prompt: title, needs: 'moving money onto a card' } : null;
+export const moveLock = (to: MoveAccount, title: string, ownPhoneCard: string | null = null): { prompt: string; needs: string } | null =>
+  to.card && to.id !== ownPhoneCard ? { prompt: title, needs: 'moving money onto a card' } : null;
 
 /** "13,292 sat available on Daily card.", "£29.76 available in Pool.": in the view Move shows (confirmView's). */
 export const moveAvailable = (a: MoveAccount, v: View = 'sat', r: Rated | null = null): string => `${viewText(a.availableMsat, v, r)} available ${within(a)}.`;

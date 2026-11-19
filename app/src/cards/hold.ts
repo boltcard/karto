@@ -360,6 +360,9 @@ export function wipeIntro(o: { name: string; state?: CardState; balanceMsat: num
  */
 export const holdLocked = (op: Op): boolean => op !== 'repoint';
 
+/** A card held to the phone before the lock has passed is closed unread, and the page says so. */
+export const UNLOCK_FIRST = 'Unlock first, then hold the card to the phone.';
+
 const ADD_LEADS: Record<'add' | 'finish-add' | 'adopt', (name: string) => string> = {
   add: (name) => (name ? `Add ${name}` : 'Add a card'),
   'finish-add': (name) => (name ? `Finish adding ${name}` : 'Finish adding the card'),

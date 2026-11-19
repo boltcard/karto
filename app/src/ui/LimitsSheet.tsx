@@ -31,6 +31,8 @@ export function LimitsSheet({ card, cardd, off, onSaved, onClose }: {
   const [daily, setDaily] = useState(() => (r && own ? minorInputText(own.dailyMinor, own.currency) : String(card.dailySat)));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Set before the first await: a double tap on Save asks for the lock, and saves, once.
+  const savingNow = useRef(false);
   // Still the server's currency while cardd has no rate for a moment; changed in it only with one.
   const code = look.fiat?.currency;
   const now = limitsNow(card, code && isCode(code) ? code : null, rated?.currency ?? null);
@@ -65,6 +67,7 @@ export function LimitsSheet({ card, cardd, off, onSaved, onClose }: {
   };
 
   const save = async () => {
+    if (savingNow.current) return;
     let limits: LimitsRequest;
     if (r) {
       const perTapMinor = fiatInput(perTap, r.currency) ?? 0;
@@ -79,6 +82,7 @@ export function LimitsSheet({ card, cardd, off, onSaved, onClose }: {
       if (problem) return setError(problem);
       limits = { perTapSat, dailySat };
     }
+    savingNow.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -94,6 +98,8 @@ export function LimitsSheet({ card, cardd, off, onSaved, onClose }: {
     } catch (e) {
       setError(moneyError(e));
       setSaving(false);
+    } finally {
+      savingNow.current = false;
     }
   };
 

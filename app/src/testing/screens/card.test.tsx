@@ -5,13 +5,15 @@
 // It lives here, not beside card.tsx: every file in src/app/ is a route to Expo Router.
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useLocalSearchParams } from 'expo-router';
+import { AppState, type AppStateStatus } from 'react-native';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CardScreen from '../../app/card';
 import type { CardDeps } from '../../cards/deps';
+import { UNLOCK_FIRST } from '../../cards/hold';
 import { holdPress } from '../../cards/holdPress';
 import type { Tag } from '../../native/nfc';
 import { screenLock } from '../../ui/lock';
-import { cardWorld } from '../cardWorld';
+import { cardAt, cardWorld } from '../cardWorld';
 
 const deps: { now: CardDeps | null } = { now: null };
 /** The screen's claim on NFC's taps: a card held to the phone. */
@@ -37,6 +39,9 @@ vi.mock('../../services/services', () => ({ useRouteGuard: () => true, useServic
 vi.mock('../../ui/lock', () => ({ screenLock: vi.fn(async () => null), useLockKind: () => 'screen-lock' }));
 
 const REFUSED = 'The screen lock was not confirmed.';
+/** The screen's listeners for the app's state: a test moves the app to the background or back through them. */
+const appState: ((s: AppStateStatus) => void)[] = [];
+const appTo = (s: AppStateStatus) => act(() => appState.forEach((f) => f(s)));
 const WAITING = 'Hold Daily flat against the back of the phone';
 
 /** Opens the screen with its link's parameters over a world with a blank card in the field. */
@@ -63,6 +68,11 @@ describe('Add card', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     slot.onTag = null;
+    appState.length = 0;
+    vi.spyOn(AppState, 'addEventListener').mockImplementation((type, f) => {
+      if (type === 'change') appState.push(f as (s: AppStateStatus) => void);
+      return { remove: () => appState.splice(appState.indexOf(f as (s: AppStateStatus) => void), 1) };
+    });
   });
 
   it('asks for the screen lock as it opens from the name screen, then adds the card held', async () => {
@@ -120,5 +130,75 @@ describe('Add card', () => {
     const { transceive } = await hold(world);
     expect(transceive).not.toHaveBeenCalled();
     expect(world.cardd.cards.size).toBe(0);
+  });
+  it('says to unlock first when a card is held before the lock has passed', async () => {
+    const world = await open({ op: 'add', name: 'Daily' });
+    await screen.findByRole('button', { name: 'Unlock to add' });
+    const { transceive } = await hold(world);
+    expect(transceive).not.toHaveBeenCalled();
+    expect(await screen.findByText(UNLOCK_FIRST)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock to add' }));
+    expect(await screen.findByText(WAITING)).toBeTruthy();
+    expect(screen.queryByText(UNLOCK_FIRST)).toBeNull();
+  });
+
+  it('locks again when the app goes to the background, and asks at the button when it comes back', async () => {
+    const world = await open({ op: 'add', name: 'Daily', randomUid: '1', press: holdPress() });
+    expect(await screen.findByText(WAITING)).toBeTruthy();
+    // Inactive (Face ID, Apple's sheet) keeps it unlocked.
+    appTo('inactive');
+    expect(screen.getByText(WAITING)).toBeTruthy();
+    appTo('background');
+    appTo('active');
+    expect(await screen.findByRole('button', { name: 'Unlock to add' })).toBeTruthy();
+    expect(screen.queryByText(WAITING)).toBeNull();
+    // It isn't asked by itself again.
+    expect(screenLock).toHaveBeenCalledTimes(1);
+    const { transceive } = await hold(world);
+    expect(transceive).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock to add' }));
+    expect(await screen.findByText(WAITING)).toBeTruthy();
+    expect(screenLock).toHaveBeenCalledTimes(2);
+    await hold(world);
+    expect(await screen.findByText('Card added')).toBeTruthy();
+  });
+
+  it('stays unlocked when the lock itself sends the app to the background (Android\'s PIN screen)', async () => {
+    let confirm: (why: string | null) => void = () => {};
+    vi.mocked(screenLock).mockImplementationOnce(() => new Promise((go) => (confirm = go)));
+    await open({ op: 'add', name: 'Daily', press: holdPress() });
+    await vi.waitFor(() => expect(screenLock).toHaveBeenCalledTimes(1));
+    appTo('background');
+    await act(async () => confirm(null));
+    appTo('active');
+    expect(await screen.findByText(WAITING)).toBeTruthy();
+  });
+
+  it('locks a wipe again when the app goes to the background', async () => {
+    const world = await open({ op: 'wipe', id: '0123456789abcdef0123456789abcdef' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Unlock to wipe' }));
+    expect(await screen.findByText(/^Hold .* flat against the back of the phone$/)).toBeTruthy();
+    appTo('background');
+    expect(await screen.findByRole('button', { name: 'Unlock to wipe' })).toBeTruthy();
+    const { transceive } = await hold(world);
+    expect(transceive).not.toHaveBeenCalled();
+  });
+
+  it('asks for the lock as it opens to add a card back, which the name screen led to', async () => {
+    const world = await open({ op: 'adopt', name: 'Card', press: holdPress() });
+    expect(await screen.findByText('Hold Card flat against the back of the phone')).toBeTruthy();
+    expect(screenLock).toHaveBeenCalledWith('Add Card back', 'adding a card');
+    expect(world.cardd.cards.size).toBe(0);
+  });
+
+  it('asks for no lock to re-point a card', async () => {
+    const world = await open({ op: 'repoint', press: holdPress() });
+    expect(await screen.findByText('Hold the card flat against the back of the phone')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /^Unlock/ })).toBeNull();
+    expect(screenLock).not.toHaveBeenCalled();
+    // A card held is read at once.
+    world.use(cardAt(world.deps.issuer, 0));
+    const { transceive } = await hold(world);
+    expect(transceive).toHaveBeenCalled();
   });
 });

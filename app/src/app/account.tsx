@@ -60,6 +60,8 @@ export default function Account() {
   /** The two held loops while the page is in front, for a load of the page's own to kick: there is something to ask past. */
   const loops = useRef<{ wallet: { kick(): void }; history: { kick(): void } } | null>(null);
   const front = useRef(false);
+  /** Unfreeze is asking for the screen lock: set before the first await, so a double tap asks once. */
+  const unfreezing = useRef(false);
   /** The open Top up sheet's baseline: the history's newest id and the wallet's rev as they were when it opened (id null until the history has answered). */
   // channel: whether the server had a Lightning channel when the Top up sheet opened (null: not known), for the Received words.
   const [base, setBase] = useState<{ id: number | null; rev: string | undefined; channel: boolean | null } | null>(null);
@@ -240,6 +242,19 @@ export default function Account() {
     await watch.reloadCards().catch(() => {});
     goBack();
   };
+  // Unfreeze: behind the screen lock, as raising a card's limits is: the card can spend again. Freezing asks for none.
+  const unfreeze = async (c: WalletCard) => {
+    if (unfreezing.current) return;
+    unfreezing.current = true;
+    try {
+      const why = await screenLock(`Unfreeze ${name}`, 'unfreezing a card');
+      if (why) return setError(why);
+      setError(null);
+      act(() => deps.cardd.unfreezeCard(c.id))();
+    } finally {
+      unfreezing.current = false;
+    }
+  };
   const press = (a: AccountAction) => {
     if (a === 'top-up') {
       setBase({ id: shown.current.loaded ? newestId(shown.current.txs) : null, rev: shown.current.wallet?.rev, channel: shown.current.wallet?.liquidity?.channel ?? null });
@@ -250,7 +265,8 @@ export default function Account() {
     else if (a === 'send') router.push('/send');
     else if (a === 'pay-lnvps') router.push('/pay-lnvps');
     else if (a === 'pos-phones') router.push('/pos-phones');
-    else if (card) act(() => (a === 'freeze' ? deps.cardd.freezeCard(card.id) : deps.cardd.unfreezeCard(card.id)))();
+    else if (card && a === 'freeze') act(() => deps.cardd.freezeCard(card.id))();
+    else if (card && a === 'unfreeze') void unfreeze(card);
   };
   const kind: AccountKind = card ? { kind: 'card', state: card.state, ownPhone: phone === 'own', nfcOff: snap.nfc === 'off' } : id === 'pool' ? { kind: 'pool' } : id === 'shop' ? { kind: 'shop' } : { kind: 'hosting' };
   const capacity = id === 'shop' ? capacityLine(wallet?.liquidity ?? null, look.view, look.rated) : '';

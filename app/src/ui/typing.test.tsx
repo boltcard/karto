@@ -207,4 +207,20 @@ describe('LimitsSheet', () => {
     await waitFor(() => expect(setLimits).toHaveBeenCalledWith('c1', { currency: 'GBP', perTapMinor: 500, dailyMinor: 1_000 }));
     expect(screenLock).not.toHaveBeenCalled();
   });
+  it('asks for the lock, and saves, once for a double tap on Save', async () => {
+    let confirm: (why: string | null) => void = () => {};
+    vi.mocked(screenLock).mockImplementationOnce(() => new Promise((go) => (confirm = go)));
+    const { setLimits, onSaved } = open(card(), { currency: 'none' });
+    fireEvent.change(screen.getByDisplayValue('20000'), { target: { value: '25000' } });
+    // Both in one act: the second tap comes before the sheet is drawn again with Save disabled.
+    const save = screen.getByRole('button', { name: 'Save limits' });
+    act(() => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
+    await act(async () => confirm(null));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    expect(screenLock).toHaveBeenCalledTimes(1);
+    expect(setLimits).toHaveBeenCalledTimes(1);
+  });
 });

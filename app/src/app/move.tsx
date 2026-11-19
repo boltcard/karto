@@ -1,6 +1,6 @@
 // Move money between the person's accounts in
 // three steps on one screen: To (the other account, from rows), Amount (with All) and Check; the screen lock for
-// money moved onto a card, none for money moved off one (money/steps.ts moveLock); once
+// money moved onto a card but this phone's own, none for money moved off one (money/steps.ts moveLock); once
 // per request id, kept through retries and app restarts (src/money/requests.ts). money/steps.ts decides how it
 // opens, the read-back and where the outcome leads; this holds the state.
 import { useLocalSearchParams } from 'expo-router';
@@ -113,7 +113,7 @@ export default function Move() {
     moving.current = true;
     setError(null);
     try {
-      const lock = moveLock(to, moveTitle);
+      const lock = moveLock(to, moveTitle, snap.phoneCard.own);
       if (lock) {
         const why = await screenLock(lock.prompt, lock.needs);
         if (why) return setError(why);

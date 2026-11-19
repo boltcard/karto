@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { ADD_STEPS } from './add';
 import { ADOPT_STEPS } from './adopt';
-import { ADD_BAR, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdSheet, NAME_HINT, nameView, sheetOpens, holdNames, holdParams, holdResult, holdSteps, holdView, leaveTo, OPS, sheetLink, wipeIntro } from './hold';
+import { ADD_BAR, UNLOCK_FIRST, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdSheet, NAME_HINT, nameView, sheetOpens, holdNames, holdParams, holdResult, holdSteps, holdView, leaveTo, OPS, sheetLink, wipeIntro } from './hold';
 import { REPOINT_STEPS } from './repoint';
 import { WIPE_STEPS } from './wipe';
 
@@ -535,5 +535,11 @@ describe('addIntro', () => {
   });
   it('names the lock as an iPhone does when told to', () => {
     expect(addIntro({ op: 'add', name: 'Daily', lock: 'Face ID or your passcode' }).note).toBe('Adding a card needs Face ID or your passcode, then Daily held to the phone.');
+  });
+});
+
+describe('UNLOCK_FIRST', () => {
+  it('says what to do when a card is held before the lock has passed', () => {
+    expect(UNLOCK_FIRST).toBe('Unlock first, then hold the card to the phone.');
   });
 });

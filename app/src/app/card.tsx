@@ -1,6 +1,7 @@
 // Hold the card: add, finish an add, wipe (only the card it was opened for), re-point, or add back a card the
 // server doesn't know. All but a re-point are behind the screen lock (cards/hold.ts holdLocked): an add asks for it
 // as the screen opens when a press in the app led here, and a wipe, or an add a karto:// link opened, at its page's button.
+// Going to the background locks it again; a card held before the lock has passed is closed unread.
 // Each tap carries on from the card's own state, so a card pulled away early only needs holding again. What the
 // screen shows at each moment, how each job ends and where leaving goes are cards/hold.ts's. On an iPhone a card is
 // read only under Apple's sheet: the screen opens it, tells
@@ -12,7 +13,8 @@ import { AppState, StyleSheet, View } from 'react-native';
 import { addCard } from '../cards/add';
 import { adoptCard } from '../cards/adopt';
 import {
-  ADD_BAR, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdNames, holdParams, holdResult, holdSheet, holdSteps, holdView, leaveTo, sheetOpens, wipeIntro,
+  ADD_BAR, addIntro, confirmingAfter, endMessage, HOLD_TITLES, holdButton, holdLocked, holdNames, holdParams, holdResult, holdSheet, holdSteps, holdView, leaveTo, sheetOpens, UNLOCK_FIRST,
+  wipeIntro,
   type HoldEvent, type HoldOutcome, type HoldView,
 } from '../cards/hold';
 import { isHoldPress } from '../cards/holdPress';
@@ -138,7 +140,22 @@ export default function CardScreen() {
     void unlock();
   }, [allowed, params, op, unlocked, pressed]);
 
+  // The app going to the background locks the job again: whoever has the phone when it comes back is asked for the
+  // lock at the page's button, as on a screen a link opened. Not when it is only inactive (Face ID, Apple's sheet),
+  // nor while the lock is being asked for (Android's PIN screen, its own activity, may send the app to the background).
+  useEffect(() => {
+    if (!holdLocked(op)) return;
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'background' && !asking.current) setUnlocked(false);
+    });
+    return () => sub.remove();
+  }, [op]);
+
   const onTag = async (tag: Tag) => {
+    if (!busy.current && params && !unlocked && !outcome) {
+      setMessage({ text: UNLOCK_FIRST, again: false });
+      return void tag.close();
+    }
     if (busy.current || !deps || !params || !unlocked || outcome) return void tag.close();
     if (!tag.transceive) {
       setMessage({ text: "That isn't a card this app can use.", again: true });
