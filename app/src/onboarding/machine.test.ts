@@ -2294,6 +2294,25 @@ describe('rebuild', () => {
         expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'override', overSsh: true } } });
       });
 
+      // A final snapshot taken, then the retire failing: the old server runs on (and can freeze a card), so the
+      // override goes on with that snapshot no longer final, and the server page keeps its line about freezes.
+      it('marks the final snapshot not final when the override goes on with the old server not retired', async () => {
+        const { t, old, s: at } = await atRetire({ confirm: { retire: true }, retireTries: RETIRE_TRIES_BEFORE_OVERRIDE - 1 });
+        old.cardd.addSnapshot(sealSummary(summary(T0 - 60), t.keys.backupAgeRecipient), T0 - 60);
+        old.ssh.when(/install\.sh retire '1001'$/, { code: 1, stderr: 'Cannot connect to the Docker daemon at unix:///var/run/docker.sock' });
+        expect(await advance(at, t.deps)).toMatchObject({ step: 'retire', error: { kind: 'retry' } });
+        // The snapshot's fetch was saved before the retire failed: the app cut there comes back to it, final for now.
+        const cut = t.checkpoints.find((x) => x.rebuild?.backup?.kind === 'kept' && x.rebuild.backup.final)!;
+        expect(cut.rebuild!.backup).toMatchObject({ created: T0 - 60, final: true });
+        const due = { ...cut, rebuild: { ...cut.rebuild!, retireTries: RETIRE_TRIES_BEFORE_OVERRIDE } };
+        let s = await advance(confirmed(due, { override: 'ssh' }), t.deps);
+        expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'override' }, backup: { created: T0 - 60 } } });
+        expect((s.rebuild!.backup as { final?: true }).final).toBeUndefined();
+        s = await drive(s, t);
+        expect(s).toMatchObject({ step: 'done' });
+        expect(t.cardd.meta.has('restore.final')).toBe(false);
+      });
+
       // Without a final snapshot just made, nothing is lost by going on: the last resort is still reached.
       it('reaches the re-install with the old server\'s HTTPS down too', async () => {
         const { t, old, s: at, name } = await atRetire({ confirm: { retire: true } });

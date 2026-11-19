@@ -94,7 +94,7 @@ func (s *Store) Checkpoint(ctx context.Context) error {
 // that phoenixd had no channel when the books were set, so that one coming
 // back is booked once more: from "channel_later" is that second setting, and
 // needs the restore done with that key present (else ErrConflict); it deletes
-// the key.
+// the key, and keeps the time in restore.reconciled of the first setting.
 func (s *Store) SetRestoreBooks(ctx context.Context, from string, msat int64, note string, at time.Time, channelLater bool) error {
 	return s.inTx(ctx, func(tx *sql.Tx) error {
 		var state string
@@ -135,6 +135,18 @@ func (s *Store) SetRestoreBooks(ctx context.Context, from string, msat int64, no
 		}
 		if channelLater {
 			if _, err := tx.ExecContext(ctx, `INSERT INTO meta (key, value, updated_at) VALUES ('restore.channel_later', '1', ?)`, now); err != nil {
+				return err
+			}
+		}
+		// A channel that came back later keeps the time the books were first set, which the app counts from.
+		if from == "channel_later" {
+			var first string
+			var msatWas, atWas int64
+			if err := tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'restore.reconciled'`).Scan(&first); err == nil {
+				if n, _ := fmt.Sscan(first, &msatWas, &atWas); n == 2 {
+					at = time.Unix(atWas, 0)
+				}
+			} else if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 		}

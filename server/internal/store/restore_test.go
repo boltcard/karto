@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"testing"
@@ -202,8 +203,12 @@ func TestSetRestoreBooks(t *testing.T) {
 	if v, _ := s.GetMeta(ctx, "restore.channel_later"); v != "1" {
 		t.Fatalf("channel_later %q", v)
 	}
-	if err := s.SetRestoreBooks(ctx, "channel_later", 2_000, "restore", at, false); err != nil {
+	// The late channel's books, an hour on, keep the time the books were first set: the app counts from it.
+	if err := s.SetRestoreBooks(ctx, "channel_later", 2_000, "restore", at.Add(time.Hour), false); err != nil {
 		t.Fatal(err)
+	}
+	if v, _ := s.GetMeta(ctx, "restore.reconciled"); v != fmt.Sprintf("2000 %d", at.Unix()) {
+		t.Fatalf("restore.reconciled %q", v)
 	}
 	if _, err := s.GetMeta(ctx, "restore.channel_later"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("key kept: %v", err)

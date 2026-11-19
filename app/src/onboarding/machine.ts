@@ -1135,7 +1135,8 @@ export async function retireOldServer(
     throw new Error(`The old server still answers at https://${host.hostname}/health after it was retired: try again.`);
   }
   const retire: RetireRecord = { result, at: d.now() };
-  if (r.oldVm?.id === id) return { ...s, rebuild: { ...r, retire } };
+  // Retired here with no snapshot taken: it ran on after any taken before.
+  if (r.oldVm?.id === id) return { ...notFinal(s), rebuild: { ...notFinal(s).rebuild!, retire } };
   return { ...s, rebuild: { ...r, others: (r.others ?? []).map((o) => (o.id === id ? { id, ...retire } : o)) } };
 }
 
@@ -1605,7 +1606,18 @@ const fromText = (b?: ChosenBackup) => (b?.kind === 'kept' ? `the backup of ${ti
 
 /** Step 1's choice stays, and the notice says why. */
 function goesOn(s: OnboardingState, why: string): OnboardingState {
-  return { ...s, notice: `${why} The rebuild goes on from ${fromText(s.rebuild!.backup)}.` };
+  return { ...notFinal(s), notice: `${why} The rebuild goes on from ${fromText(s.rebuild!.backup)}.` };
+}
+
+/**
+ * The backup no longer marked as the old server's final snapshot: the old server ran on after it (an override,
+ * a rebuild going on without a new one, a re-install, a retire with no snapshot), so a freeze made there since is lost.
+ */
+function notFinal(s: OnboardingState): OnboardingState {
+  const b = s.rebuild?.backup;
+  if (b?.kind !== 'kept' || !b.final) return s;
+  const { final: _, ...kept } = b;
+  return { ...s, rebuild: { ...s.rebuild!, backup: kept } };
 }
 
 /** A server as LNVPS describes it, once it lists the VM's IPv4 address and ed25519 key. */
@@ -1735,7 +1747,7 @@ const permanent = (e: unknown) => e instanceof SnapshotRefused || isRevoked(e) |
  * First its latest snapshot, if cardd still serves one, so the confirmation says what is lost.
  */
 async function reinstallOld(s: OnboardingState, d: Deps, vm: Vm, hostname: string): Promise<OnboardingState> {
-  s = await takeLatest(s, d, hostname);
+  s = await takeLatest(notFinal(s), d, hostname);
   const b = s.rebuild!.backup;
   const lost = b?.kind === 'kept' ? `anything on it after the backup of ${timeText(b.created)} is lost` : 'with no backup, the split between the cards is lost';
   if (!s.rebuild!.confirm?.reinstall) {
@@ -1769,6 +1781,8 @@ function retired(
   s: OnboardingState, d: Deps, result: RetireRecord['result'], o: { deletingOn?: string; notice?: string; overSsh?: boolean } = {},
 ): OnboardingState {
   const retire: RetireRecord = { result, at: d.now(), ...(o.deletingOn ? { deletingOn: o.deletingOn } : {}), ...(o.overSsh ? { overSsh: true } : {}) };
+  // Only a server stopped (or about to be wiped in place) right after its final snapshot keeps that snapshot final.
+  if (result !== 'retired' && result !== 'in_place') s = notFinal(s);
   // Its seed is gone, or marked never to run: order passes it over, and the look before up knows it.
   const id = s.rebuild!.oldVm?.id;
   const forGood = id !== undefined && (result === 'retired' || result === 'reinstalled') && !s.retiredVms?.includes(id);

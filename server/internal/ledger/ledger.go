@@ -291,7 +291,8 @@ func (l *Ledger) CheckRestore(ctx context.Context) error {
 		return err
 	}
 	if state == restoreDone {
-		// Books set by hand with no channel: one that comes back is booked then.
+		// Books set with no channel (by hand, or at once for a backup owing
+		// nothing): one that comes back is booked then.
 		if _, err := l.store.GetMeta(ctx, "restore.channel_later"); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return nil
