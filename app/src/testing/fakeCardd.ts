@@ -1081,8 +1081,10 @@ export class FakeCardd {
     const host = this.host;
     if (!c) this.cards.set(id, { id, version: 0, state: 'programming', counter: -1, name, host, created: this.now(), updated: this.now() });
     else if (c.state === 'programming') Object.assign(c, { host }, name ? { name, updated: this.now() } : {});
-    else if (c.state === 'reset') Object.assign(c, { version: c.version + 1, state: 'programming', counter: -1, name: name || c.name, host, updated: this.now() });
-    else throw new Refusal(409, 'conflict', 'store: conflicting state');
+    else if (c.state === 'reset') {
+      Object.assign(c, { version: c.version + 1, state: 'programming', counter: -1, name: name || c.name, host, updated: this.now() });
+      delete c.needsCheck; // new keys: the taps recorded before are another version's
+    } else throw new Refusal(409, 'conflict', 'store: conflicting state');
     return { ...this.cards.get(id)!, lnurlw: `lnurlw://${this.host}/ln` };
   }
 
@@ -1170,6 +1172,7 @@ export class FakeCardd {
     if (card.state !== 'active' && card.state !== 'frozen') throw new Refusal(409, 'not_active', 'cards: card setup has not finished or it is being wiped');
     if (counter <= card.counter) throw new Refusal(409, 'replayed', 'store: counter not above last seen');
     Object.assign(card, { counter, updated: this.now() });
+    delete card.needsCheck; // the owner's check, after a restore
     return { ...card };
   }
 }

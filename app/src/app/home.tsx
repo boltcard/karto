@@ -181,7 +181,7 @@ export default function Home() {
                   // The cards behind are strips; the newest, in front, stands whole in the sleeve.
                   stack={i === stack.length - 1 ? 'front' : 'behind'}
                   dim={c.state === 'frozen'}
-                  ring={c.repoint}
+                  ring={c.repoint || c.check}
                   tag={tag?.text}
                   tone={tag?.tone}
                   // A phone has no photo.

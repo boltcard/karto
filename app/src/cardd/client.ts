@@ -56,6 +56,11 @@ export type CardInfo = {
   limits?: CardLimits;
   /** The server the card's URL points at, set when it is added or re-pointed ('' if unknown). */
   host?: string;
+  /**
+   * Set after a restore from a backup: the card can't pay until it is held to the phone, whose tap check (or a
+   * re-point's) moves the server's counter to the card's own. Absent otherwise.
+   */
+  needsCheck?: boolean;
   /** GET /cards only: the card's photo's tag, '' without one; an older cardd doesn't say. */
   photo?: string;
 };

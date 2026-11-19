@@ -65,6 +65,7 @@ describe('bannerInput', () => {
       restoreRed: null,
       rebuild: null,
       repoint: 0,
+      check: 0,
       nfc: 'on',
     });
     expect(walletBanners(input())).toEqual([]);
@@ -126,6 +127,22 @@ describe('bannerInput', () => {
     expect(input({ cards: null }).repoint).toBe(0);
     // A phone's card is never one to re-point.
     expect(input({ cards, phoneCard: { supported: true, record: { n: 0, removing: false }, ids: ['b'], own: 'b', removed: [] } }).repoint).toBe(1);
+  });
+
+  // A restore leaves each card needing its owner's check before it can pay. A card to re-point is counted there
+  // alone, as its re-point checks it; a phone's card is checked by the wallet itself (phoneCard/keep.ts).
+  it('counts the cards a restore left needing a check, but not those to re-point, wiped ones or phones\' cards', () => {
+    const cards = [
+      row('a', { needsCheck: true }),
+      row('b', { needsCheck: true, host: 'vm-1012.lnvps.cloud' }),
+      row('c', { needsCheck: true, state: 'frozen' }),
+      row('d', { needsCheck: true, state: 'reset' }),
+      row('e'),
+      row('f', { needsCheck: true }),
+    ];
+    expect(input({ cards })).toMatchObject({ check: 3, repoint: 1 });
+    expect(input({ cards, phoneCard: { supported: true, record: { n: 0, removing: false }, ids: ['f'], own: 'f', removed: [] } }).check).toBe(2);
+    expect(input({ cards: null }).check).toBe(0);
   });
 
   it("takes the server's status, the NFC state and the time as they are", () => {

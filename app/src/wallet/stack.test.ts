@@ -62,7 +62,7 @@ describe('stackOrder', () => {
     const [e] = stackOrder([row('7f3a9c01', { name: 'Daily', version: 2, counter: 14 })], null, HOST);
     expect(e).toEqual({
       id: '7f3a9c01', name: 'Daily', colour: cardColour('7f3a9c01'), state: 'active', label: 'Active', partWay: null,
-      repoint: false, availableMsat: null, version: 2, counter: 14, phone: null,
+      repoint: false, check: false, availableMsat: null, version: 2, counter: 14, phone: null,
     });
     expect(stackOrder([row('a', { name: '' })], null, HOST)[0].name).toBe('Unnamed card');
   });
@@ -103,6 +103,27 @@ describe('stackOrder', () => {
       HOST,
     );
     expect(stack.map((e) => e.repoint)).toEqual([false, true, false, true]);
+  });
+
+  // A restore leaves each card needing its owner's check: its strip says to hold it to the phone, unless it is
+  // to be re-pointed, which checks it.
+  it('marks the cards a restore left needing a check', () => {
+    const stack = stackOrder(
+      [row('a', { created: 1, needsCheck: true }), row('b', { created: 2, needsCheck: true, host: 'vm-1012.lnvps.cloud' }), row('c', { created: 3 }),
+        row('d', { created: 4, needsCheck: true, state: 'frozen' })],
+      null,
+      HOST,
+    );
+    expect(stack.map((e) => e.check)).toEqual([true, false, false, true]);
+    expect(stack.map(stripTag)).toEqual([
+      { text: 'hold to phone', tone: 'warn' },
+      { text: 're-point', tone: 'warn' },
+      null,
+      { text: 'hold to phone', tone: 'warn' },
+    ]);
+    // A phone's card is checked by the wallet itself.
+    const phones = { ids: new Set(['a']), own: 'a' };
+    expect(stackOrder([row('a', { needsCheck: true })], null, HOST, phones)[0].check).toBe(false);
   });
 
   it("shows each card's available balance from the wallet, null where the wallet doesn't list it", () => {

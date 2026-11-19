@@ -35,6 +35,14 @@ describe('repointCard', () => {
     expect((await identify(t.tap().card, t.deps)).needsRepoint).toBe(false);
   });
 
+  // A restore leaves the card needing its owner's check before it can pay: the re-point's check is that check.
+  it("clears a restore's need for a check", async () => {
+    const t = await onOtherServer('vm-9.lnvps.cloud');
+    t.cardd.cards.get(t.id)!.needsCheck = true;
+    expect((await repointCard(t.tap().card, t.deps)).needsCheck).toBeUndefined();
+    expect(t.cardd.cards.get(t.id)!.needsCheck).toBeUndefined();
+  });
+
   // Cut between the URL and the offsets, from a longer host (old offsets reach past the new URL).
   it('finishes a re-point lifted between the URL and the offsets', async () => {
     const base = await onOtherServer('vm-10090.lnvps.cloud');
@@ -77,5 +85,17 @@ describe('checkTap', () => {
     t.w.carddDown = true;
     const offline = await identify(t.tap().card, t.deps);
     expect(await checkTap(offline, t.deps)).toEqual({ ok: false, reason: "Can't reach your server to check this tap." });
+  });
+
+  // A card held to the phone after a restore onto the same server (nothing to re-point): the tap check is the
+  // owner's check the server waits for, and the card can pay again.
+  it("clears a restore's need for a check", async () => {
+    const t = await onOtherServer('vm-1.lnvps.cloud');
+    t.cardd.cards.get(t.id)!.needsCheck = true;
+    const i = await identify(t.tap().card, t.deps);
+    expect(i.needsRepoint).toBe(false);
+    const check = await checkTap(i, t.deps);
+    expect(check.ok && check.card.needsCheck).toBeFalsy();
+    expect(t.cardd.cards.get(t.id)!.needsCheck).toBeUndefined();
   });
 });

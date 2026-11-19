@@ -38,6 +38,8 @@ export type BannerInput = {
   rebuild: { text: string; gone: boolean } | null;
   /** How many cards point at another server. */
   repoint: number;
+  /** How many cards a restore left needing a check before they can pay, not counting those to re-point. */
+  check: number;
   nfc: NfcState | null;
   /** A newer release on GitHub, for an APK from there (appUpdate/useAppUpdate.ts); null or absent otherwise. */
   appUpdate?: string | null;
@@ -81,6 +83,9 @@ export function walletBanners(i: BannerInput): Banner[] {
   if (i.rebuild && !i.rebuild.gone) b.push(amber('rebuild', i.rebuild.text, SETTINGS));
   if (i.repoint > 0) {
     b.push(amber('repoint', i.repoint === 1 ? '1 card to re-point: hold it to the phone' : `${i.repoint} cards to re-point: hold each to the phone`, null));
+  }
+  if (i.check > 0) {
+    b.push(amber('check', i.check === 1 ? "1 card can't pay until you hold it to the phone" : `${i.check} cards can't pay until you hold each to the phone`, null));
   }
   if (i.nfc === 'off') b.push(amber('nfc-off', "NFC is off: cards can't be added or checked", { kind: 'nfc-settings' }));
   // The server's name with no IPv4 address, or one that isn't the server's: the Server page says who can fix it.

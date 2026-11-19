@@ -16,6 +16,7 @@ const WELL: BannerInput = {
   restoreRed: null,
   rebuild: null,
   repoint: 0,
+  check: 0,
   nfc: 'on',
 };
 const banners = (o: Partial<BannerInput>) => walletBanners({ ...WELL, ...o });
@@ -105,6 +106,11 @@ describe('walletBanners', () => {
     ],
     ['a card to re-point', { repoint: 1 }, { key: 'repoint', tone: 'amber', text: '1 card to re-point: hold it to the phone', target: null }],
     [
+      'a card to check after a restore',
+      { check: 1 },
+      { key: 'check', tone: 'amber', text: "1 card can't pay until you hold it to the phone", target: null },
+    ],
+    [
       'NFC off',
       { nfc: 'off' },
       { key: 'nfc-off', tone: 'amber', text: "NFC is off: cards can't be added or checked", target: { kind: 'nfc-settings' } },
@@ -175,6 +181,7 @@ describe('walletBanners', () => {
       restoreRed: RESTORE,
       rebuild: { text: QUIET, gone: false },
       repoint: 2,
+      check: 1,
       nfc: 'off',
     });
     expect(all.map((b) => [b.key, b.tone])).toEqual([
@@ -191,6 +198,7 @@ describe('walletBanners', () => {
       ['restore', 'red'],
       ['rebuild', 'amber'],
       ['repoint', 'amber'],
+      ['check', 'amber'],
       ['nfc-off', 'amber'],
     ]);
   });
@@ -231,6 +239,10 @@ describe('walletBanners', () => {
 
   it('counts the cards to re-point', () => {
     expect(banners({ repoint: 3 })[0].text).toBe('3 cards to re-point: hold each to the phone');
+  });
+
+  it('counts the cards to check after a restore', () => {
+    expect(banners({ check: 3 })[0].text).toBe("3 cards can't pay until you hold each to the phone");
   });
 });
 

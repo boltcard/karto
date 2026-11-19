@@ -101,6 +101,16 @@ export const cardsToRepoint = <C extends Pick<CardInfo, 'id' | 'state' | 'host'>
   cards.filter((c) => c.state !== 'reset' && c.host !== undefined && c.host !== host && !phones?.has(c.id));
 
 /**
+ * Cards a restore left needing a check before they can pay (cardd's needsCheck), to hold to the phone: not reset,
+ * not to be re-pointed (the re-point checks the card), and never a phone's, which the wallet checks itself
+ * (phoneCard/keep.ts).
+ */
+export const cardsToCheck = <C extends Pick<CardInfo, 'id' | 'state' | 'host' | 'needsCheck'>>(cards: C[], host: string, phones?: ReadonlySet<string>) => {
+  const repoint = new Set(cardsToRepoint(cards, host).map((c) => c.id));
+  return cards.filter((c) => c.needsCheck && c.state !== 'reset' && !repoint.has(c.id) && !phones?.has(c.id));
+};
+
+/**
  * The red warning when LNVPS reports an old VM running that step 4 never retired over SSH, naming it
  * (the one Retire old server then retires). old: LNVPS's answers for the VMs oldVmsToWatch names.
  */

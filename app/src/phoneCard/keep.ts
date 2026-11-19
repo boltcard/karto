@@ -16,7 +16,7 @@ export type KeepDeps = {
   issuer: Uint8Array;
   /** The server the wallet is paired with. */
   host: string;
-  cardd: Pick<CarddClient, 'wallet' | 'reserveCard' | 'confirmCard' | 'wipeCard' | 'wipedCard' | 'freezeCard' | 'setCardHost'>;
+  cardd: Pick<CarddClient, 'wallet' | 'reserveCard' | 'confirmCard' | 'checkCard' | 'wipeCard' | 'wipedCard' | 'freezeCard' | 'setCardHost'>;
   record: PhoneCardRecordStore;
   /** The name the phone remembers for a card (its cache), for one the server has forgotten. */
   rememberedName(id: string): Promise<string | undefined>;
@@ -111,7 +111,7 @@ async function balancesOf(d: KeepDeps): Promise<Map<string, number> | null> {
   }
 }
 
-/** Steps 2 to 6, for this phone's own card. Answers whether the card was registered or confirmed. */
+/** Steps 2 to 7, for this phone's own card. Answers whether the card was registered or confirmed. */
 async function keepOwn(d: KeepDeps, cards: CardInfo[], rec: PhoneCardRecord): Promise<boolean> {
   const id = phoneCardId(d.issuer, rec.n);
   const mine = cards.find((c) => c.id === id);
@@ -157,7 +157,19 @@ async function keepOwn(d: KeepDeps, cards: CardInfo[], rec: PhoneCardRecord): Pr
   }
   // 5. At another host (a rebuilt server has a new hostname): no hold is needed, the phone makes its own links.
   if (mine.host !== undefined && mine.host !== d.host) await d.cardd.setCardHost(id, d.host);
-  // 6. The record never behind the server: its key version, and a next past the server's counter.
+  // 6. Restored from a backup: the server's counter is the backup's, behind taps this phone may have handed out
+  // since, so it lets the card pay only once checked. A tap past them all and past the server's counter is the
+  // check; the record is written one higher first, as for a confirm, so a cut run's tap is never made again.
+  if (mine.needsCheck) {
+    const written = await d.record.update((r) => {
+      if (!r) return r;
+      const at = Math.max(r.next, mine.counter + 1);
+      checkCounters(at, 1);
+      return { ...r, version: mine.version, next: at + 1 };
+    });
+    if (written) await d.cardd.checkCard(tapSuns({ issuer: d.issuer, n: rec.n, version: mine.version }, written.next - 1, 1, d.random)[0]);
+  }
+  // 7. The record never behind the server: its key version, and a next past the server's counter.
   await d.record.update((r) => r && { ...r, version: mine.version, next: Math.max(r.next, mine.counter + 1) });
   return false;
 }
@@ -185,6 +197,7 @@ export function phoneCardKeeper(d: KeepDeps & { armed(): boolean }): (cards: Car
       wallet: () => c.wallet(),
       reserveCard: noting((id, name) => c.reserveCard(id, name)),
       confirmCard: noting((id, sun) => c.confirmCard(id, sun)),
+      checkCard: noting((sun) => c.checkCard(sun)),
       wipeCard: noting((id) => c.wipeCard(id)),
       wipedCard: noting((id) => c.wipedCard(id)),
       freezeCard: noting((id) => c.freezeCard(id)),

@@ -272,6 +272,41 @@ describe("steps 5 and 6: this phone's card, where the server and the phone diffe
     }
   });
 
+  // A server restored from a backup has the counter the backup had, behind the taps this phone has handed out
+  // since, and won't let the card pay until it is checked: a tap past them all, the record written one higher first.
+  it('is checked after a restore with a tap at the record\'s next, which the server takes as its counter', async () => {
+    const t = await setup({ record: { n: 0, version: 0, next: 400_001 } });
+    t.put(0, 'active', { counter: 300_000, needsCheck: true });
+    expect(await t.run()).toEqual(NOTHING);
+    expect(t.cardd.cards.get(t.id(0))).toMatchObject({ state: 'active', counter: 400_001 });
+    expect(t.cardd.cards.get(t.id(0))!.needsCheck).toBeUndefined();
+    expect(await t.stored()).toEqual({ n: 0, version: 0, next: 400_002 });
+    expect(t.s.calls).toEqual(['checkCard']);
+    // Checked once: the next run has nothing to do.
+    await t.run();
+    expect(t.s.calls).toEqual([]);
+  });
+
+  it('is checked past the server\'s counter when the record is behind it, frozen too', async () => {
+    const t = await setup({ record: { n: 0, version: 0, next: 50 } });
+    t.put(0, 'frozen', { counter: 100, needsCheck: true });
+    await t.run();
+    expect(t.cardd.cards.get(t.id(0))).toMatchObject({ state: 'frozen', counter: 101 });
+    expect(await t.stored()).toEqual({ n: 0, version: 0, next: 102 });
+  });
+
+  it('is checked by the run after one the network cut, past the tap that may have reached the server', async () => {
+    const t = await setup({ record: { n: 0, version: 0, next: 400_001 } });
+    t.put(0, 'active', { counter: 300_000, needsCheck: true });
+    t.s.failAt = 1;
+    expect((await t.run()).stopped).toBe('network');
+    expect(await t.stored()).toEqual({ n: 0, version: 0, next: 400_002 });
+    t.s.failAt = 0;
+    await t.run();
+    expect(t.cardd.cards.get(t.id(0))).toMatchObject({ counter: 400_002 });
+    expect(t.cardd.cards.get(t.id(0))!.needsCheck).toBeUndefined();
+  });
+
   it("takes the server's key version into the record", async () => {
     const t = await setup({ record: { n: 0, version: 0, next: 200 } });
     t.put(0, 'active', { version: 3 });

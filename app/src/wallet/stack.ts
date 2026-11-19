@@ -2,12 +2,12 @@
 // shows, in what order, and what each card's strip and face say.
 import type { CardInfo, CardState, Wallet } from '../cardd/client';
 import { availableMsat } from '../money/format';
-import { cardsToRepoint } from '../onboarding/serverPage';
+import { cardsToCheck, cardsToRepoint } from '../onboarding/serverPage';
 import { walletColours } from './colours';
 import { byAdded } from './order';
 
 /** A card as cardd lists it, or as the phone's cache remembers it (no created, no host). host: from cardd's list only. */
-export type Row = Pick<CardInfo, 'id' | 'name' | 'state' | 'version' | 'host'> & { counter?: number; created?: number };
+export type Row = Pick<CardInfo, 'id' | 'name' | 'state' | 'version' | 'host' | 'needsCheck'> & { counter?: number; created?: number };
 
 /** The phones' cards among the cards: their ids, and this phone's own. */
 export type Phones = { ids: ReadonlySet<string>; own: string | null };
@@ -19,7 +19,10 @@ export type StackEntry = {
   label: 'Active' | 'Frozen' | 'Finish setup' | 'Finish wipe' | 'Being set up' | 'Being removed';
   /** A card part-way through being added or wiped opens the hold-the-card screen to finish. Never a phone's: the wallet finishes that itself. */
   partWay: 'add' | 'wipe' | null;
-  repoint: boolean; availableMsat: number | null; version: number; counter?: number;
+  repoint: boolean;
+  /** A restore left it needing a check before it can pay: it is to be held to the phone (not one to re-point). */
+  check: boolean;
+  availableMsat: number | null; version: number; counter?: number;
   /** A phone that is a card, this phone or another: drawn with a phone before its name, with no photo. */
   phone: 'own' | 'other' | null;
 };
@@ -43,6 +46,7 @@ const shownName = (c: Row) => c.name || 'Unnamed card';
 export function stackOrder(cards: Row[], wallet: Wallet | null, host: string, phones: Phones = NO_PHONES): StackEntry[] {
   const colours = walletColours(cards);
   const repoint = new Set(cardsToRepoint(cards, host, phones.ids).map((c) => c.id));
+  const check = new Set(cardsToCheck(cards, host, phones.ids).map((c) => c.id));
   return cards
     .filter((c): c is Row & { state: Exclude<CardState, 'reset'> } => c.state !== 'reset')
     .sort(byAdded)
@@ -51,7 +55,7 @@ export function stackOrder(cards: Row[], wallet: Wallet | null, host: string, ph
       const phone = c.id === phones.own ? 'own' : phones.ids.has(c.id) ? 'other' : null;
       return {
         id: c.id, name: shownName(c), colour: colours[c.id], state: c.state, ...(phone ? PHONE_FACE : FACE)[c.state],
-        repoint: repoint.has(c.id), availableMsat: w ? availableMsat(w) : null, version: c.version, counter: c.counter, phone,
+        repoint: repoint.has(c.id), check: check.has(c.id), availableMsat: w ? availableMsat(w) : null, version: c.version, counter: c.counter, phone,
       };
     });
 }
@@ -62,6 +66,7 @@ export function stripTag(e: StackEntry): { text: string; tone: 'warn' | 'plain' 
   // A phone's card part-way needs nothing of the person.
   if (e.phone && (e.state === 'programming' || e.state === 'wiping')) return { text: e.label, tone: 'plain' };
   if (e.repoint) return { text: 're-point', tone: 'warn' };
+  if (e.check) return { text: 'hold to phone', tone: 'warn' };
   if (e.state === 'frozen') return { text: 'Frozen', tone: 'plain' };
   return null;
 }
