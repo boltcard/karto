@@ -1266,7 +1266,7 @@ describe('rebuild', () => {
       let s = await advance({ ...at, host: firstUse() }, t.deps);
       expect(s).toMatchObject({ step: 'boot', waiting: 'host_key_confirm', runningSince: started, host: firstUse() });
       expect(statusLine(s, t.w.nowMs)).toBe(
-        'Waiting for LNVPS to confirm your server: 0 min so far. LNVPS checks a server’s identity (its SSH key) within minutes of it starting, then every hour. ' +
+        'Waiting for LNVPS to confirm your server: 0 min so far. LNVPS checks a server’s identity (its SSH key) at least once an hour. ' +
           'Nothing on it is retired or wiped until LNVPS has confirmed it.',
       );
       // Closed and opened again an hour later: still waiting, from the same start.

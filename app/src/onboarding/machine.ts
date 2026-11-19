@@ -280,7 +280,7 @@ export type Deps = {
 };
 
 export const HOST_KEY_WAIT_MS = 10 * 60 * 1000;
-/** LNVPS publishes a new server's key within minutes of it starting, at worst about an hour (then hourly): twice that is a warning. */
+/** LNVPS publishes a new server's key within minutes, sometimes up to an hour: two hours is a warning. */
 export const HOST_KEY_CONFIRM_WAIT_MS = 2 * 60 * 60 * 1000;
 /**
  * How long the install waits at host-key for LNVPS to publish the server's key before it offers Try again: LNVPS

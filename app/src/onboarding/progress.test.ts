@@ -123,7 +123,7 @@ describe('progress', () => {
     expect(hostKeyNotice({ ...s, host }, 0)).toEqual({ kind: 'ok', text: 'LNVPS has confirmed this server\'s SSH key.' });
     expect(hostKeyNotice({ ...s, host: { ...host, keySource: 'first_use' } }, 0)).toEqual({
       kind: 'pending',
-      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of the server starting; the app checks while the wallet or a Settings page is open.",
+      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of a new server starting; the app checks while the wallet or a Settings page is open.",
     });
     const bad = hostKeyNotice({ ...s, host: { ...host, keySource: 'first_use' }, hostKeyMismatch: 'LNVPS published SHA256:x' }, 0);
     expect(bad.kind).toBe('mismatch');

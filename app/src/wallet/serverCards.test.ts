@@ -102,7 +102,7 @@ describe('serverCards', () => {
   });
 
   it("puts the pending notice under Identity, and leaves the version out when the status isn't ok", () => {
-    const pending = { kind: 'pending' as const, text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of the server starting; the app checks while the wallet or a Settings page is open." };
+    const pending = { kind: 'pending' as const, text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of a new server starting; the app checks while the wallet or a Settings page is open." };
     expect(cards({}, { keyNotice: pending }).at(-1)).toEqual({
       kind: 'details', rows: [...DETAILS.slice(0, 4), ['Identity', 'Waiting for LNVPS']], identityNote: pending.text,
     });

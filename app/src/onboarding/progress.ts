@@ -206,7 +206,7 @@ function hostKeyWaitLine(s: OnboardingState, now: number): string {
   const since = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : atBoot ? (s.runningSince ?? now) : now;
   const head = `Waiting for LNVPS to confirm your server: ${Math.floor(Math.max(0, now - since) / 60_000)} min so far. `;
   if (atBoot) {
-    return `${head}LNVPS checks a server’s identity (its SSH key) within minutes of it starting, then every hour. Nothing on it is retired or wiped until LNVPS has confirmed it.`;
+    return `${head}LNVPS checks a server’s identity (its SSH key) at least once an hour. Nothing on it is retired or wiped until LNVPS has confirmed it.`;
   }
   const held = secretsAt(s) === 'maybe_sent'
     ? 'This server was set up before Karto Wallet waited for LNVPS, so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.'
@@ -381,7 +381,7 @@ export function hostKeyNotice(s: OnboardingState, nowMs: number): { kind: 'ok' |
     }
     return {
       kind: 'pending',
-      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of the server starting; the app checks while the wallet or a Settings page is open.",
+      text: "LNVPS hasn't confirmed your server's identity yet. It usually does within minutes of a new server starting; the app checks while the wallet or a Settings page is open.",
     };
   }
   return { kind: 'ok', text: 'LNVPS has confirmed this server\'s SSH key.' };
