@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-  advance, verifyHostKey, DEFAULT_PAY_DAYS, HOST_KEY_CONFIRM_LIMIT_MS, HOST_KEY_UNCONFIRMED, HOST_KEY_WAIT_MS, initialState, INVOICE_RENEW_BEFORE_MS, MAX_PAY_DAYS, NEWER_BACKUP, OLD_VM_SSH_WAIT_MS, PAY_DAY_PRESETS, reconcileDevice,
+  advance, verifyHostKey, DEFAULT_PAY_DAYS, HOST_KEY_CONFIRM_LIMIT_MS, HOST_KEY_UNCONFIRMED, HOST_KEY_UNCONFIRMED_IN_PLACE, HOST_KEY_UNCONFIRMED_OLDER, HOST_KEY_WAIT_MS, initialState, INVOICE_RENEW_BEFORE_MS, MAX_PAY_DAYS, NEWER_BACKUP, OLD_VM_SSH_WAIT_MS, PAY_DAY_PRESETS, reconcileDevice,
   FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, MAILTM_BUSY_WAIT_MS, MAILTM_FAILED, paySat,
   type ChosenBackup, type OnboardingState, type Rebuild, type RetireRecord, type ServerHost, type Waiting,
 } from './machine';
 import { installFoot, installRows, statusLine } from './progress';
-import { INSTALL_STEPS } from './install';
+import { INSTALL_STEPS, type InstallStep } from './install';
 import { notNewest, olderNotice, timeText, withBackup } from './rebuild';
-import { ageEncrypt } from '../backup/age';
+import { ageDecrypt, ageEncrypt } from '../backup/age';
 import { SnapshotUnreadable } from '../backup/summary';
 import { MAX_SNAPSHOT_BYTES, snapshotName, type Kept, type SnapshotSummary } from '../backup/backups';
 import { bundleSha } from '../deploy/bundle';
@@ -455,7 +455,7 @@ describe('onboarding', () => {
   // Security review H1: a key trusted on first use could be anyone's on the network path to the server, so the
   // seed, the issuer key and a backup wait for LNVPS to publish the same key; the steps that carry no secret don't.
   describe('holds every secret back until LNVPS confirms a key trusted on first use', () => {
-    const SYSTEM = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe'];
+    const SYSTEM = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe'] as InstallStep[];
     const impostor = { ...HOST_KEY, public_key: 'AAAAimpostor', fingerprint_sha256: 'SHA256:other' };
     const MINUTE = 60_000;
 
@@ -588,6 +588,36 @@ describe('onboarding', () => {
       s = await advance({ ...s, error: undefined }, t.deps);
       expect(s).toMatchObject({ waiting: 'host_key_confirm', stepStartedAt: { step: 'host-key', at: t.w.nowMs } });
       noSecretSent(t);
+    });
+
+    // An install an older app began, which didn't wait for LNVPS: what it sent is not known, and the words say so.
+    it('waits for LNVPS on an older app\'s install too, and says the seed may already have gone', async () => {
+      const { t, s: at } = await firstUse();
+      const older: OnboardingState = { ...at, host: { ...at.host!, secretsHeld: undefined }, installed: [...SYSTEM, 'seed', 'issuer-key'] };
+      let s = await advance(older, t.deps);
+      expect(s).toMatchObject({ step: 'install', waiting: 'host_key_confirm' });
+      expect(t.ssh.connects).toEqual([]);
+      const line = statusLine(s, t.w.nowMs)!;
+      expect(line).toContain('so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.');
+      expect(line).not.toContain('sent only once');
+      // Past 3 hours: Try again, in the same words.
+      const late = await advance({ ...s }, { ...t.deps, now: () => t.w.nowMs + HOST_KEY_CONFIRM_LIMIT_MS });
+      expect(late.error).toEqual({ kind: 'retry', message: HOST_KEY_UNCONFIRMED_OLDER });
+      // LNVPS publishes another key: stopped for good, the seed said to be possibly given.
+      t.lnvps.publishHostKeys(s.vmId!, [impostor]);
+      s = await advance(s, t.deps);
+      expect(s.error).toMatchObject({ kind: 'fatal' });
+      expect(s.error!.message).toContain('Your wallet seed and card key may have been sent to it. Stop using this server and this recovery phrase.');
+      expect(s.error!.message).not.toContain('were not sent');
+      // So also when the server presents another key than the one trusted (no secret step saved, but an older app's).
+      const t2 = world();
+      const { s: at2 } = await firstUse(t2);
+      t2.ssh.serverKey = { keyType: 'ssh-ed25519', publicKey: 'AAAAimpostor' };
+      const changed = await advance({ ...at2, host: { ...at2.host!, secretsHeld: undefined } }, t2.deps);
+      expect(changed.error!.message).toContain('changed since this app first trusted it');
+      expect(changed.error!.message).toContain('may have been sent to it');
+      const held = await advance(at2, t2.deps);
+      expect(held.error!.message).toContain('Your wallet seed and card key were not sent to it. Stop using this server.');
     });
 
     it('never waits, and lists no wait, when LNVPS had published the key at boot', async () => {
@@ -1225,16 +1255,58 @@ describe('rebuild', () => {
       keySource: 'first_use' as const, trustedAt: 1_000,
     });
 
-    it('in place, keeps the first-use key pinned for that VM while LNVPS lists none', async () => {
+    /** In place on the old server's own VM: VM 1001 is the old server here. */
+    const OWN = { target: { kind: 'in_place' as const, vmId: 1001 }, oldVm: { id: 1001 } };
+
+    // An older wallet's first-use key LNVPS never confirmed: step 4 retires and wipes that VM only once LNVPS has.
+    it('in place on the old server\'s own VM, waits at boot for LNVPS before step 4, retiring and wiping nothing', async () => {
+      const { t, s: at } = await rebuildAt('boot', OWN);
+      t.lnvps.publishHostKeys(1001, []);
+      const started = t.w.nowMs;
+      let s = await advance({ ...at, host: firstUse() }, t.deps);
+      expect(s).toMatchObject({ step: 'boot', waiting: 'host_key_confirm', runningSince: started, host: firstUse() });
+      expect(statusLine(s, t.w.nowMs)).toBe(
+        'Waiting for LNVPS to confirm your server: 0 min so far. LNVPS checks a server’s identity (its SSH key) every hour. ' +
+          'Nothing on it is retired or wiped until LNVPS has confirmed it.',
+      );
+      // Closed and opened again an hour later: still waiting, from the same start.
+      t.w.nowMs += 60 * 60_000;
+      s = await advance(JSON.parse(JSON.stringify(s)) as OnboardingState, t.deps);
+      expect(s).toMatchObject({ step: 'boot', waiting: 'host_key_confirm', runningSince: started });
+      expect([t.ssh.connects, t.ssh.scans]).toEqual([[], 0]);
+      // LNVPS confirms it: step 4 now, by LNVPS's key.
+      t.lnvps.publishHostKeys(1001, [HOST_KEY]);
+      s = await advance(s, t.deps);
+      expect(s).toMatchObject({ step: 'retire', host: { keySource: 'lnvps' } });
+      expect(s.runningSince).toBeUndefined();
+    });
+
+    it('in place on the old server\'s own VM, offers Try again after 3 hours at boot, nothing retired or wiped', async () => {
+      const { t, s: at } = await rebuildAt('boot', OWN);
+      t.lnvps.publishHostKeys(1001, []);
+      let s = await advance({ ...at, host: firstUse() }, t.deps);
+      t.w.nowMs += HOST_KEY_CONFIRM_LIMIT_MS;
+      s = await advance(s, t.deps);
+      expect(s).toMatchObject({ step: 'boot', error: { kind: 'retry', message: HOST_KEY_UNCONFIRMED_IN_PLACE } });
+      expect(s.runningSince).toBeUndefined();
+      expect(t.ssh.connects).toEqual([]);
+      // With nothing pinned (a new phone's), boot waits for LNVPS's key too, and never trusts one on first use.
+      s = await advance({ ...at, host: undefined, error: undefined }, t.deps);
+      expect(s).toMatchObject({ step: 'boot', waiting: 'host_key_confirm' });
+      expect(t.ssh.scans).toBe(0);
+    });
+
+    // In place on another VM of the phrase, as a new VM: the install's first part, then step 4.
+    it('in place on another VM, goes on to the install, step 4 coming before the seed', async () => {
       const { t, s: at } = await rebuildAt('boot', { target: { kind: 'in_place', vmId: 1001 } });
       t.lnvps.publishHostKeys(1001, []);
       const s = await advance({ ...at, host: firstUse() }, t.deps);
-      expect(s).toMatchObject({ step: 'retire', host: firstUse() });
+      expect(s).toMatchObject({ step: 'install', host: firstUse() });
       expect(t.ssh.scans).toBe(0);
     });
 
     it("in place, records a first-use key LNVPS now lists as LNVPS's", async () => {
-      const { t, s: at } = await rebuildAt('boot', { target: { kind: 'in_place', vmId: 1001 } });
+      const { t, s: at } = await rebuildAt('boot', OWN);
       const s = await advance({ ...at, host: firstUse() }, t.deps);
       expect(s).toMatchObject({ step: 'retire', host: { hostKey: { publicKey: HOST_KEY.public_key }, keySource: 'lnvps' } });
       expect(s.host!.trustedAt).toBeUndefined();
@@ -1242,7 +1314,7 @@ describe('rebuild', () => {
     });
 
     it("in place, takes LNVPS's key when it lists another than the first-use one pinned", async () => {
-      const { t, s: at } = await rebuildAt('boot', { target: { kind: 'in_place', vmId: 1001 } });
+      const { t, s: at } = await rebuildAt('boot', OWN);
       const s = await advance({ ...at, host: firstUse('AAAAC3NzaC1lZDI1NTE5AAAAIfirstuse') }, t.deps);
       expect(s).toMatchObject({ step: 'retire', host: { hostKey: { publicKey: HOST_KEY.public_key }, keySource: 'lnvps' } });
       expect(s.host!.trustedAt).toBeUndefined();
@@ -1372,7 +1444,8 @@ describe('rebuild', () => {
 
   it('refuses, as a bug, a rebuild\'s install in place with no record of step 4', async () => {
     const { t, s } = await rebuildAt('install');
-    const next = await advance({ ...s, rebuild: { ...s.rebuild!, target: { kind: 'in_place', vmId: 1001 }, retire: undefined } }, t.deps);
+    // In place on the old server's own VM (1001 here), whose step 4 comes before the install's wipe.
+    const next = await advance({ ...s, rebuild: { ...s.rebuild!, target: { kind: 'in_place', vmId: 1001 }, oldVm: { id: 1001 }, retire: undefined } }, t.deps);
     expect(next).toMatchObject({ step: 'install', error: { kind: 'fatal', message: "A rebuild reached the install without step 4's record" } });
     expect(t.ssh.commands).toEqual([]);
   });
@@ -1654,7 +1727,11 @@ describe('rebuild', () => {
         s = await advance(s, t.deps);
         expect(s).toMatchObject({ step: 'retire', waiting: 'confirm_retire' }); // the person confirms, as before
         oldUntouched(old);
+        // The old server changed during the wait: its final snapshot, taken at step 4, is what the new server gets.
+        old.cardd.addSnapshot(sealSummary(summary(T0 - 60, { cards: 3, totalMsat: 7_000_000 }), t.keys.backupAgeRecipient), T0 - 60);
+        const final = snapshotName(OLD_INSTALL, 1, T0 - 60);
         s = await advance(confirmed(s, { retire: true }), t.deps);
+        expect(s.rebuild!.backup).toMatchObject({ kind: 'kept', name: final });
         expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'retired' } } });
         expect(old.cardd.retired).toMatchObject({ replacedBy: 1001 });
         // The seed goes only to a new server whose old one is retired by then.
@@ -1664,7 +1741,8 @@ describe('rebuild', () => {
         expect(s).toMatchObject({ step: 'done', vmId: 1001 });
         expect(retiredAtSeed).toEqual([expect.objectContaining({ replacedBy: 1001 })]);
         expect(t.ssh.ran(/install\.sh (first-boot|swap|docker|docker-setup)$/)).toBe(4); // the first part isn't run again
-        expect(t.cardd.restored).toMatchObject({ kind: 'db' });
+        expect(t.cardd.restored).toMatchObject({ kind: 'db', from: final.replace(/\.age$/, '') });
+        expect(t.cardd.restored).toMatchObject({ db: await t.files.read(final).then((f) => ageDecrypt(f, t.keys.backupAgeIdentity)) });
       });
 
       it('leaves the old server running, and the rebuild stopped, when LNVPS publishes a different key for the new one', async () => {
@@ -1943,13 +2021,19 @@ describe('rebuild', () => {
         expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'in_place' } } });
       });
 
-      it('in place on another paid VM, retires the old server for that one', async () => {
+      // As onto a new VM: that VM's steps that carry no secret (its wipe among them) first, then step 4, then the seed.
+      it('in place on another paid VM, prepares that one first, then retires the old server for it', async () => {
         const { t, old, s: at } = await fromServerPage({ backup: { kind: 'phrase_only' }, target: { kind: 'in_place', vmId: 1013 }, confirm: { inPlace: true } });
-        paidVm(t, 1013);
+        paidVm(t, 1013, undefined, '45.67.89.199'); // its own address: the install's commands reach it, not the old server
         let s = await advance({ ...at, step: 'where' }, t.deps);
         expect(s).toMatchObject({ step: 'boot', vmId: 1013, host: undefined });
         s = await advance(s, t.deps);
-        expect(s).toMatchObject({ step: 'retire', vmId: 1013, host: { hostname: 'vm-1013.lnvps.cloud', keySource: 'lnvps' } });
+        expect(s).toMatchObject({ step: 'install', vmId: 1013, host: { hostname: 'vm-1013.lnvps.cloud', keySource: 'lnvps' } });
+        s = await advance(s, t.deps);
+        expect(s).toMatchObject({ step: 'retire', installed: [...BEFORE_SECRETS] });
+        expect(t.ssh.ran(/install\.sh wipe$/)).toBe(1);
+        expect(t.ssh.ran(/install\.sh (seed|issuer-key|restore|restore-fresh)( |$)/)).toBe(0);
+        expect(old.ssh.ran(/install\.sh retire /)).toBe(0);
         s = await advance(confirmed(s, { retire: true }), t.deps);
         expect(s).toMatchObject({ step: 'install', rebuild: { retire: { result: 'retired' } } });
         expect(old.cardd.retired?.replacedBy).toBe(1013);

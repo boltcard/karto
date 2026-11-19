@@ -112,15 +112,20 @@ const CANCELLABLE: readonly OnboardingState['step'][] = ['backup', 'where', 'ord
 
 /**
  * Whether Cancel rebuild puts the server page back: a rebuild started
- * there, before step 4 has run (nothing has touched the old server), and before a VM is paid for; or, on a new VM,
- * once its install has stopped on an error before any secret reached it (LNVPS published another key for it, or
- * hasn't confirmed it in 3 hours, say): the old server still runs, and the new VM, paid for, holds no wallet.
+ * there, before step 4 has run (nothing has touched the old server), and before a VM is paid for; or, once a step
+ * after that has stopped on an error, while the old server is still untouched: on a new VM or in place on another,
+ * an install stopped before any secret reached that VM (LNVPS published another key for it, or hasn't confirmed it in
+ * 3 hours, say: the VM, paid for, holds no wallet of this rebuild); in place on the old server's own VM, its boot
+ * stopped waiting for LNVPS to confirm it (nothing there was retired or wiped).
  */
 export function canCancel(s: OnboardingState): boolean {
   const r = s.rebuild;
   if (!r?.before || r.source !== 'server_page' || r.retire || r.backupLocked) return false;
   if (CANCELLABLE.includes(s.step)) return true;
-  return s.step === 'install' && r.target?.kind === 'new' && !!s.error && !s.installed.some((x) => SECRET_STEPS.includes(x));
+  if (!s.error || !r.target) return false;
+  const ownVm = r.target.kind === 'in_place' && r.target.vmId === r.oldVm?.id;
+  if (ownVm) return s.step === 'boot';
+  return s.step === 'install' && !s.installed.some((x) => SECRET_STEPS.includes(x));
 }
 
 /** The server page as it was before the rebuild; s itself when it can't be cancelled. */

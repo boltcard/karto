@@ -2,7 +2,9 @@
 import { shortDate } from '../money/format';
 import type { ResultView } from '../money/steps';
 import { INSTALL_STEPS, installStepsFor, type InstallStep, type UploadProgress } from './install';
-import { HOST_KEY_CONFIRM_WAIT_MS, INVOICE_RENEW_BEFORE_MS, REBUILD_STEPS, STOP_INVOICING_BEFORE_DEADLINE_MS, STEPS, type OnboardingState, type Step, type Waiting } from './machine';
+import {
+  HOST_KEY_CONFIRM_WAIT_MS, INVOICE_RENEW_BEFORE_MS, REBUILD_STEPS, secretsAt, STOP_INVOICING_BEFORE_DEADLINE_MS, STEPS, type OnboardingState, type Step, type Waiting,
+} from './machine';
 import { chosenLine } from './rebuild';
 import { REFREEZE } from './serverPage';
 
@@ -195,16 +197,21 @@ export function statusLine(s: OnboardingState, now = Date.now()): string | null 
 }
 
 /**
- * The wait at host-key: how long so far, why, and what it holds back. The minutes count from the step's start
- * (kept across a closed app).
+ * The wait for LNVPS to confirm the server: how long so far, why, and what it holds back. The minutes count from the
+ * wait's start (kept across a closed app): host-key's, or at a rebuild's boot in place on the old server's own VM,
+ * runningSince. What it holds back is said only as far as it is known (secretsAt).
  */
 function hostKeyWaitLine(s: OnboardingState, now: number): string {
-  const since = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : now;
-  return (
-    `Waiting for LNVPS to confirm your server: ${Math.floor(Math.max(0, now - since) / 60_000)} min so far. ` +
-    'LNVPS checks a new server’s identity (its SSH key) about an hour after it starts, then every hour. ' +
-    'Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.'
-  );
+  const atBoot = s.step === 'boot';
+  const since = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : atBoot ? (s.runningSince ?? now) : now;
+  const head = `Waiting for LNVPS to confirm your server: ${Math.floor(Math.max(0, now - since) / 60_000)} min so far. `;
+  if (atBoot) {
+    return `${head}LNVPS checks a server’s identity (its SSH key) every hour. Nothing on it is retired or wiped until LNVPS has confirmed it.`;
+  }
+  const held = secretsAt(s) === 'maybe_sent'
+    ? 'This server was set up before Karto Wallet waited for LNVPS, so your wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it.'
+    : 'Your wallet seed and card key are sent only once LNVPS has confirmed it, so they can’t go to any other server.';
+  return `${head}LNVPS checks a new server’s identity (its SSH key) about an hour after it starts, then every hour. ${held}`;
 }
 
 /**

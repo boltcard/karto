@@ -17,6 +17,10 @@ export async function updateServer(
   done: readonly InstallStep[] = [],
   onStart?: (step: InstallStep) => void,
 ): Promise<void> {
+  // The seed and the issuer key go again (install.sh keeps the ones there), only over the key pinned for this server
+  // (connectToServer): a finished setup's key is LNVPS's, as onboarding sends no secret before LNVPS confirms it
+  // (host-key). An older wallet's key may still be one trusted on first use, but its server had both from its first
+  // install over that same key, so nothing goes anywhere it hadn't gone. A key LNVPS contradicted is refused there.
   const session = await connectToServer(s, d.ssh, d.keys);
   try {
     await install(session, { ...installOptions(s, d.keys, d.bundle), done, onStep: async (step) => onStep(step), onUpload, onStart });

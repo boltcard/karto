@@ -25,9 +25,11 @@ import { HostKeyMismatchError, SshAuthError, SshDropped, type PinnedHostKey, typ
 
 // backup, where and retire are a rebuild's: onboarding never visits them.
 // The old server is retired before the new one is given the seed, so the two never run phoenixd on it at once. On a
-// new VM the install first runs the steps that carry no secret and waits for LNVPS to confirm the new server's key
-// (install, up to host-key), then step 4 retires the old server, then the install goes on (install, from the seed):
-// until then the old server keeps running, and stays if the new one is never confirmed. In place, step 4 comes first.
+// new VM, or in place on another VM, the install first runs the steps that carry no secret and waits for LNVPS to
+// confirm the new server's key (install, up to host-key), then step 4 retires the old server, then the install goes
+// on (install, from the seed): until then the old server keeps running, and stays if the new one is never confirmed.
+// In place on the old server's own VM, step 4 comes first, its final snapshot before the wipe, once LNVPS has
+// confirmed that VM's key (boot waits for it).
 export const STEPS = ['country', 'email', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done'] as const;
 export type Step = (typeof STEPS)[number];
 export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
@@ -52,8 +54,31 @@ export type ErrorKind = 'retry' | 'fatal' | 'wrong_phrase';
  * LNVPS publishes the same key (the step host-key), which makes it 'lnvps'.
  * Older saved states have no keySource: they pinned LNVPS's key.
  * trustedAt: when a first-use key was trusted (ms); kept once LNVPS confirms it, so the setup still lists the wait.
+ * secretsHeld: the key was trusted by an app that sends no secret before LNVPS confirms it (host-key). Without it, a
+ * first-use key is an older app's, which may have sent the seed and the card key over it (secretsAt).
  */
-export type ServerHost = { ipv4: string; hostname: string; user: string; hostKey: PinnedHostKey; keySource?: 'lnvps' | 'first_use'; trustedAt?: number };
+export type ServerHost = {
+  ipv4: string; hostname: string; user: string; hostKey: PinnedHostKey; keySource?: 'lnvps' | 'first_use'; trustedAt?: number; secretsHeld?: boolean;
+};
+
+/**
+ * What a key LNVPS hasn't confirmed may have been given, for the words about it: 'unsent' when this app held the
+ * secrets back and no secret step has run; 'maybe_sent' for any other first-use key (an older app's install, which
+ * didn't wait); null for a key LNVPS published.
+ */
+export function secretsAt(s: Pick<OnboardingState, 'host' | 'installed'>): 'unsent' | 'maybe_sent' | null {
+  if (s.host?.keySource !== 'first_use') return null;
+  return s.host.secretsHeld && !s.installed.some((x) => SECRET_STEPS.includes(x)) ? 'unsent' : 'maybe_sent';
+}
+
+/** The sentence on what a server that can't be trusted was given, and what to do: none for a key LNVPS published. */
+export function secretsWords(s: Pick<OnboardingState, 'host' | 'installed'>): string | null {
+  switch (secretsAt(s)) {
+    case 'unsent': return 'Your wallet seed and card key were not sent to it. Stop using this server.';
+    case 'maybe_sent': return 'Your wallet seed and card key may have been sent to it. Stop using this server and this recovery phrase.';
+    case null: return null;
+  }
+}
 
 /** What a rebuild restores: a snapshot kept on this phone (its file's name and what it holds), or nothing but the phrase. */
 export type ChosenBackup = { kind: 'kept'; name: string; created: number; cards: number; totalMsat: number } | { kind: 'phrase_only' };
@@ -146,7 +171,10 @@ export type OnboardingState = {
   hostKeyTypes?: string[];
   /** expiresAt: from the invoice itself, on LNVPS's clock (ms). */
   invoice?: { vmId: number; sat: number; days: number; bolt11: string; expiresAt: number };
-  /** When the VM was first seen running (ms), to time out waiting for host keys. */
+  /**
+   * When the VM was first seen running (ms), to time out waiting for host keys; in a rebuild in place on the old
+   * server's own VM, when boot began waiting for LNVPS to confirm its key.
+   */
   runningSince?: number;
   host?: ServerHost;
   /** Set when LNVPS later published a different key than the one trusted on first use. */
@@ -262,6 +290,15 @@ export const HOST_KEY_UNCONFIRMED =
   'LNVPS still hasn’t confirmed your server after 3 hours; it normally does within about an hour of the server starting. ' +
   'Your wallet seed and card key have not been sent to the server. Try again to keep waiting, or ask LNVPS why your ' +
   'server’s SSH key isn’t listed.';
+/** The same, for a server an older app set up without waiting for LNVPS: what it was sent then is not known. */
+export const HOST_KEY_UNCONFIRMED_OLDER =
+  'LNVPS still hasn’t confirmed your server after 3 hours. It was set up before Karto Wallet waited for LNVPS, so your ' +
+  'wallet seed and card key may already have been sent to it; nothing more is sent until LNVPS confirms it. Try again to ' +
+  'keep waiting, or ask LNVPS why your server’s SSH key isn’t listed.';
+/** The same, at a rebuild's boot in place on the old server's own VM, before anything is retired or wiped. */
+export const HOST_KEY_UNCONFIRMED_IN_PLACE =
+  'LNVPS still hasn’t confirmed your server after 3 hours, so nothing on it has been retired or wiped. Try again to keep ' +
+  'waiting, or ask LNVPS why your server’s SSH key isn’t listed.';
 export const INVOICE_RENEW_BEFORE_MS = 60 * 1000;
 /** For an invoice whose expiry can't be read: assume it is short. */
 const INVOICE_FALLBACK_LIFETIME_MS = 5 * 60 * 1000;
@@ -389,14 +426,15 @@ function classify(e: unknown, s: OnboardingState): { kind: ErrorKind; message: s
     const kind = e.kind === 'wrong_phrase' ? 'wrong_phrase' : e.kind === 'bug' || e.kind === 'newer_backup' || e.kind === 'retired' ? 'fatal' : 'retry';
     return { kind, message: e.message };
   }
+  // What the server may have been given, said only as far as it is known (secretsAt).
+  const given = (head: string) => {
+    const words = secretsWords(s);
+    return { kind: 'fatal' as const, message: words ? `${head}. ${words}` : head };
+  };
   if (e instanceof HostKeyMismatchError && s.host?.keySource === 'first_use' && !s.hostKeyMismatch) {
-    return { kind: 'fatal', message: `The server's SSH key changed since this app first trusted it: ${e.message}` };
+    return given(`The server's SSH key changed since this app first trusted it: ${e.message}`);
   }
-  if (e instanceof HostKeyMismatchError) {
-    // Before the seed, the install has sent no secret (host-key holds them back): say so.
-    const unsent = s.installed.includes('seed') ? '' : '. Your wallet seed and card key were not sent to it. Stop using this server.';
-    return { kind: 'fatal', message: `The server's SSH key is not the one LNVPS published: ${e.message}${unsent}` };
-  }
+  if (e instanceof HostKeyMismatchError) return given(`The server's SSH key is not the one LNVPS published: ${e.message}`);
   if (e instanceof SshAuthError) {
     return {
       kind: 'retry',
@@ -631,6 +669,7 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   if (vm.status.state === 'stopped' && s.rebuild?.target?.kind === 'in_place') return startInPlace(s, d, vm);
   if (vm.status.state !== 'running' || !v4) return { ...s, waiting: 'boot' };
   const published = vm.host_ssh_keys.find((k) => k.key_type === 'ssh-ed25519');
+  const ownVm = onOldVm(s);
   if (s.rebuild) {
     // In place, the key pinned for this VM stays, LNVPS's or one trusted on first use, unless LNVPS lists another.
     if (s.rebuild.target?.kind === 'in_place' && s.host && !s.hostKeyMismatch) {
@@ -639,9 +678,14 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
         s.host.keySource !== 'first_use' || !listed ? s.host
         : listed.publicKey === s.host.hostKey.publicKey ? { ...s.host, keySource: 'lnvps', trustedAt: undefined }
         : { ...s.host, hostKey: listed, keySource: 'lnvps', trustedAt: undefined };
-      return { ...s, host, hostKeyTypes: undefined, step: 'retire' };
+      // The old server's own VM is retired and wiped first: only once LNVPS has confirmed its key (an older wallet's
+      // first-use key LNVPS never confirmed).
+      if (ownVm && host.keySource === 'first_use') return bootKeyWait({ ...s, host, hostKeyTypes: undefined }, d);
+      return { ...s, host, hostKeyTypes: undefined, runningSince: undefined, step: ownVm ? 'retire' : 'install' };
     }
-    // Otherwise (a new VM, or in place with nothing pinned) a rebuild trusts on first use as onboarding does: its
+    // The old server's own VM with nothing pinned: LNVPS's key, waited for, never one trusted on first use.
+    if (ownVm && !published) return bootKeyWait({ ...s, hostKeyTypes: vm.host_ssh_keys.map((k) => k.key_type) }, d);
+    // Otherwise (a new VM, or in place on another VM) a rebuild trusts on first use as onboarding does: its
     // install, too, sends the seed, the issuer key and the whole ledger only once LNVPS has published the same key.
   }
   const runningSince = s.runningSince ?? d.now();
@@ -677,12 +721,28 @@ async function boot(s: OnboardingState, d: Deps): Promise<OnboardingState> {
       user: vm.image.default_username ?? 'debian',
       hostKey,
       keySource,
-      ...(keySource === 'first_use' && { trustedAt: d.now() }),
+      ...(keySource === 'first_use' && { trustedAt: d.now(), secretsHeld: true }),
     },
-    // In place, step 4 (retire) comes first: its final snapshot is taken before the install's wipe. On a new VM the
-    // install's steps that carry no secret come first, and step 4 just before the seed (installStep).
-    step: s.rebuild?.target?.kind === 'in_place' ? 'retire' : 'install',
+    // In place on the old server's own VM, step 4 (retire) comes first: its final snapshot is taken before the
+    // install's wipe. On a new VM, or in place on another, the install's steps that carry no secret come first, and
+    // step 4 just before the seed (installStep), so the old server runs on through the wait for LNVPS.
+    step: ownVm ? 'retire' : 'install',
   };
+}
+
+/** A rebuild in place on the old server's own VM (not on another VM of the phrase). */
+const onOldVm = (s: OnboardingState) => s.rebuild?.target?.kind === 'in_place' && s.rebuild.target.vmId === s.rebuild.oldVm?.id;
+
+/**
+ * Boot's wait for LNVPS to publish the key of the old server's own VM, before step 4 retires and wipes it, timed
+ * from its start (runningSince); past HOST_KEY_CONFIRM_LIMIT_MS, Try again, which waits as long again.
+ */
+function bootKeyWait(s: OnboardingState, d: Pick<Deps, 'now'>): OnboardingState {
+  const since = s.runningSince ?? d.now();
+  if (d.now() - since >= HOST_KEY_CONFIRM_LIMIT_MS) {
+    return { ...s, runningSince: undefined, error: { kind: 'retry', message: HOST_KEY_UNCONFIRMED_IN_PLACE } };
+  }
+  return { ...s, runningSince: since, waiting: 'host_key_confirm' };
 }
 
 /**
@@ -790,7 +850,8 @@ class RetireFirst extends Error {}
 function awaitHostKey(s: OnboardingState, d: Pick<Deps, 'now'>): OnboardingState {
   const at = s.stepStartedAt?.step === 'host-key' ? s.stepStartedAt.at : d.now();
   if (d.now() - at >= HOST_KEY_CONFIRM_LIMIT_MS) {
-    return { ...s, stepStartedAt: undefined, error: { kind: 'retry', message: HOST_KEY_UNCONFIRMED } };
+    const message = secretsAt(s) === 'maybe_sent' ? HOST_KEY_UNCONFIRMED_OLDER : HOST_KEY_UNCONFIRMED;
+    return { ...s, stepStartedAt: undefined, error: { kind: 'retry', message } };
   }
   return { ...s, stepStartedAt: { step: 'host-key', at }, waiting: 'host_key_confirm' };
 }
@@ -882,9 +943,9 @@ async function rebuildOptions(s: OnboardingState, d: Deps): Promise<Pick<Install
   if (!r) return {};
   const backup = r.backup;
   if (!backup) throw new StepError('fatal', 'A rebuild reached the install without a backup chosen');
-  // In place, step 4 comes before the install's wipe; on a new VM, before the seed (installStep). The look before up
-  // reads its record: without one it would let any old server be.
-  if (!r.retire && r.target?.kind !== 'new') throw new StepError('fatal', "A rebuild reached the install without step 4's record");
+  // On the old server's own VM, step 4 comes before the install's wipe; elsewhere, before the seed (installStep). The
+  // look before up reads its record: without one it would let any old server be.
+  if (!r.retire && onOldVm(s)) throw new StepError('fatal', "A rebuild reached the install without step 4's record");
   return {
     wipe: r.target?.kind === 'in_place' || !!r.rewipe,
     restore: s.installed.includes('restore') ? undefined : () => restoreOf(backup, d),

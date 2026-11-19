@@ -191,6 +191,31 @@ describe('install', () => {
     expect(done).toEqual([...INSTALL_STEPS]);
   });
 
+  // A rebuild's step 4 comes before every step that sends a secret, the backup's restore among them.
+  it('runs beforeSecret before each step that sends a secret, the restore too, and stops there when it throws', async () => {
+    const ssh = new FakeSsh();
+    const seen: string[] = [];
+    const done: InstallStep[] = [];
+    const beforeSecret = async () => void seen.push(`before:${ssh.commands.at(-1)?.command ?? ''}`);
+    const restore = { kind: 'fresh' as const };
+    await install(await session(ssh), { ...base, restore, device: 'ab'.repeat(32), done, onStep: async (s) => void done.push(s), beforeSecret });
+    expect(seen).toEqual([
+      "before:sh card-app/install.sh prepare 'vm-1001.lnvps.cloud'",
+      'before:sh card-app/install.sh seed',
+      'before:sh card-app/install.sh issuer-key',
+    ]);
+    // Stopped before the restore: nothing of it runs, and the steps before it stay done.
+    const ssh2 = new FakeSsh();
+    const stop = new Error('step 4 first');
+    const done2: InstallStep[] = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'host-key', 'seed', 'issuer-key'];
+    const err = await install(await session(ssh2), {
+      ...base, restore, device: 'ab'.repeat(32), done: done2, onStep: async (s) => void done2.push(s), beforeSecret: async () => { throw stop; },
+    }).catch((e) => e);
+    expect(err).toBe(stop);
+    expect(ssh2.ran(/install\.sh restore/)).toBe(0);
+    expect(done2.at(-1)).toBe('issuer-key');
+  });
+
   it('reports a different existing seed or issuer key as a wrong phrase', async () => {
     for (const step of ['seed', 'issuer-key']) {
       const ssh = new FakeSsh().when(new RegExp(`install\\.sh ${step}$`), { code: 3, stderr: 'refusing to replace' });

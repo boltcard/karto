@@ -160,7 +160,13 @@ describe('Cancel rebuild', () => {
     expect(canCancel(stopped({ error: undefined, waiting: 'host_key_confirm' }))).toBe(false);
     expect(canCancel(stopped({ installed: [...SYSTEM, 'host-key', 'seed'] }))).toBe(false);
     expect(canCancel(stopped({}, { retire: { result: 'retired', at: 1 } }))).toBe(false);
-    expect(canCancel(stopped({}, { target: { kind: 'in_place', vmId: 1012 } }))).toBe(false);
+    expect(canCancel(stopped({}, { target: { kind: 'in_place', vmId: 1012 } }))).toBe(false); // the old server's own VM: wiped already
+    // In place on another VM goes as a new VM does.
+    expect(canCancel(stopped({}, { target: { kind: 'in_place', vmId: 1001 } }))).toBe(true);
+    // In place on the old server's own VM, boot stopped waiting for LNVPS: nothing there retired or wiped.
+    const atBoot = (o: Partial<OnboardingState>) => rebuilding({ step: 'boot', vmId: 1012, installed: [], ...o }, { target: { kind: 'in_place', vmId: 1012 } });
+    expect(canCancel(atBoot({ error: { kind: 'retry', message: 'LNVPS still hasn’t confirmed your server after 3 hours' } }))).toBe(true);
+    expect(canCancel(atBoot({ waiting: 'host_key_confirm' }))).toBe(false);
   });
 
   // After a finished rebuild the record stays, so the old VM keeps being watched: a cancelled second rebuild mustn't lose it.
