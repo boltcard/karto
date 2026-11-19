@@ -840,10 +840,13 @@ func TestARestoreOwingNothingWithNoChannelSetsTheBooksAtOnce(t *testing.T) {
 	if _, err := w.st.GetMeta(ctx, "restore.channel_later"); err != nil {
 		t.Fatalf("a late channel isn't awaited: %v", err)
 	}
-	w.f.BalanceSat, w.f.Channel, w.f.ChannelState = 7_000, true, "Normal"
+	// cardd restarts meanwhile: the late channel is still booked, and the books' first time kept.
+	first := now.Unix()
 	now = now.Add(time.Hour)
+	l = w.restart(&now)
+	w.f.BalanceSat, w.f.Channel, w.f.ChannelState = 7_000, true, "Normal"
 	step(t, l)
-	if r := restoreState(t, l); r.State != "done" || r.ReconciledMsat != 7_000_000 || available(t, w.st, store.Pool) != -93_000_000 {
+	if r := restoreState(t, l); r.State != "done" || r.ReconciledMsat != 7_000_000 || r.ReconciledAt != first || available(t, w.st, store.Pool) != -93_000_000 {
 		t.Fatalf("a late channel: %+v, pool %d", r, available(t, w.st, store.Pool))
 	}
 }
