@@ -3,7 +3,9 @@
 // newest in front. ServerWatch does the work (useWatcher); Settings, behind ⚙, has the server page's other parts.
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { RELEASES_PAGE } from '../appUpdate/appUpdate';
+import { useAppUpdate } from '../appUpdate/useAppUpdate';
 import type { WalletAccount } from '../cardd/client';
 import { holdPress } from '../cards/holdPress';
 import { cardsLine } from '../cards/labels';
@@ -43,6 +45,8 @@ export default function Home() {
   const sv = useServices();
   const s = useStyles(makeStyles);
   const look = useAmountView();
+  // A newer release on GitHub, for a wallet installed from there.
+  const appUpdate = useAppUpdate();
   const [, tick] = useState(0);
   // Try again's reconnect and read, while on their way.
   const [retrying, setRetrying] = useState(false);
@@ -89,9 +93,10 @@ export default function Home() {
     else if (t?.kind === 'pay-lnvps') router.push('/pay-lnvps');
     else if (t?.kind === 'hosting') openAccount('hosting');
     else if (t?.kind === 'nfc-settings') sv.nfc.openSettings();
+    else if (t?.kind === 'github-releases') void Linking.openURL(RELEASES_PAGE).catch(() => {});
   };
 
-  const banners = walletBanners(bannerInput(snap, view, nowMs));
+  const banners = walletBanners({ ...bannerInput(snap, view, nowMs), appUpdate });
   // The red unreachable banner already says the server can't be reached: the cards' line doesn't say it again.
   const listLine = cardsLine(snap.cardsError, banners.some((b) => b.key === 'unreachable'));
   // The band: the wallet's title and, at its end, Settings.

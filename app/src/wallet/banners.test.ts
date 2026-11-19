@@ -221,6 +221,14 @@ describe('walletBanners', () => {
     expect(keys).toEqual(['revoked']);
   });
 
+  it('says a newer release is on GitHub, last and amber, opening the releases', () => {
+    expect(banners({ appUpdate: '1.0.1' })).toEqual([
+      { key: 'app-update', tone: 'amber', text: 'Karto Wallet 1.0.1 is out: tap to get it from GitHub', target: { kind: 'github-releases' } },
+    ]);
+    expect(banners({ appUpdate: '1.0.1', nfc: 'off' }).map((b) => b.key)).toEqual(['nfc-off', 'app-update']);
+    expect(banners({ appUpdate: null })).toEqual([]);
+  });
+
   it('counts the cards to re-point', () => {
     expect(banners({ repoint: 3 })[0].text).toBe('3 cards to re-point: hold each to the phone');
   });

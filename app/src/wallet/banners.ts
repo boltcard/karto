@@ -7,12 +7,13 @@ import type { NfcState } from '../native/nfc';
 import { elapsed } from '../onboarding/progress';
 
 export type Tone = 'red' | 'amber';
-/** Where a banner opens: a page of Settings (or Settings itself), Pay LNVPS from any wallet, hosting's page, or Android's NFC setting. */
+/** Where a banner opens: a page of Settings (or Settings itself), Pay LNVPS from any wallet, hosting's page, Android's NFC setting, or the releases on GitHub. */
 export type BannerTarget =
   | { kind: 'page'; to: '/server' | '/backups' | '/settings' }
   | { kind: 'pay-lnvps' }
   | { kind: 'hosting' }
   | { kind: 'nfc-settings' }
+  | { kind: 'github-releases' }
   | null;
 /** checkAgain: tapping it also checks the server again at once, as Check again did. */
 export type Banner = { key: string; tone: Tone; text: string; target: BannerTarget; checkAgain?: true };
@@ -38,6 +39,8 @@ export type BannerInput = {
   /** How many cards point at another server. */
   repoint: number;
   nfc: NfcState | null;
+  /** A newer release on GitHub, for an APK from there (appUpdate/useAppUpdate.ts); null or absent otherwise. */
+  appUpdate?: string | null;
 };
 
 // The Server and Backups pages; This phone and Rebuild server are rows of Settings itself.
@@ -85,6 +88,7 @@ export function walletBanners(i: BannerInput): Banner[] {
   if (dns === 'missing' || dns === 'other') b.push(amber('dns', "Your server can't be reached on some networks", SERVER));
   if (i.status?.kind === 'ok' && i.status.updateAvailable && !i.updating) b.push(amber('update', 'This app carries a newer version of the server', SERVER));
   if (i.updating) b.push(amber('updating', `Updating the server · ${elapsed(i.updating.startedAt, i.nowMs)}`, SERVER));
+  if (i.appUpdate) b.push(amber('app-update', `Karto Wallet ${i.appUpdate} is out: tap to get it from GitHub`, { kind: 'github-releases' }));
   return b;
 }
 

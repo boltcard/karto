@@ -7,7 +7,9 @@
 import { randomUUID } from 'expo-crypto';
 import { Redirect, router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, Pressable, StyleSheet, View } from 'react-native';
+import { AppState, Linking, Pressable, StyleSheet, View } from 'react-native';
+import { RELEASES_PAGE } from '../appUpdate/appUpdate';
+import { useAppUpdate } from '../appUpdate/useAppUpdate';
 import { CarddError, isNoRate, isWrongCurrency } from '../cardd/error';
 import { rated } from '../money/fiat';
 import { usePos } from '../pos/app';
@@ -24,6 +26,8 @@ const FIAT_EVERY_MS = 5 * 60_000;
 
 export default function Till() {
   const pos = usePos();
+  // A newer release on GitHub, for a till installed from there.
+  const newer = useAppUpdate();
   const t = useTheme();
   const { readFiat, readMe } = pos;
   const r = useMemo(() => rated(pos.fiat), [pos.fiat]);
@@ -127,6 +131,11 @@ export default function Till() {
       {/* After a no_rate refusal the till's own note says the same sentence: said once. */}
       {error && error !== note && <ErrorText>{error}</ErrorText>}
       <Small>{tillLine(pos.paired)}</Small>
+      {newer && (
+        <Pressable accessibilityRole="link" onPress={() => void Linking.openURL(RELEASES_PAGE).catch(() => {})} style={({ pressed }) => pressed && layout.dim}>
+          <Small>{`Karto PoS ${newer} is out: tap to get it from GitHub ›`}</Small>
+        </Pressable>
+      )}
       {/* Space under the name, so the pad doesn't sit on the screen's foot on a short phone. */}
       <Body muted> </Body>
     </Screen>
