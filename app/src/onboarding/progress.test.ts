@@ -293,10 +293,37 @@ describe('the setup screen', () => {
   const rebuilding = (step: OnboardingState['step'], r: Partial<Rebuild> = {}, o: Partial<OnboardingState> = {}): OnboardingState =>
     plain(step, { rebuild: { source: 'server_page', ...r }, ...o });
 
+  // Onto a new VM (or in place on another), the install's steps that carry no secret run before step 4 retires the old
+  // server, and the rest after it: the count goes by the steps finished, so it never goes back, and the Done line
+  // never names step 4 before it has run.
+  it('counts a rebuild whose install starts before step 4 by the steps finished', () => {
+    const retired = { result: 'retired' as const, at: 1 };
+    for (const target of [{ kind: 'new' as const }, { kind: 'in_place' as const, vmId: 1003 }]) {
+      const r = { target, oldVm: { id: 1009 } } as Partial<Rebuild>;
+      const first = rebuilding('install', r);
+      const step4 = rebuilding('retire', r);
+      const second = rebuilding('install', { ...r, retire: retired });
+      expect([first, step4, second, rebuilding('pair', { ...r, retire: retired })].map((x) => setupProgress(x).n)).toEqual([8, 8, 9, 10]);
+      expect(setupProgress(first).label).toBe('Step 8 of 10, Installing your server');
+      expect(doneSummary(first)).not.toContain('old server');
+      expect(doneSummary(step4)).not.toContain('install');
+      expect(doneSummary(second)).toMatch(/old server$/);
+      expect([stepStatus(first, 'retire'), stepStatus(first, 'install'), stepStatus(step4, 'install'), stepStatus(second, 'retire')])
+        .toEqual(['todo', 'current', 'todo', 'done']);
+    }
+    // In place on the old server's own VM, step 4 comes first, before the install: the order as listed.
+    const own = { target: { kind: 'in_place' as const, vmId: 1009 }, oldVm: { id: 1009 } } as Partial<Rebuild>;
+    expect([rebuilding('boot', own), rebuilding('retire', own), rebuilding('install', { ...own, retire: { result: 'in_place', at: 1 } })].map((x) => setupProgress(x).n))
+      .toEqual([7, 8, 9]);
+  });
+
   it('counts the steps: seven setting up, ten in a rebuild', () => {
     expect(['country', 'email', 'order', 'pay', 'boot', 'install', 'pair'].map((x) => setupProgress(plain(x as OnboardingState['step'])).n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(setupProgress(plain('pay'))).toEqual({ n: 4, of: 7, label: 'Step 4 of 7, Pay for the server' });
-    expect(STEPS.filter((x) => x !== 'done').map((x) => setupProgress(rebuilding(x)).n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    // Step 4 (retire) done, as it is once the install's second part runs.
+    const retired = { result: 'retired' as const, at: 1 };
+    expect(STEPS.filter((x) => x !== 'done').map((x) => setupProgress(rebuilding(x, x === 'install' || x === 'pair' ? { retire: retired } : {})).n))
+      .toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     expect(setupProgress(rebuilding('retire'))).toEqual({ n: 8, of: 10, label: 'Step 8 of 10, Retiring the old server' });
     expect(setupProgress(plain('done'))).toMatchObject({ n: 7, of: 7 });
   });
@@ -372,7 +399,7 @@ describe('the setup screen', () => {
 
   it('leaves out the steps that never ran', () => {
     // In place: nothing is ordered or paid.
-    const inPlace = rebuilding('install', { backup: KEPT, target: { kind: 'in_place', vmId: 1009 } }, { vmId: 1009, host });
+    const inPlace = rebuilding('install', { backup: KEPT, target: { kind: 'in_place', vmId: 1009 }, oldVm: { id: 1009 } } as Partial<Rebuild>, { vmId: 1009, host });
     expect(doneSummary(inPlace)).toBe('Done: country, email, backup, where, start, old server');
     expect(doneSteps(inPlace, NOW, 0).map((x) => x.step)).toEqual(['country', 'email', 'backup', 'where', 'boot', 'retire']);
     expect(doneSteps(inPlace, NOW, 0)[3]).toMatchObject({ label: 'Choose where', line: 'In place on VM 1009' });
