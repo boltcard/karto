@@ -13,6 +13,7 @@ import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { revBehind, type SaleDay, type Tx, type Wallet, type WalletAccount, type WalletCard } from '../cardd/client';
+import { GiveUpError, giveUpCard } from '../cards/giveUp';
 import { feeCreditText, tapCheckText } from '../cards/labels';
 import { HELD_IDLE_MS, heldLoop } from '../cards/poll';
 import { availableMsat, heldLine, historyRows, moneyError } from '../money/format';
@@ -22,6 +23,7 @@ import { removePhoneCard } from '../phoneCard/setup';
 import { useCardDeps, useServer, useTapCheck } from '../services/server';
 import { phoneCardDeps, useRouteGuard, useServices } from '../services/services';
 import { useAmountView } from '../ui/amountView';
+import { GiveUpSheet } from '../ui/GiveUpSheet';
 import { HostingPanel, useHostingStatus } from '../ui/HostingPanel';
 import { LimitsSheet } from '../ui/LimitsSheet';
 import { screenLock } from '../ui/lock';
@@ -32,7 +34,7 @@ import { TopUpSheet } from '../ui/TopUpSheet';
 import { BandMenu, Body, Button, ErrorText, goBack, GroupLabel, Panel, Screen } from '../ui/ui';
 import { CardPhotoView, SmallCard } from '../ui/wallet';
 import { accountButtons, accountId, fixedName, type AccountAction, type AccountKind } from '../wallet/account';
-import { cardLimits, checkLine, headerNote, hostingCard, moreRows } from '../wallet/accountView';
+import { cardLimits, checkLine, giveUpLine, headerNote, hostingCard, moreRows } from '../wallet/accountView';
 import { moneyOff } from '../wallet/banners';
 import { colourOf } from '../wallet/colours';
 import { historyAsk, walletAsk } from '../wallet/follow';
@@ -62,6 +64,10 @@ export default function Account() {
   const front = useRef(false);
   /** Unfreeze is asking for the screen lock: set before the first await, so a double tap asks once. */
   const unfreezing = useRef(false);
+  // One give-up at a time: set before the lock's await.
+  const givingUp = useRef(false);
+  // A give-up whose finish the server hasn't had yet: the catch-up makes it.
+  const [gaveUp, setGaveUp] = useState<string | null>(null);
   /** The open Top up sheet's baseline: the history's newest id and the wallet's rev as they were when it opened (id null until the history has answered). */
   // channel: whether the server had a Lightning channel when the Top up sheet opened (null: not known), for the Received words.
   const [base, setBase] = useState<{ id: number | null; rev: string | undefined; channel: boolean | null } | null>(null);
@@ -82,7 +88,7 @@ export default function Account() {
   const [saleDays, setSaleDays] = useState<SaleDay[]>([]);
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sheet, setSheet] = useState<'top-up' | 'more' | 'limits' | 'renew' | 'photo' | null>(null);
+  const [sheet, setSheet] = useState<'top-up' | 'more' | 'limits' | 'renew' | 'photo' | 'give-up' | null>(null);
   const tapCheck = useTapCheck(id);
   const hosting = useHostingStatus(deps, id === 'hosting');
   const look = useAmountView();
@@ -242,6 +248,27 @@ export default function Account() {
     await watch.reloadCards().catch(() => {});
     goBack();
   };
+  // I no longer have this card: the confirm is closed first (errors show on the page), then the lock, then the
+  // wipe's two server calls with no card (cards/giveUp.ts). Done: back, the list read again.
+  const giveUp = async (c: WalletCard) => {
+    if (givingUp.current) return;
+    givingUp.current = true;
+    setSheet(null);
+    try {
+      const refused = await screenLock(`Remove ${name}`, 'removing a card');
+      if (refused !== null) return setError(refused);
+      setError(null);
+      const { finished } = await giveUpCard(deps, { id: c.id, version: c.version, name: c.name });
+      await watch.reloadCards().catch(() => {});
+      if (finished) return goBack();
+      setGaveUp('Removed. Your server will be told when it answers.');
+      reload();
+    } catch (e) {
+      setError(e instanceof GiveUpError ? e.message : moneyError(e));
+    } finally {
+      givingUp.current = false;
+    }
+  };
   // Unfreeze: behind the screen lock, as raising a card's limits is: the card can spend again. Freezing asks for none.
   const unfreeze = async (c: WalletCard) => {
     if (unfreezing.current) return;
@@ -280,6 +307,7 @@ export default function Account() {
     // The account's name in the band: the card's (from the cache until the wallet answers), Pool, Hosting or Shop.
     <Screen title={name} back right={card ? <BandMenu onPress={() => setSheet('more')} /> : undefined}>
       {error && <ErrorText>{error}</ErrorText>}
+      {gaveUp && <Body>{gaveUp}</Body>}
       <RateAgeLine />
       <AccountHeader
         card={
@@ -345,7 +373,7 @@ export default function Account() {
       )}
       {sheet === 'photo' && photo && <CardPhotoView photo={photo} onClose={() => setSheet(null)} />}
       {sheet === 'more' && card && !phone && (
-        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated)} off={off} onLimits={() => setSheet('limits')} onGiveUp={() => {}} onClose={() => setSheet(null)} />
+        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated)} off={off} onLimits={() => setSheet('limits')} onGiveUp={() => setSheet('give-up')} onClose={() => setSheet(null)} />
       )}
       {sheet === 'more' && card && phone && (
         <PhoneMoreSheet
@@ -356,6 +384,9 @@ export default function Account() {
           onRemove={() => void removePhone()}
           onClose={() => setSheet(null)}
         />
+      )}
+      {sheet === 'give-up' && card && !phone && (
+        <GiveUpSheet name={name} line={giveUpLine(card, look.view, look.rated).line} onConfirm={() => void giveUp(card)} onClose={() => setSheet(null)} />
       )}
       {sheet === 'limits' && card && (
         <LimitsSheet
