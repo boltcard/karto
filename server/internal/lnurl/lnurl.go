@@ -50,8 +50,11 @@ const (
 	maxWithdrawableMsat = 100_000_000_000
 	k1Lifetime          = 5 * time.Minute
 	invoiceExpiry       = 10 * time.Minute
-	maxTopupMsat        = 2_000_000_000 // 2,000,000 sat
-	cardNamePrefix      = 10            // hex characters of the card id in its address
+	// invoiceTimeout bounds a callback's wait for phoenixd's invoice, which
+	// goes on if the client hangs up (makeInvoice).
+	invoiceTimeout = 30 * time.Second
+	maxTopupMsat   = 2_000_000_000 // 2,000,000 sat
+	cardNamePrefix = 10            // hex characters of the card id in its address
 
 	// A payer's note (LUD-12's comment): commentAllowed, in
 	// characters (code points here); a longer one is cut, not refused. Only a
@@ -149,9 +152,9 @@ type Server struct {
 
 	crediting sync.Mutex // one credit at a time: see credit
 
-	limitLog   sync.Mutex
-	limitSaid  time.Time // when the log last said invoices were refused
-	limitSince int       // invoices refused since then
+	limitLog    sync.Mutex
+	limitSaid   time.Time // when the log last said invoices were refused
+	limitSince  int       // invoices refused since then
 	cappedSaid  time.Time // the same for the unpaid cap
 	cappedSince int
 }
@@ -215,29 +218,39 @@ func (s *Server) mayInvoice(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// reserveUnpaid takes a place under the unpaid cap for an invoice about to
-// be made; false after the refusal is answered: LNURL's error, with HTTP 429
-// and when the oldest unpaid invoice leaves the count. made gives the place
-// the invoice's hash, or gives it back with "" (no invoice was made).
-func (s *Server) reserveUnpaid(w http.ResponseWriter) (made func(hash string), ok bool) {
+// makeInvoice has phoenixd make an invoice for a public callback, under the
+// unpaid cap (a place for the client asking, given back if no invoice comes
+// of it); ok false after a refusal is answered: LNURL's error, with HTTP 429
+// and when a place should be free. The invoice is made on a context the
+// client can't cancel: a client that hangs up once phoenixd has been asked
+// must not get its place back for an invoice phoenixd may have made. Its
+// error is then the caller's to answer.
+func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat int64, descriptionHash, externalID string) (bolt11, hash string, ok bool, err error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), invoiceTimeout)
+	defer cancel()
 	if s.Unpaid == nil {
-		return func(string) {}, true
+		bolt11, hash, err = s.Invoices.CreateInvoice(ctx, amountSat, descriptionHash, externalID, invoiceExpiry)
+		return bolt11, hash, true, err
 	}
-	ok, retry := s.Unpaid.Reserve()
-	if !ok {
+	client := ratelimit.ClientKey(r)
+	if free, retry := s.Unpaid.Reserve(client); !free {
 		s.sayCapped()
 		w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 			"reason": "This server has too many unpaid invoices just now. Try again later."})
-		return nil, false
+		return "", "", false, nil
 	}
-	return func(hash string) {
+	// The place is given back unless an invoice is recorded in it, whatever happens (a panic too).
+	defer func() {
 		if hash == "" {
-			s.Unpaid.Release()
-		} else {
-			s.Unpaid.Made(hash)
+			s.Unpaid.Release(client)
 		}
-	}, true
+	}()
+	bolt11, hash, err = s.Invoices.CreateInvoice(ctx, amountSat, descriptionHash, externalID, invoiceExpiry)
+	if hash != "" {
+		s.Unpaid.Made(client, hash)
+	}
+	return bolt11, hash, true, err
 }
 
 // sayCapped logs that the unpaid cap refused an invoice, as sayLimited does.
@@ -344,15 +357,13 @@ func (s *Server) payCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.mayInvoice(w, r) {
 		return
 	}
-	made, ok := s.reserveUnpaid(w)
-	if !ok {
-		return
-	}
 	// The invoice's description hash stays sha256(metadata): the note isn't
 	// part of the invoice, so cardd keeps it by the payment hash.
 	sum := sha256.Sum256([]byte(s.metadata(name, label)))
-	bolt11, hash, err := s.Invoices.CreateInvoice(r.Context(), msat/1000, hex.EncodeToString(sum[:]), string(acct), invoiceExpiry)
-	made(hash)
+	bolt11, hash, ok, err := s.makeInvoice(w, r, msat/1000, hex.EncodeToString(sum[:]), string(acct))
+	if !ok {
+		return
+	}
 	if err != nil {
 		s.Log.Printf("lnurl: invoice for %s: %v", name, err)
 		fail(w, "The server can't make an invoice right now.")
@@ -997,13 +1008,11 @@ func (s *Server) backCallback(w http.ResponseWriter, r *http.Request) {
 	if !s.mayInvoice(w, r) {
 		return
 	}
-	made, ok := s.reserveUnpaid(w)
+	sum := sha256.Sum256([]byte(refundMetadata))
+	bolt11, hash, ok, err := s.makeInvoice(w, r, msat/1000, hex.EncodeToString(sum[:]), "refund:"+string(acct))
 	if !ok {
 		return
 	}
-	sum := sha256.Sum256([]byte(refundMetadata))
-	bolt11, hash, err := s.Invoices.CreateInvoice(r.Context(), msat/1000, hex.EncodeToString(sum[:]), "refund:"+string(acct), invoiceExpiry)
-	made(hash)
 	if err != nil {
 		s.Log.Printf("lnurl: invoice for a refund link: %v", err)
 		fail(w, "The server can't make an invoice right now.")
