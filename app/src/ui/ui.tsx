@@ -62,6 +62,10 @@ export function Screen({ title, titleAfter, subtitle, right, children, busy, bus
 }
 
 /** Back, or to the wallet when a link opened the screen, as the phrase screen's Done does. */
+// On Home's band, the eye's and the gear's reach past their edges, and the gap between them: the gap holds both reaches,
+// so a press between them is never taken by the wrong one.
+export const BAND_END = { eyeSlop: 10, gearSlop: 12, gap: 24 };
+
 export const goBack = () => (router.canGoBack() ? router.back() : router.replace('/home'));
 
 /** The band's back arrow: goBack, or the screen's own handler. */

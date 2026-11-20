@@ -6,6 +6,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { router } from 'expo-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from '../../app/home';
+import { BAND_END } from '../../ui/ui';
 import type { Wallet } from '../../cardd/client';
 import type { Fiat, Rated } from '../../money/fiat';
 import type { View } from '../../money/view';
@@ -77,6 +78,10 @@ describe("Home in the app's view", () => {
     render(<Home />);
     fireEvent.click(screen.getByRole('button', { name: 'Show amounts' }));
     expect(look.setHidden).toHaveBeenCalledWith(false);
+  });
+
+  it("keeps the eye's and the gear's hit areas apart: a press between them goes to neither", () => {
+    expect(BAND_END.gap).toBeGreaterThanOrEqual(BAND_END.eyeSlop + BAND_END.gearSlop);
   });
 
   it("opens Pool's account at a tap on its figure: a box does one thing", () => {
