@@ -95,6 +95,17 @@ export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, v: V
   return { line: c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, confirmView(v), r)} move to Pool; ${refused}` : `Taps of it are refused.`, disabled: false };
 }
 
+/** A card given up on its page, for the Wallet page: its name, the balance that moved to Pool, and whether the server's finish is still to come (the catch-up makes it). */
+export type GaveUp = { name: string; amountMsat: number; pending: boolean };
+
+/** The Wallet page's lines for the cards given up, one each, in the page's own view (hidden stays hidden). */
+export function gaveUpNotice(g: readonly GaveUp[], v: View = 'sat', r: Rated | null = null): string[] {
+  return g.map(({ name, amountMsat, pending }) => {
+    const moved = amountMsat >= 1000 ? `${name} was removed: its ${viewText(amountMsat, v, r)} moved to Pool.` : `${name} was removed.`;
+    return pending ? `${moved} Your server will be told when it answers.` : moved;
+  });
+}
+
 /** The More sheet's rows for a card. hasPhoto: the phone holds its photo. Wipe's line confirms money: in sat while ***. */
 export function moreRows(c: Pick<WalletCard, 'state' | 'version' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, hasPhoto: boolean, v: View = 'sat', r: Rated | null = null): MoreRows {
   return {

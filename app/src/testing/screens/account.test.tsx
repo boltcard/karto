@@ -9,12 +9,13 @@ import type { CardDeps } from '../../cards/deps';
 import { GIVE_UP_UNREACHABLE } from '../../cards/giveUp';
 import { screenLock } from '../../ui/lock';
 import { cardWorld } from '../cardWorld';
+import { blur } from './focus';
 
 const deps: { now: CardDeps | null } = { now: null };
 // The same objects every render, as the app's are.
 const server = {
   snap: { cards: [], phoneCard: { own: null, ids: [] as string[] }, photos: {}, unreachable: false },
-  watch: { reportRefresh: () => {}, reloadCards: async () => {}, seenWallet: () => {} },
+  watch: { reportRefresh: () => {}, reloadCards: async () => {}, seenWallet: () => {}, noteGaveUp: vi.fn() },
 };
 vi.mock('../../services/server', () => ({ useCardDeps: () => deps.now, useServer: () => server, useTapCheck: () => null }));
 vi.mock('../../services/services', () => ({ useRouteGuard: () => true, useServices: () => ({}), phoneCardDeps: () => ({}) }));
@@ -94,6 +95,56 @@ describe("A card's I no longer have this card", () => {
     expect(screenLock).toHaveBeenCalledWith('Remove Daily', 'removing a card');
     expect(world.cardd.balances.get('pool')).toBe(5_000_000);
     await vi.waitFor(() => expect(router.back).toHaveBeenCalled());
+    // The Wallet page says what was removed.
+    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', amountMsat: 5_000_000, pending: false });
+  });
+
+  // The start waits for its answer until the test lets it go.
+  const held = (world: Awaited<ReturnType<typeof open>>) => {
+    const go = { release: () => {} };
+    const real = world.deps.cardd.wipeCard.bind(world.deps.cardd);
+    vi.spyOn(world.deps.cardd, 'wipeCard').mockImplementationOnce(async (id: string) => {
+      await new Promise<void>((r) => (go.release = r));
+      return real(id);
+    });
+    return go;
+  };
+  const confirm = async () => {
+    await more();
+    fireEvent.click(await row());
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove the card' }));
+  };
+
+  it("says it is removing the card while the server's answers are awaited, with the page's actions gone", async () => {
+    const world = await open('active', { sat: 5000 });
+    const go = held(world);
+    await confirm();
+    expect(await screen.findByText('Removing the card…')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Freeze' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'More' })).toBeNull();
+    await act(async () => go.release());
+    await vi.waitFor(() => expect(router.back).toHaveBeenCalled());
+  });
+
+  it('goes back all the same when the finish gets no answer, the Wallet page saying the server will be told', async () => {
+    const world = await open('active', { sat: 5000 });
+    vi.spyOn(world.deps.cardd, 'wipedCard').mockRejectedValueOnce(new TypeError('fetch failed: no answer'));
+    await confirm();
+    await vi.waitFor(() => expect(router.back).toHaveBeenCalled());
+    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', amountMsat: 5_000_000, pending: true });
+    expect(world.cardd.cards.get(DAILY)?.state).toBe('wiping');
+  });
+
+  it('does not go back from whatever page the person has gone on to', async () => {
+    const world = await open('active', { sat: 5000 });
+    const go = held(world);
+    await confirm();
+    await screen.findByText('Removing the card…');
+    act(() => blur());
+    await act(async () => go.release());
+    await vi.waitFor(() => expect(server.watch.noteGaveUp).toHaveBeenCalled());
+    expect(world.cardd.cards.get(DAILY)?.state).toBe('reset');
+    expect(router.back).not.toHaveBeenCalled();
   });
 
   it('changes nothing when the screen lock is refused', async () => {

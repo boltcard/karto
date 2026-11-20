@@ -66,9 +66,10 @@ export default function Account() {
   const unfreezing = useRef(false);
   // One give-up at a time: set before the lock's await.
   const givingUp = useRef(false);
-  // The last give-up's words, apart from the page's error, which a reload sets: a finish the server hasn't had yet
-  // (the catch-up makes it), or why it stopped.
-  const [gaveUp, setGaveUp] = useState<{ text: string; failed: boolean } | null>(null);
+  // Why the last give-up stopped, apart from the page's error, which a reload sets.
+  const [giveUpError, setGiveUpError] = useState<string | null>(null);
+  // A give-up is past the lock and waiting for the server: the page shows only that.
+  const [removing, setRemoving] = useState(false);
   /** The open Top up sheet's baseline: the history's newest id and the wallet's rev as they were when it opened (id null until the history has answered). */
   // channel: whether the server had a Lightning channel when the Top up sheet opened (null: not known), for the Received words.
   const [base, setBase] = useState<{ id: number | null; rev: string | undefined; channel: boolean | null } | null>(null);
@@ -250,7 +251,9 @@ export default function Account() {
     goBack();
   };
   // I no longer have this card: the confirm is closed first (errors show on the page), then the lock, then the
-  // wipe's two server calls with no card (cards/giveUp.ts). Done: back, the list read again.
+  // wipe's two server calls with no card (cards/giveUp.ts), the page showing only that it is removing the card. Then
+  // the Wallet page says what was removed (a finish the server hasn't had yet is the catch-up's): back to it, unless
+  // the person has already gone on to another page.
   const giveUp = async (c: WalletCard) => {
     if (givingUp.current) return;
     givingUp.current = true;
@@ -259,18 +262,19 @@ export default function Account() {
       const refused = await screenLock(`Remove ${name}`, 'removing a card');
       if (refused !== null) return setError(refused);
       setError(null);
-      setGaveUp(null);
+      setGiveUpError(null);
+      setRemoving(true);
       const { finished } = await giveUpCard(deps, { id: c.id, version: c.version, name: c.name });
+      watch.noteGaveUp({ name, amountMsat: c.balanceMsat, pending: !finished });
       await watch.reloadCards().catch(() => {});
-      if (finished) return goBack();
-      setGaveUp({ text: 'Removed. Your server will be told when it answers.', failed: false });
-      reload();
+      if (front.current) goBack();
     } catch (e) {
-      setGaveUp({ text: e instanceof GiveUpError ? e.message : moneyError(e), failed: true });
+      setGiveUpError(e instanceof GiveUpError ? e.message : moneyError(e));
       // The money may have moved even so (a start whose answer was lost, a finish refused): the page reads it again.
       reload();
     } finally {
       givingUp.current = false;
+      setRemoving(false);
     }
   };
   // Unfreeze: behind the screen lock, as raising a card's limits is: the card can spend again. Freezing asks for none.
@@ -309,9 +313,9 @@ export default function Account() {
 
   return (
     // The account's name in the band: the card's (from the cache until the wallet answers), Pool, Hosting or Shop.
-    <Screen title={name} back right={card ? <BandMenu onPress={() => setSheet('more')} /> : undefined}>
+    <Screen title={name} back busy={removing} busyText="Removing the card…" right={card && !removing ? <BandMenu onPress={() => setSheet('more')} /> : undefined}>
       {error && <ErrorText>{error}</ErrorText>}
-      {gaveUp && (gaveUp.failed ? <ErrorText>{gaveUp.text}</ErrorText> : <Body>{gaveUp.text}</Body>)}
+      {giveUpError && <ErrorText>{giveUpError}</ErrorText>}
       <RateAgeLine />
       <AccountHeader
         card={

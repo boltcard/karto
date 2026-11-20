@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { HostingStatus } from '../cardd/client';
-import { cardLimits, checkLine, giveUpLine, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
+import { cardLimits, checkLine, gaveUpNotice, giveUpLine, headerNote, hostingCard, limitText, moreRows, wipeLine } from './accountView';
 
 const NOW = 1_790_000_000; // 2026-09-21 14:13 UTC
 const card = { state: 'active' as const, version: 1, perTapSat: 20_000, dailySat: 50_000, spent24hMsat: 2_950_400, balanceMsat: 13_291_000, heldMsat: 0 };
@@ -229,5 +229,22 @@ describe('checkLine', () => {
   it("says nothing for a phone's card: the wallet checks its own itself, and removes another phone's", () => {
     expect(checkLine(true, 'own')).toBeNull();
     expect(checkLine(true, 'other')).toBeNull();
+  });
+});
+
+// The Wallet page's line after a card was given up, until it is dismissed: what moved, in the page's own view.
+describe('gaveUpNotice', () => {
+  it('says each card given up was removed and what moved to Pool', () => {
+    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 5_000_000, pending: false }])).toEqual(['Daily was removed: its 5,000 sat moved to Pool.']);
+    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 999, pending: false }])).toEqual(['Daily was removed.']);
+    expect(gaveUpNotice([
+      { name: 'Daily', amountMsat: 5_000_000, pending: false },
+      { name: 'Old', amountMsat: 0, pending: true },
+    ])).toEqual(['Daily was removed: its 5,000 sat moved to Pool.', 'Old was removed. Your server will be told when it answers.']);
+  });
+
+  it('keeps the amount hidden while amounts are, and says nothing when none was given up', () => {
+    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 5_000_000, pending: false }], 'hidden')).toEqual(['Daily was removed: its *** moved to Pool.']);
+    expect(gaveUpNotice([])).toEqual([]);
   });
 });

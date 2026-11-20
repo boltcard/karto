@@ -8,6 +8,7 @@ import Home from '../../app/home';
 import type { Wallet } from '../../cardd/client';
 import type { Fiat, Rated } from '../../money/fiat';
 import type { View } from '../../money/view';
+import type { GaveUp } from '../../wallet/accountView';
 
 const NOW_S = Math.floor(Date.now() / 1000);
 const FIAT: Fiat = { currency: 'GBP', price: 61_352, time: NOW_S };
@@ -23,10 +24,11 @@ const wallet = {
 const snap = {
   cantRead: false, update: null, state: { host: { hostname: 'karto.example' } }, notices: [], cards: [], cardsError: null, wallet,
   salesToday: 3, hadShop: true, photos: {}, nfc: null, backups: null, status: null, unreachable: false,
-  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] },
+  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] }, gaveUp: [] as GaveUp[],
 };
+const watch = { dismissGaveUp: vi.fn() };
 
-vi.mock('../../services/server', () => ({ useWatcher: () => ({ snap, watch: {} }), useReadCard: () => null }));
+vi.mock('../../services/server', () => ({ useWatcher: () => ({ snap, watch }), useReadCard: () => null }));
 vi.mock('../../services/services', () => ({ useRouteGuard: () => true, useServices: () => ({}), reopenAppDb: vi.fn() }));
 vi.mock('../../wallet/serverView', () => ({ serverView: () => ({ keyNotice: { kind: 'ok' }, moneyOff: false }) }));
 vi.mock('../../wallet/bannerInput', () => ({ bannerInput: () => ({}) }));
@@ -69,5 +71,21 @@ describe("Home in the app's view", () => {
     const pool = screen.getAllByRole('button').find((b) => (b.textContent ?? '').startsWith('13,291'));
     fireEvent.click(pool!);
     expect(look.next).toHaveBeenCalledTimes(1);
+  });
+});
+
+// A card given up on its page: the Wallet page says what was removed and what moved, until it is read.
+describe('Home after a card was given up', () => {
+  it('says so until the person presses OK', () => {
+    look.view = 'sat';
+    snap.gaveUp = [{ name: 'Daily', amountMsat: 5_000_000, pending: false }];
+    try {
+      render(<Home />);
+      expect(screen.getByText('Daily was removed: its 5,000 sat moved to Pool.')).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'OK' }));
+      expect(watch.dismissGaveUp).toHaveBeenCalledTimes(1);
+    } finally {
+      snap.gaveUp = [];
+    }
   });
 });
