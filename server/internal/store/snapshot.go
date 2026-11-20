@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // SnapshotTo writes a consistent copy of the database to path, which must not
@@ -30,6 +31,33 @@ func (s *Store) SnapshotTo(ctx context.Context, path string) error {
 		return err
 	}
 	defer cp.Close()
-	_, err = cp.ExecContext(ctx, `DELETE FROM seen_signatures; DELETE FROM k1s; DELETE FROM requests; DELETE FROM pos_codes; DELETE FROM topup_notes; VACUUM`)
-	return err
+	if _, err := cp.ExecContext(ctx, `DELETE FROM seen_signatures; DELETE FROM k1s; DELETE FROM requests; DELETE FROM pos_codes; DELETE FROM topup_notes; VACUUM`); err != nil {
+		return err
+	}
+	return checkWhole(ctx, cp)
+}
+
+// checkWhole runs SQLite's quick check on a snapshot copy, so a damaged one
+// fails the snapshot instead of being encrypted and kept as a backup.
+func checkWhole(ctx context.Context, db *sql.DB) error {
+	rows, err := db.QueryContext(ctx, `PRAGMA quick_check`)
+	if err != nil {
+		return fmt.Errorf("the copy isn't whole: %w", err)
+	}
+	defer rows.Close()
+	var found []string
+	for rows.Next() {
+		var line string
+		if err := rows.Scan(&line); err != nil {
+			return fmt.Errorf("the copy isn't whole: %w", err)
+		}
+		found = append(found, line)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("the copy isn't whole: %w", err)
+	}
+	if len(found) != 1 || found[0] != "ok" {
+		return fmt.Errorf("the copy isn't whole: %s", strings.Join(found, "; "))
+	}
+	return nil
 }

@@ -255,13 +255,21 @@ func (s *Snapshotter) Take(ctx context.Context) (bool, error) {
 	return made, nil
 }
 
+// removePlain removes the plain copy with the files SQLite keeps beside it:
+// a journal left by a cut must never be rolled into the next copy.
+func removePlain(plain string) {
+	for _, p := range []string{plain, plain + "-journal", plain + "-wal", plain + "-shm"} {
+		os.Remove(p)
+	}
+}
+
 func (s *Snapshotter) snapshot(ctx context.Context, recipient string, rcpt age.Recipient) (bool, error) {
 	if err := os.MkdirAll(s.Dir, 0o700); err != nil {
 		return false, err
 	}
 	plain := filepath.Join(s.Dir, "snapshot.db.tmp")
-	os.Remove(plain) // left by a crash
-	defer os.Remove(plain)
+	removePlain(plain) // left by a crash
+	defer removePlain(plain)
 	limit := s.Limit
 	if limit <= 0 {
 		limit = time.Minute
