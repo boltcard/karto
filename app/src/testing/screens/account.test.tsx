@@ -84,6 +84,15 @@ describe("A card's I no longer have this card", () => {
   const more = async () => fireEvent.click(await screen.findByRole('button', { name: 'More' }));
   const row = () => screen.findByRole('button', { name: /I no longer have this card/ });
 
+  it("has its own icon, not Wipe's, so the two red rows don't look alike", async () => {
+    await open('active', { sat: 5000 });
+    await more();
+    const svg = async (name: RegExp) => (await screen.findByRole('button', { name })).querySelector('svg')?.innerHTML;
+    const giveUp = await svg(/I no longer have this card/);
+    expect(giveUp).toBeTruthy();
+    expect(giveUp).not.toBe(await svg(/Wipe the card/));
+  });
+
   it('asks for the screen lock after the confirm, then removes the card and its money goes to Pool', async () => {
     const world = await open('active', { sat: 5000 });
     await more();

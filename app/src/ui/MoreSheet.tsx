@@ -1,13 +1,14 @@
 // A card's More, from ⋯ in its page's band:
-// Limits and Change photo as rows, then Wipe the card on its own in red, saying first where the balance goes, so
-// Wipe is never one slip away. Wipe opens the hold-the-card screen for this card, which asks for the screen lock
-// and refuses any other card.
+// Limits and Change photo as rows, then the two red rows on their own, each saying first where the balance goes, so
+// neither is one slip away: Wipe the card opens the hold-the-card screen for this card, which asks for the screen
+// lock and refuses any other card; I no longer have this card gives it up without holding it, after a confirm and
+// the screen lock.
 import { router } from 'expo-router';
 import { holdPress } from '../cards/holdPress';
 import type { MoreRows } from '../wallet/accountView';
 import { ListGroup, ListRow, Sheet, Small, Title } from './ui';
 
-/** rows: wallet/accountView.ts moreRows; off: cardd can't be reached (Wipe works without it; Limits and Change photo don't); onLimits: open the Limits sheet. */
+/** rows: wallet/accountView.ts moreRows; off: cardd can't be reached (Wipe works without it; Limits, Change photo and I no longer have this card don't); onLimits: open the Limits sheet. */
 export function MoreSheet({ card, rows, off, onLimits, onGiveUp, onClose }: {
   card: { id: string; name: string }; rows: MoreRows; off: boolean; onLimits: () => void; onGiveUp: () => void; onClose: () => void;
 }) {
@@ -30,7 +31,7 @@ export function MoreSheet({ card, rows, off, onLimits, onGiveUp, onClose }: {
         <ListRow icon="wipe" name="Wipe the card" line={rows.wipe.line} onPress={wipe} disabled={rows.wipe.disabled} danger />
         {/* No card held: the server must answer, as a wipe's start needn't (giveUp.ts). */}
         <ListRow
-          icon="wipe"
+          icon="lost"
           name="I no longer have this card"
           line={rows.giveUp.line}
           onPress={() => {
