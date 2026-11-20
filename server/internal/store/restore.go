@@ -81,8 +81,16 @@ func (s *Store) PrepareRestored(ctx context.Context, from, devicePubHex string, 
 // and empties the log, so the file alone holds it: cardd restore then moves
 // that one file into place.
 func (s *Store) Checkpoint(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
-	return err
+	// busy is 1 when a reader or writer kept the checkpoint from finishing:
+	// the log may then still hold pages the database file doesn't.
+	var busy, logged, moved int
+	if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logged, &moved); err != nil {
+		return err
+	}
+	if busy != 0 {
+		return fmt.Errorf("store: checkpoint: held back by another connection (%d of %d pages moved)", moved, logged)
+	}
+	return nil
 }
 
 // SetRestoreBooks books msat (either sign, 0 for nothing) to pool against

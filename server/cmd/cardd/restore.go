@@ -117,7 +117,10 @@ func restore(args []string, stdin io.Reader, out io.Writer) error {
 		return err
 	}
 	// Nothing else writes -db yet: cardd hasn't started.
-	return os.Rename(tmp, *dbPath)
+	if err := os.Rename(tmp, *dbPath); err != nil {
+		return err
+	}
+	return syncDir(filepath.Dir(*dbPath))
 }
 
 // alreadyRestored answers a restore when a database is there: fine if a
@@ -213,4 +216,18 @@ func backupCmd(args []string, out io.Writer) error {
 		Version int64 `json:"version"`
 		Created int64 `json:"created"`
 	}{s.Latest.Version, s.Latest.Created})
+}
+
+// syncDir saves dir's entries to disk, so a rename into it outlasts a power
+// cut that follows.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	err = d.Sync()
+	if cerr := d.Close(); err == nil {
+		err = cerr
+	}
+	return err
 }

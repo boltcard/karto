@@ -403,3 +403,14 @@ func TestBackupNow(t *testing.T) {
 		}
 	}
 }
+
+// syncDir saves a directory's entries, as a restore does after moving the
+// database into place, and says when it can't.
+func TestSyncDir(t *testing.T) {
+	if err := syncDir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if err := syncDir(filepath.Join(t.TempDir(), "gone")); err == nil {
+		t.Fatal("no error for a directory that isn't there")
+	}
+}
