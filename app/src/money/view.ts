@@ -17,6 +17,10 @@ const allowed = (v: View, o: ViewOptions) => !(v === 'fiat' && !o.fiat) && !(v =
 
 export const isView = (x: unknown): x is View => typeof x === 'string' && (ORDER as readonly string[]).includes(x);
 
+/** The unit amounts are shown in, chosen in Settings: hidden is kept apart from it, so showing again comes back to it. */
+export type Unit = 'fiat' | 'sat' | 'msat';
+export const isUnit = (x: unknown): x is Unit => x === 'fiat' || x === 'sat' || x === 'msat';
+
 /** A view no longer allowed (msat turned off, the currency none) is sat. */
 export const settleView = (v: View, o: ViewOptions): View => (allowed(v, o) ? v : 'sat');
 

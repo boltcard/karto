@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Rated } from './fiat';
-import { ageLine, altText, aboutText, apartText, confirmView, feeViewText, isView, nextView, settleView, shown, viewText, type View, type ViewOptions } from './view';
+import { ageLine, altText, aboutText, apartText, confirmView, feeViewText, isUnit, isView, nextView, settleView, shown, viewText, type View, type ViewOptions } from './view';
 
 const T = 1_792_037_404;
 const GBP: Rated = { currency: 'GBP', price: 61_352, time: T };
@@ -37,6 +37,8 @@ describe('nextView and settleView', () => {
   it('knows a view from anything else kept', () => {
     for (const v of ['fiat', 'sat', 'msat', 'hidden']) expect(isView(v)).toBe(true);
     for (const v of ['pounds', '', null, 3, undefined]) expect(isView(v)).toBe(false);
+    for (const v of ['fiat', 'sat', 'msat']) expect(isUnit(v)).toBe(true);
+    for (const v of ['hidden', 'pounds', '', null, undefined]) expect(isUnit(v)).toBe(false);
   });
 });
 

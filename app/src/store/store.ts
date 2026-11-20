@@ -4,7 +4,7 @@
 import type { ServerLatest } from '../backup/backups';
 import type { CardState } from '../cardd/client';
 import type { MoneyRequest } from '../money/requests';
-import { isView, type View } from '../money/view';
+import { isUnit, type Unit } from '../money/view';
 import type { OnboardingState } from '../onboarding/machine';
 import { savedSteps } from '../onboarding/install';
 
@@ -44,10 +44,13 @@ const POS_RESTORE_CHECKED = 'pos.restore_checked';
 const PHOTO = 'photo.';
 /** The cards of other phones that the wallet removed, until the person has been told. */
 const REMOVED_PHONE_CARDS = 'phone_card.removed';
-/** The view every amount is drawn in: 'fiat', 'sat', 'msat' or 'hidden'. */
+/**
+ * The unit every amount is shown in: 'fiat', 'sat' or 'msat'. Before Settings held the view this one value kept it,
+ * 'hidden' too: a phone that kept 'hidden' reads as sat, hidden.
+ */
 const AMOUNT_VIEW = 'view.amount';
-/** Settings' Show msat amounts, off on a new phone. */
-const SHOW_MSAT = 'view.show_msat';
+/** Whether amounts are hidden (Settings' Hide amounts, the Wallet page's eye); absent on a phone from before it. */
+const AMOUNTS_HIDDEN = 'view.hidden';
 /** The unit every amount field types in: 'fiat' or 'sat'. */
 const TYPING_UNIT = 'view.typing_unit';
 /** The offer to turn alerts on has been made: it is made once. */
@@ -76,7 +79,7 @@ export type CachedPhoto = { tag: string; jpeg: string };
 export const STORE_WRITES = [
   'saveOnboarding', 'saveCard', 'savePending', 'dropPending', 'saveBackupRecipient', 'setRevoked', 'saveServerLatest', 'noteCarddAnswered',
   'savePosRestoreChecked', 'savePhoto', 'dropPhoto', 'noteRemovedPhoneCard', 'dismissRemovedPhoneCards',
-  'setAmountView', 'setShowMsat', 'setTypingUnit', 'setAlertsOffered', 'saveAlertsSent',
+  'setAmountUnit', 'setAmountsHidden', 'setTypingUnit', 'setAlertsOffered', 'saveAlertsSent',
 ] as const satisfies readonly (keyof AppStore)[];
 
 /** A connection and the end of the queue of the store's calls on it. */
@@ -323,23 +326,27 @@ export class AppStore {
     return this.put(REMOVED_PHONE_CARDS, []);
   }
 
-  /** The view every amount is drawn in: sat on a new phone, and for anything kept that isn't a view. */
-  async amountView(): Promise<View> {
+  /** The unit every amount is shown in: sat on a new phone, and for anything kept that isn't a unit ('hidden' too). */
+  async amountUnit(): Promise<Unit> {
     const v = await this.get<unknown>(AMOUNT_VIEW).catch(() => null);
-    return isView(v) ? v : 'sat';
+    return isUnit(v) ? v : 'sat';
   }
 
-  setAmountView(view: View): Promise<void> {
-    return this.put(AMOUNT_VIEW, view);
+  /** The unit is written over the old one value, so a phone from before keeps its hidden in its own row first. */
+  async setAmountUnit(unit: Unit): Promise<void> {
+    if (typeof (await this.get<unknown>(AMOUNTS_HIDDEN).catch(() => null)) !== 'boolean') await this.put(AMOUNTS_HIDDEN, await this.amountsHidden());
+    await this.put(AMOUNT_VIEW, unit);
   }
 
-  /** Whether Show msat amounts is on: off on a new phone. */
-  async showMsat(): Promise<boolean> {
-    return (await this.get<unknown>(SHOW_MSAT).catch(() => null)) === true;
+  /** Whether amounts are hidden: not on a new phone; on a phone from before, whether it kept 'hidden'. */
+  async amountsHidden(): Promise<boolean> {
+    const h = await this.get<unknown>(AMOUNTS_HIDDEN).catch(() => null);
+    if (typeof h === 'boolean') return h;
+    return (await this.get<unknown>(AMOUNT_VIEW).catch(() => null)) === 'hidden';
   }
 
-  setShowMsat(on: boolean): Promise<void> {
-    return this.put(SHOW_MSAT, on);
+  setAmountsHidden(on: boolean): Promise<void> {
+    return this.put(AMOUNTS_HIDDEN, on);
   }
 
   /** The unit amounts are typed in: the currency on a new phone (a field with no rate types sat whatever this says). */

@@ -254,7 +254,7 @@ describe('STORE_WRITES', () => {
   it('names every method of the store that writes: a new method is listed as a write here, or as a read in this test', () => {
     const READS = [
       'onboarding', 'cards', 'pendingRequests', 'backupRecipient', 'revoked', 'serverLatest', 'carddUnreachableSince', 'posRestoreChecked', 'photos', 'removedPhoneCards',
-      'amountView', 'showMsat', 'typingUnit', 'alertsOffered', 'alertsSent',
+      'amountUnit', 'amountsHidden', 'typingUnit', 'alertsOffered', 'alertsSent',
     ];
     // clear is the removal's own, reconnect Try again's; get, put, update and step are the store's private four.
     const OWN = ['constructor', 'clear', 'reconnect', 'get', 'put', 'update', 'step'];
@@ -380,24 +380,51 @@ describe('backup state', () => {
   });
 });
 
-// The phone keeps the view, Show msat amounts and the unit typed in.
+// The phone keeps the unit amounts are shown in, whether they are hidden, and the unit typed in.
 describe('the amounts view', () => {
-  it('starts on sat, with msat off and typing in the currency, and keeps each across a reopen', async () => {
+  it('starts on sat, shown, typing in the currency, and keeps each across a reopen', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'store-')), 'app.db');
     const store = await AppStore.open(nodeSqlite(path));
-    expect([await store.amountView(), await store.showMsat(), await store.typingUnit()]).toEqual(['sat', false, 'fiat']);
-    await store.setAmountView('hidden');
-    await store.setShowMsat(true);
+    expect([await store.amountUnit(), await store.amountsHidden(), await store.typingUnit()]).toEqual(['sat', false, 'fiat']);
+    await store.setAmountUnit('msat');
+    await store.setAmountsHidden(true);
     await store.setTypingUnit('sat');
     const again = await AppStore.open(nodeSqlite(path));
-    expect([await again.amountView(), await again.showMsat(), await again.typingUnit()]).toEqual(['hidden', true, 'sat']);
+    expect([await again.amountUnit(), await again.amountsHidden(), await again.typingUnit()]).toEqual(['msat', true, 'sat']);
   });
 
-  it('reads anything kept that is not a view as sat', async () => {
+  it('reads anything kept that is not a unit as sat', async () => {
     const db = nodeSqlite();
     const store = await AppStore.open(db);
     await db.runAsync("INSERT INTO kv (key, value) VALUES ('view.amount', '\"pounds\"')");
-    expect(await store.amountView()).toBe('sat');
+    expect(await store.amountUnit()).toBe('sat');
+  });
+
+  // Before Settings held the view, one value kept it: 'fiat', 'sat', 'msat' or 'hidden'.
+  it('opens a phone that kept msat on msat, shown', async () => {
+    const db = nodeSqlite();
+    const store = await AppStore.open(db);
+    await db.runAsync("INSERT INTO kv (key, value) VALUES ('view.amount', '\"msat\"')");
+    expect([await store.amountUnit(), await store.amountsHidden()]).toEqual(['msat', false]);
+  });
+
+  it('opens a phone that kept hidden hidden, on sat; showing them again is kept', async () => {
+    const db = nodeSqlite();
+    const store = await AppStore.open(db);
+    await db.runAsync("INSERT INTO kv (key, value) VALUES ('view.amount', '\"hidden\"')");
+    expect([await store.amountUnit(), await store.amountsHidden()]).toEqual(['sat', true]);
+    await store.setAmountsHidden(false);
+    expect(await store.amountsHidden()).toBe(false);
+  });
+
+  it('keeps an old hidden phone hidden when a unit is chosen on it', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'store-')), 'app.db');
+    const db = nodeSqlite(path);
+    const store = await AppStore.open(db);
+    await db.runAsync("INSERT INTO kv (key, value) VALUES ('view.amount', '\"hidden\"')");
+    await store.setAmountUnit('fiat');
+    const again = await AppStore.open(nodeSqlite(path));
+    expect([await again.amountUnit(), await again.amountsHidden()]).toEqual(['fiat', true]);
   });
 });
 
