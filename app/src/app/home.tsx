@@ -19,7 +19,7 @@ import { useAmountView } from '../ui/amountView';
 import { WalletNameAsk } from '../ui/WalletNameAsk';
 import { Amount, RateAgeLine } from '../ui/money';
 import { AMOUNT, TYPE, type Theme } from '../ui/theme';
-import { Body, Button, Callout, ErrorText, Screen } from '../ui/ui';
+import { BAND_END, Body, Button, Callout, ErrorText, Screen } from '../ui/ui';
 import { Icon } from '../ui/icons';
 import { useStyles, useTheme } from '../ui/useTheme';
 import { BannerView, CardFace, STACK_OVERLAP } from '../ui/wallet';
@@ -104,7 +104,7 @@ export default function Home() {
   const listLine = cardsLine(snap.cardsError, banners.some((b) => b.key === 'unreachable'));
   // The band: the wallet's title and, at its end, Settings.
   const gear = (
-    <Pressable accessibilityRole="button" accessibilityLabel="Settings" hitSlop={12} onPress={() => router.push('/settings')} style={({ pressed }) => pressed && layout.pressed}>
+    <Pressable accessibilityRole="button" accessibilityLabel="Settings" hitSlop={BAND_END.gearSlop} onPress={() => router.push('/settings')} style={({ pressed }) => pressed && layout.pressed}>
       {/* U+FE0E: the gear as text, not Android's emoji. */}
       <Text style={s.gear}>{'⚙︎'}</Text>
     </Pressable>
@@ -114,7 +114,7 @@ export default function Home() {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={look.hidden ? 'Show amounts' : 'Hide amounts'}
-      hitSlop={10}
+      hitSlop={BAND_END.eyeSlop}
       onPress={() => look.setHidden(!look.hidden)}
       style={({ pressed }) => pressed && layout.pressed}
     >
@@ -308,8 +308,8 @@ const makeStyles = (t: Theme) =>
 
 const layout = StyleSheet.create({
   pressed: { opacity: 0.7 },
-  // The eye and the gear at the band's end, apart enough that their hit areas don't meet.
-  bandEnd: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  // The eye and the gear at the band's end, apart enough that their hit areas don't meet (BAND_END).
+  bandEnd: { flexDirection: 'row', alignItems: 'center', gap: BAND_END.gap },
   tiles: { flexDirection: 'row', gap: 12 },
   // The wide tile: its name over its balance at the left, today's sales at the right on the balance's line.
   wide: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
