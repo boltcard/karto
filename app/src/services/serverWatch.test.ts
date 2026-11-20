@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SshDropped } from '../onboarding/ssh';
 import { CarddError, type CardInfo, type HostingStatus, type SaleDay, type Wallet } from '../cardd/client';
 import type { ServerStatus } from '../cardd/status';
@@ -154,7 +154,7 @@ function fakeCache() {
     pending: [] as MoneyRequest[],
     asked: 0,
     cards: async () => ({ ...c.rows }),
-    saveCard: async (row: CachedCard) => void (c.rows[row.id] = row),
+    saveCard: async (row: CachedCard, o: { unlessPending?: boolean } = {}) => void (o.unlessPending && c.rows[row.id]?.pending ? null : (c.rows[row.id] = row)),
     pendingRequests: async () => (c.asked++, [...c.pending]),
     savePending: async (r: MoneyRequest) => void c.pending.push(r),
     dropPending: async (id: string) => void (c.pending = c.pending.filter((r) => r.id !== id)),
@@ -810,6 +810,44 @@ describe('ServerWatch', () => {
     srv.fail = new CarddError(500, 'internal', 'database is locked');
     await watch.reloadCards();
     expect(watch.snapshot()).toMatchObject({ cards: srv.cards, cardsDown: true, cardsError: "Your server couldn't list the cards: database is locked" });
+  });
+
+  // The phone's copy is a convenience (the list while the server can't be reached): failing to keep it doesn't hide the
+  // list the server sent. The next list keeps it again. It leaves a line in the log for the next report from a phone.
+  it("shows the server's list when the phone can't keep its copy, and keeps it at the next list", async () => {
+    const { w, watch } = world();
+    const srv = w.at(HOST);
+    const kept = w.cache.saveCard;
+    w.cache.saveCard = async () => {
+      throw new Error('database is locked');
+    };
+    const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      watch.watch();
+      await settle();
+      expect(watch.snapshot()).toMatchObject({ cards: srv.cards, cardsDown: false, cardsError: null });
+      expect(logged).toHaveBeenCalledWith('CARDAPP-CARDS', JSON.stringify({ kept: 'database is locked' }));
+    } finally {
+      logged.mockRestore();
+    }
+    w.cache.saveCard = kept;
+    await watch.reloadCards();
+    expect(w.cache.rows.c2).toEqual({ id: 'c2', version: 1, name: 'c2', state: 'active' });
+  });
+
+  // Back in front after a list that failed: asked for again, not left until the person leaves the page and returns.
+  it('asks for the cards again on the return to the front when the last list failed', async () => {
+    const { w, watch } = world();
+    const srv = w.at(HOST);
+    srv.fail = new CarddError(500, 'internal', 'database is locked');
+    watch.watch();
+    await settle();
+    expect(watch.snapshot()).toMatchObject({ cardsDown: true, cardsError: "Your server couldn't list the cards: database is locked" });
+    srv.fail = null;
+    watch.background();
+    watch.foreground();
+    await settle();
+    expect(watch.snapshot()).toMatchObject({ cards: srv.cards, cardsDown: false, cardsError: null });
   });
 
   it("asks for the cards again by itself once the server is back in reach", async () => {

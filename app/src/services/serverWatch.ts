@@ -495,7 +495,8 @@ export class ServerWatch {
     else this.scheduleKeyCheck();
     await Promise.all([
       this.checkServer(),
-      focus || fresh ? this.loadCards() : null,
+      // Back in front after a list that failed: asked for again (the card list is otherwise asked for on focus).
+      focus || fresh || this.snap.cardsDown ? this.loadCards() : null,
       this.loadMoney(),
       this.readNfc(),
       this.syncHosting(),
@@ -562,7 +563,11 @@ export class ServerWatch {
       const list = await deps.cardd.cards();
       // Forgotten meanwhile: the cache may be a removed wallet's, emptied, and this list is not put back in it.
       if (deps !== this.snap.deps) return;
-      await rememberCards(deps.cache, list);
+      // The phone's copy (the list while the server can't be reached) failing to save doesn't hide the list the
+      // server sent: the next list saves it again. A line in the log, for the next report from a phone.
+      await rememberCards(deps.cache, list).catch((e: unknown) =>
+        console.log('CARDAPP-CARDS', JSON.stringify({ kept: e instanceof Error ? e.message : String(e) })),
+      );
       if (!current()) return;
       this.cardsUnreached = false;
       this.set({ cards: list, cardsDown: false, cardsError: null });

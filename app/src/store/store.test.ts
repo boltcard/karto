@@ -2,11 +2,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import { AppStore, STORE_WRITES } from './store';
 import { phraseStore } from './secrets';
 import { initialState, type OnboardingState } from '../onboarding/machine';
-import { nodeSqlite } from '../testing/nodeSqlite';
+import { expoLikeSqlite, nodeSqlite } from '../testing/nodeSqlite';
 import { vectors } from '../testing/vectors';
 
 describe('AppStore', () => {
@@ -226,8 +227,8 @@ describe('STORE_WRITES', () => {
       'onboarding', 'cards', 'pendingRequests', 'backupRecipient', 'revoked', 'serverLatest', 'carddUnreachableSince', 'posRestoreChecked', 'photos', 'removedPhoneCards',
       'amountView', 'showMsat', 'typingUnit', 'alertsOffered', 'alertsSent',
     ];
-    // clear is the removal's own, reconnect Try again's; get and put are the store's private two.
-    const OWN = ['constructor', 'clear', 'reconnect', 'get', 'put'];
+    // clear is the removal's own, reconnect Try again's; get, put, update and step are the store's private four.
+    const OWN = ['constructor', 'clear', 'reconnect', 'get', 'put', 'update', 'step'];
     const methods = Object.getOwnPropertyNames(AppStore.prototype).filter((m) => !OWN.includes(m));
     expect([...methods].sort()).toEqual([...READS, ...STORE_WRITES].sort());
   });
@@ -391,5 +392,65 @@ describe('alerts', () => {
     const store = await AppStore.open(db);
     await db.runAsync("INSERT INTO kv (key, value) VALUES ('alerts.sent', '{\"endpoint\":3}')");
     expect(await store.alertsSent()).toBeNull();
+  });
+});
+
+// The background job writes on a connection of its own (backup/jobDb.ts). A read of the app's still open on its
+// connection (expo-sqlite finalizes after it has stepped) makes SQLite refuse the app's next write at once once the
+// job has written, whatever busy_timeout says (SQLITE_BUSY_SNAPSHOT): the store runs one statement at a time.
+describe("AppStore beside the background job's connection", () => {
+  it("saves while one of its own reads is under way, after the job's connection wrote", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'cardapp-')), 'app.db');
+    let job: DatabaseSync | null = null;
+    const app = expoLikeSqlite(path, {
+      afterStep: () => {
+        job?.exec("INSERT OR REPLACE INTO kv (key, value) VALUES ('job', '1')");
+        job = null;
+      },
+    });
+    const store = await AppStore.open(app);
+    await store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'active' });
+    await store.noteRemovedPhoneCard({ name: 'Old phone', amountMsat: null });
+    job = new DatabaseSync(path);
+    job.exec('PRAGMA busy_timeout = 5000');
+    await Promise.all([store.cards(), store.dismissRemovedPhoneCards()]);
+    expect(await store.removedPhoneCards()).toEqual([]);
+  });
+
+  // The job part-way through its write (its lock held, not yet committed): the app's write waits for it.
+  it("waits for the job's connection part-way through a write while one of its own reads is under way", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'cardapp-')), 'app.db');
+    const store = await AppStore.open(expoLikeSqlite(path));
+    await store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'active' });
+    await store.noteRemovedPhoneCard({ name: 'Old phone', amountMsat: null });
+    // On a thread of its own, as the job's writes are to the app's (the app's wait blocks its own thread).
+    const job = new Worker(
+      `const { workerData, parentPort } = require('node:worker_threads');
+       const { DatabaseSync } = require('node:sqlite');
+       const db = new DatabaseSync(workerData.path);
+       db.exec("PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE; INSERT OR REPLACE INTO kv (key, value) VALUES ('job', '1')");
+       parentPort.postMessage('holding');
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+       db.exec('COMMIT');
+       db.close();`,
+      { eval: true, workerData: { path } },
+    );
+    try {
+      await new Promise((r) => job.once('message', r));
+      await Promise.all([store.cards(), store.dismissRemovedPhoneCards()]);
+      expect(await store.removedPhoneCards()).toEqual([]);
+    } finally {
+      await job.terminate();
+    }
+  });
+
+  // A read and the write after it are one step: two saves at once keep both.
+  it('keeps both of two cards saved at once', async () => {
+    const store = await AppStore.open(nodeSqlite());
+    await Promise.all([
+      store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'active' }),
+      store.saveCard({ id: 'c2', version: 1, name: 'Kids', state: 'active' }),
+    ]);
+    expect(Object.keys(await store.cards()).sort()).toEqual(['c1', 'c2']);
   });
 });

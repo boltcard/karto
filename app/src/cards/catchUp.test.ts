@@ -21,6 +21,21 @@ describe('rememberCards', () => {
   });
 });
 
+// A wipe begun while the list is being kept (a card held to the phone as the page refreshes): its pending record
+// stays, read where it is written, not from a copy taken before.
+describe('rememberCards beside a wipe', () => {
+  it('leaves a wipe saved while the list is being kept', async () => {
+    const cache = await AppStore.open(nodeSqlite());
+    const a = 'a'.repeat(32);
+    const wiping = { id: a, version: 1, name: 'Daily', state: 'wiping' as const, pending: 'wipe' as const };
+    await Promise.all([
+      rememberCards(cache, [{ id: a, version: 1, state: 'active', counter: 4, name: 'Daily', created: 0, updated: 0 }]),
+      cache.saveCard(wiping),
+    ]);
+    expect((await cache.cards())[a]).toEqual(wiping);
+  });
+});
+
 describe('catchUp', () => {
   // A wipe this phone did offline is old news once the card was added again at a later version.
   it('drops a pending wipe for an older version than cardd now has', async () => {
