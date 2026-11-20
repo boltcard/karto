@@ -22,9 +22,8 @@ export async function catchUp(d: Pick<CardDeps, 'cardd' | 'cache'>): Promise<num
 }
 
 /** Keeps the phone's cache in step with cardd's list, without touching a card whose wipe cardd hasn't heard about. */
+// Each card's pending wipe is read where it is saved (saveCard's unlessPending), not from a copy taken before: a wipe
+// begun while the list is kept stays.
 export async function rememberCards(cache: CardDeps['cache'], list: CardInfo[]): Promise<void> {
-  const cached = await cache.cards();
-  for (const c of list) {
-    if (!cached[c.id]?.pending) await cache.saveCard({ id: c.id, version: c.version, name: c.name, state: c.state });
-  }
+  for (const c of list) await cache.saveCard({ id: c.id, version: c.version, name: c.name, state: c.state }, { unlessPending: true });
 }

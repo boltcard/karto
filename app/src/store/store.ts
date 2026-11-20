@@ -79,11 +79,38 @@ export const STORE_WRITES = [
   'setAmountView', 'setShowMsat', 'setTypingUnit', 'setAlertsOffered', 'saveAlertsSent',
 ] as const satisfies readonly (keyof AppStore)[];
 
+/** A connection and the end of the queue of the store's calls on it. */
+type Line = { db: SqlDb & { closeAsync?(): Promise<void> }; tail: Promise<void> };
+
 export class AppStore {
   /** A reconnect on its way, handed to a second caller (two presses of Try again). */
   private reconnecting: Promise<boolean> | null = null;
+  private line: Line;
 
-  private constructor(private db: SqlDb) {}
+  private constructor(db: SqlDb) {
+    this.line = { db, tail: Promise.resolve() };
+  }
+
+  /**
+   * One step on the connection, after every step asked for before it has ended. expo-sqlite runs a statement as
+   * separate native calls (prepare, execute, finalize) and a SELECT that found a row holds its read open until it is
+   * finalized; a write of this connection's made meanwhile is refused at once if the job's connection
+   * (backup/jobDb.ts) has written or is writing (SQLITE_BUSY_SNAPSHOT or SQLITE_BUSY), whatever busy_timeout says. One
+   * step at a time, a write never meets a read of its own, and waits for the job's as busy_timeout intends. A step
+   * reads and writes on the db it is handed only, never through the store: it would wait for itself. A failed step
+   * doesn't stop the next. A step that never ends would hold up every later one: expo-sqlite rejects at once on a
+   * dead connection, and nothing else is known to hang. Each connection has its own queue: after a reconnect,
+   * what was asked of the old one ends there.
+   */
+  private step<T>(fn: (db: SqlDb) => Promise<T>): Promise<T> {
+    const line = this.line;
+    const run = line.tail.then(() => fn(line.db));
+    line.tail = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  }
 
   static async open(db: SqlDb): Promise<AppStore> {
     await AppStore.prepare(db);
@@ -109,7 +136,8 @@ export class AppStore {
   reconnect(open: () => Promise<SqlDb & { closeAsync(): Promise<void> }>): Promise<boolean> {
     this.reconnecting ??= (async () => {
       try {
-        await this.db.getFirstAsync('SELECT 1');
+        // On the connection itself, not after the queue: a stuck step must not hold up Try again.
+        await this.line.db.getFirstAsync('SELECT 1');
         return false;
       } catch {
         // dead: replaced below
@@ -121,8 +149,8 @@ export class AppStore {
         await fresh.closeAsync().catch(() => {});
         throw e;
       }
-      const old = this.db as SqlDb & { closeAsync?(): Promise<void> };
-      this.db = fresh;
+      const old = this.line.db;
+      this.line = { db: fresh, tail: Promise.resolve() };
       await old.closeAsync?.().catch(() => {});
       return true;
     })().finally(() => {
@@ -143,26 +171,30 @@ export class AppStore {
    * What this cannot do: the file's dropped tail and its log are cut off, not written over, so their blocks stay
    * on the phone's storage until it reuses them, readable only beneath the file system.
    */
-  async clear(): Promise<void> {
-    await this.db.execAsync(`PRAGMA secure_delete = ON;
-      DELETE FROM kv;
-      VACUUM;`);
-    const left = (await this.db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM kv'))?.n;
-    if (left !== 0) throw new Error(`the app's database still holds ${left ?? 'some'} ${left === 1 ? 'row' : 'rows'}`);
-    // busy: the checkpoint did not run to its end. Not an error to SQLite, so it is read here.
-    const folded = await this.db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
-    if (!folded || folded.busy !== 0) throw new Error("the app's database is in use, and what it held is still in its file");
+  clear(): Promise<void> {
+    return this.step(async (db) => {
+      await db.execAsync(`PRAGMA secure_delete = ON;
+        DELETE FROM kv;
+        VACUUM;`);
+      const left = (await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM kv'))?.n;
+      if (left !== 0) throw new Error(`the app's database still holds ${left ?? 'some'} ${left === 1 ? 'row' : 'rows'}`);
+      // busy: the checkpoint did not run to its end. Not an error to SQLite, so it is read here.
+      const folded = await db.getFirstAsync<{ busy: number }>('PRAGMA wal_checkpoint(TRUNCATE)');
+      if (!folded || folded.busy !== 0) throw new Error("the app's database is in use, and what it held is still in its file");
+    });
   }
 
-  private async get<T>(key: string): Promise<T | null> {
-    const row = await this.db.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE key = ?', key);
-    return row ? (JSON.parse(row.value) as T) : null;
+  private get<T>(key: string): Promise<T | null> {
+    return this.step((db) => read<T>(db, key));
   }
 
-  private async put(key: string, value: unknown): Promise<void> {
-    await this.db.runAsync(
-      'INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value',
-      key, JSON.stringify(value));
+  private put(key: string, value: unknown): Promise<void> {
+    return this.step((db) => write(db, key, value));
+  }
+
+  /** A value read and its new value written as one step: two at once each see the other's write. */
+  private update<T>(key: string, next: (old: T | null) => unknown): Promise<void> {
+    return this.step(async (db) => write(db, key, next(await read<T>(db, key))));
   }
 
   /** The saved setup, its finished steps read as this app knows them (savedSteps: an older app's 'system'). */
@@ -185,20 +217,17 @@ export class AppStore {
     return (await this.get<Record<string, CachedCard>>(CARDS)) ?? {};
   }
 
-  async saveCard(c: CachedCard): Promise<void> {
-    const all = await this.cards();
-    all[c.id] = c;
-    await this.put(CARDS, all);
+  /** unlessPending: kept as it is if its record has a wipe cardd hasn't heard of (read in the same step as the write). */
+  saveCard(c: CachedCard, o: { unlessPending?: boolean } = {}): Promise<void> {
+    return this.update<Record<string, CachedCard>>(CARDS, (all) => (o.unlessPending && all?.[c.id]?.pending ? all : { ...all, [c.id]: c }));
   }
 
   async pendingRequests(): Promise<MoneyRequest[]> {
     return Object.values((await this.get<Record<string, MoneyRequest>>(REQUESTS)) ?? {});
   }
 
-  async savePending(r: MoneyRequest): Promise<void> {
-    const all = (await this.get<Record<string, MoneyRequest>>(REQUESTS)) ?? {};
-    all[r.id] = r;
-    await this.put(REQUESTS, all);
+  savePending(r: MoneyRequest): Promise<void> {
+    return this.update<Record<string, MoneyRequest>>(REQUESTS, (all) => ({ ...all, [r.id]: r }));
   }
 
   backupRecipient(): Promise<string | null> {
@@ -230,9 +259,9 @@ export class AppStore {
   }
 
   /** The background job and the server page: whether cardd answered at nowMs. The first failure's time is kept. */
-  async noteCarddAnswered(answered: boolean, nowMs: number): Promise<void> {
+  noteCarddAnswered(answered: boolean, nowMs: number): Promise<void> {
     if (answered) return this.put(UNREACHABLE_SINCE, null);
-    if ((await this.carddUnreachableSince()) === null) await this.put(UNREACHABLE_SINCE, nowMs);
+    return this.update<number>(UNREACHABLE_SINCE, (since) => since ?? nowMs);
   }
 
   posRestoreChecked(): Promise<number | null> {
@@ -245,7 +274,7 @@ export class AppStore {
 
   /** Every card's cached photo, by card id. */
   async photos(): Promise<Record<string, CachedPhoto>> {
-    const rows = await this.db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM kv WHERE key LIKE ?', `${PHOTO}%`);
+    const rows = await this.step((db) => db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM kv WHERE key LIKE ?', `${PHOTO}%`));
     const out: Record<string, CachedPhoto> = {};
     for (const r of rows) {
       // One damaged row is skipped: it must not hide the other cards' photos.
@@ -264,20 +293,16 @@ export class AppStore {
   }
 
   async dropPhoto(id: string): Promise<void> {
-    await this.db.runAsync('DELETE FROM kv WHERE key = ?', PHOTO + id);
+    await this.step((db) => db.runAsync('DELETE FROM kv WHERE key = ?', PHOTO + id));
   }
 
   /** The removed cards the person has not yet been told of, oldest first. Anything that is not one is left out. */
   async removedPhoneCards(): Promise<RemovedPhoneCard[]> {
-    const rows = (await this.get<unknown>(REMOVED_PHONE_CARDS).catch(() => null)) ?? [];
-    if (!Array.isArray(rows)) return [];
-    return rows
-      .filter((r): r is RemovedPhoneCard => typeof r?.name === 'string' && (r.amountMsat === null || typeof r.amountMsat === 'number'))
-      .map((r) => ({ name: r.name, amountMsat: r.amountMsat }));
+    return removedOf(await this.get<unknown>(REMOVED_PHONE_CARDS).catch(() => null));
   }
 
   async noteRemovedPhoneCard(removed: RemovedPhoneCard): Promise<void> {
-    await this.put(REMOVED_PHONE_CARDS, [...(await this.removedPhoneCards()), { name: removed.name, amountMsat: removed.amountMsat }]);
+    await this.update<unknown>(REMOVED_PHONE_CARDS, (rows) => [...removedOf(rows), { name: removed.name, amountMsat: removed.amountMsat }]);
   }
 
   /** The person has read the notice. */
@@ -333,9 +358,28 @@ export class AppStore {
     return this.put(ALERTS_SENT, sent);
   }
 
-  async dropPending(id: string): Promise<void> {
-    const all = (await this.get<Record<string, MoneyRequest>>(REQUESTS)) ?? {};
-    delete all[id];
-    await this.put(REQUESTS, all);
+  dropPending(id: string): Promise<void> {
+    return this.update<Record<string, MoneyRequest>>(REQUESTS, (all) => {
+      const left = { ...all };
+      delete left[id];
+      return left;
+    });
   }
+}
+
+async function read<T>(db: SqlDb, key: string): Promise<T | null> {
+  const row = await db.getFirstAsync<{ value: string }>('SELECT value FROM kv WHERE key = ?', key);
+  return row ? (JSON.parse(row.value) as T) : null;
+}
+
+async function write(db: SqlDb, key: string, value: unknown): Promise<void> {
+  await db.runAsync('INSERT INTO kv (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value', key, JSON.stringify(value));
+}
+
+/** The removed phones' cards kept: anything that is not one is left out. */
+function removedOf(rows: unknown): RemovedPhoneCard[] {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r): r is RemovedPhoneCard => typeof r?.name === 'string' && (r.amountMsat === null || typeof r.amountMsat === 'number'))
+    .map((r) => ({ name: r.name, amountMsat: r.amountMsat }));
 }
