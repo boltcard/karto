@@ -147,6 +147,27 @@ func TestASnapshotDecryptsWithThePhrasesBackupKey(t *testing.T) {
 	}
 }
 
+// What a cut snapshot leaves (the plain copy and SQLite's files beside it)
+// is cleared before the next one, which goes on as usual.
+func TestACutSnapshotsFilesAreCleared(t *testing.T) {
+	w := setup(t)
+	os.MkdirAll(w.dir, 0o700)
+	for _, f := range []string{"snapshot.db.tmp", "snapshot.db.tmp-journal", "snapshot.db.tmp-wal", "snapshot.db.tmp-shm"} {
+		if err := os.WriteFile(filepath.Join(w.dir, f), []byte("left by a cut"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !w.take(t) {
+		t.Fatalf("no snapshot: %q", w.status(t).Problem)
+	}
+	files, _ := filepath.Glob(filepath.Join(w.dir, "*"))
+	for _, f := range files {
+		if base := filepath.Base(f); base != "1.age" && base != "state.json" && base != ".lock" && base != ".state.lock" {
+			t.Fatalf("left behind: %s", base)
+		}
+	}
+}
+
 func TestANewSnapshotOnlyWhenSomethingChanged(t *testing.T) {
 	ctx := context.Background()
 	w := setup(t)
