@@ -10,7 +10,7 @@ export type IconName =
   // An account's buttons, and the band's ⋯.
   | 'topup' | 'freeze' | 'unfreeze' | 'send' | 'pay' | 'more'
   // The sheets' rows and buttons, and Send's.
-  | 'photo' | 'limits' | 'copy' | 'share' | 'paste' | 'scan'
+  | 'photo' | 'limits' | 'copy' | 'share' | 'paste' | 'scan' | 'lost'
   // The history's kinds (move, renew and wipe are buttons' and rows' too).
   | HistoryIcon
   // The result's ring.
@@ -107,6 +107,13 @@ const SHAPES: Record<IconName, ReactNode> = {
     </>
   ),
   wipe: <Path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13" />,
+  // A card struck through: one the person no longer has.
+  lost: (
+    <>
+      <Rect x={3} y={6} width={18} height={12} rx={2} />
+      <Path d="M4 4l16 16" />
+    </>
+  ),
   renew: (
     <>
       <Rect x={3} y={5} width={18} height={16} rx={2} />
