@@ -3,6 +3,7 @@ package backup_test
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -294,19 +295,35 @@ func TestAStackSnapshotDecrypts(t *testing.T) {
 		if err := os.WriteFile(out, plain, 0o600); err != nil {
 			t.Fatal(err)
 		}
-		// The stack's books owe nothing, and a restore that owes nothing with
-		// no channel is set at once: 1 sat in pool makes the copy's restore
-		// wait for a channel, as one with money does.
-		if os.Getenv("CARDD_BACKUP_TEST_OWE") != "" {
+		owe, big := os.Getenv("CARDD_BACKUP_TEST_OWE") != "", os.Getenv("CARDD_BACKUP_TEST_BIG") != ""
+		if owe || big {
 			st, err := store.Open(out)
 			if err != nil {
 				t.Fatal(err)
 			}
 			defer st.Close()
-			if _, err := st.Credit(context.Background(), store.Pool, 1_000, "the stack test's", ""); err != nil {
-				t.Fatal(err)
+			ctx := context.Background()
+			// The stack's books owe nothing, and a restore that owes nothing
+			// with no channel is set at once: 1 sat in pool makes the copy's
+			// restore wait for a channel, as one with money does.
+			if owe {
+				if _, err := st.Credit(ctx, store.Pool, 1_000, "the stack test's", ""); err != nil {
+					t.Fatal(err)
+				}
 			}
-			if err := st.Checkpoint(context.Background()); err != nil {
+			// Over 2 MB, past SQLite's page cache: a snapshot's VACUUM of the
+			// copy then needs a temporary file, which the container (no
+			// writable /tmp) must give it somewhere (SQLITE_TMPDIR).
+			if big {
+				filler := make([]byte, 1_600_000)
+				if _, err := rand.Read(filler); err != nil {
+					t.Fatal(err)
+				}
+				if err := st.SetMeta(ctx, "test.filler", hex.EncodeToString(filler)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := st.Checkpoint(ctx); err != nil {
 				t.Fatal(err)
 			}
 		}
