@@ -355,6 +355,16 @@ describe('backup state', () => {
     expect(await (await AppStore.open(nodeSqlite(path))).removedPhoneCards()).toEqual([]);
   });
 
+  // A damaged notice must not stop the next removed card being told of.
+  it("notes a removed phone's card over a notice that isn't JSON", async () => {
+    const db = nodeSqlite();
+    const store = await AppStore.open(db);
+    await store.noteRemovedPhoneCard({ name: 'Pixel 8 Pro', amountMsat: 6_000_000 });
+    await db.runAsync('UPDATE kv SET value = ? WHERE value LIKE ?', '{not json', '%Pixel 8 Pro%');
+    await store.noteRemovedPhoneCard({ name: 'Old phone', amountMsat: null });
+    expect(await store.removedPhoneCards()).toEqual([{ name: 'Old phone', amountMsat: null }]);
+  });
+
   // A rebuild warns when the server last reported a newer snapshot than the one chosen.
   it("keeps the server's latest snapshot as last reported, across a reopen", async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'store-')), 'app.db');
