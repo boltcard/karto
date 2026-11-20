@@ -14,7 +14,7 @@ import type { GaveUp } from '../../wallet/accountView';
 const NOW_S = Math.floor(Date.now() / 1000);
 const FIAT: Fiat = { currency: 'GBP', price: 61_352, time: NOW_S };
 const RATED: Rated = { currency: 'GBP', price: 61_352, time: NOW_S };
-const look: { view: View } = { view: 'sat' };
+const look: { view: View; setHidden: (on: boolean) => void } = { view: 'sat', setHidden: vi.fn() };
 
 const wallet = {
   cards: [], paused: false, pausedReason: '', liquidity: null, restore: null, rev: '0a1b2c3d-1', fiat: FIAT,
@@ -40,7 +40,7 @@ vi.mock('../../wallet/phoneCardView', () => ({ payButton: () => null, removedNot
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: look.view, unit: 'sat', hidden: look.view === 'hidden', setUnit: () => {}, setHidden: () => {}, rated: RATED, fiat: FIAT,
+    view: look.view, unit: 'sat', hidden: look.view === 'hidden', setUnit: () => {}, setHidden: look.setHidden, rated: RATED, fiat: FIAT,
     typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));
@@ -49,6 +49,7 @@ describe("Home in the app's view", () => {
   beforeEach(() => {
     look.view = 'sat';
     vi.mocked(router.push).mockClear();
+    vi.mocked(look.setHidden).mockClear();
   });
 
   it("shows Pool, Hosting and Shop to the nearest sat, with today's value under them", () => {
@@ -65,6 +66,17 @@ describe("Home in the app's view", () => {
     for (const shown of ['13,291', '1,975', '12,384', 'sat', '£']) expect(text).not.toContain(shown);
     // What isn't an amount stays.
     expect(text).toContain('3 sales today');
+  });
+
+  it('has an eye beside Settings that hides every amount, and shows them again while hidden', () => {
+    const { unmount } = render(<Home />);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide amounts' }));
+    expect(look.setHidden).toHaveBeenCalledWith(true);
+    unmount();
+    look.view = 'hidden';
+    render(<Home />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show amounts' }));
+    expect(look.setHidden).toHaveBeenCalledWith(false);
   });
 
   it("opens Pool's account at a tap on its figure: a box does one thing", () => {
