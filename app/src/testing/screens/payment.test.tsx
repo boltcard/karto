@@ -29,7 +29,7 @@ const look: { view: View; rated: Rated | null } = { view: 'sat', rated: null };
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: look.view, rated: look.rated, fiat: look.rated, showMsat: false, next: () => {}, setShowMsat: () => {},
+    view: look.view, rated: look.rated, fiat: look.rated, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {},
     typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));
@@ -66,7 +66,7 @@ describe('A payment page', () => {
     look.view = 'fiat';
     const fiat = render(<Payment />);
     await screen.findByText('sam@example.com');
-    expect(screen.getByRole('button', { name: "30 pounds 68 at today's rate" })).toBeTruthy();
+    expect(screen.getByLabelText("30 pounds 68 at today's rate")).toBeTruthy();
     const text = fiat.container.textContent ?? '';
     for (const shown of ['30.68 GBP', 'now', '50,000 sat']) expect(text).toContain(shown);
     // "now" under the figure it marks, before the sats.
@@ -85,7 +85,7 @@ describe('A payment page', () => {
     openedLine.put('pool', line);
     render(<Payment />);
     expect(screen.getByText('Sent out')).toBeTruthy();
-    expect(screen.getByRole('button', { name: '21 sat' })).toBeTruthy(); // an Amount in the app's view
+    expect(screen.getByLabelText('21 sat')).toBeTruthy(); // an Amount in the app's view
     expect(await screen.findByText('sam@example.com')).toBeTruthy();
     expect(screen.getByDisplayValue('Coffee with Sam')).toBeTruthy();
     expect(screen.getByText(/^Server's record: paid /)).toBeTruthy();

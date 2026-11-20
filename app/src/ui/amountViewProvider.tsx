@@ -17,10 +17,10 @@ export function AmountViewProvider({ children }: { children: ReactNode }) {
   // Read from the store; written through the wallet's epoch, so nothing lands while a wallet is taken off the phone.
   const kv = useMemo<ViewKv>(
     () => ({
-      amountView: () => sv.store.amountView(),
-      setAmountView: (view) => walletStore(sv).setAmountView(view),
-      showMsat: () => sv.store.showMsat(),
-      setShowMsat: (on) => walletStore(sv).setShowMsat(on),
+      amountUnit: () => sv.store.amountUnit(),
+      setAmountUnit: (unit) => walletStore(sv).setAmountUnit(unit),
+      amountsHidden: () => sv.store.amountsHidden(),
+      setAmountsHidden: (on) => walletStore(sv).setAmountsHidden(on),
       typingUnit: () => sv.store.typingUnit(),
       setTypingUnit: (unit) => walletStore(sv).setTypingUnit(unit),
     }),

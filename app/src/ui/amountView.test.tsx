@@ -1,6 +1,7 @@
-// The wallet's one view of every amount, rendered: a tap on any
-// amount moves them all to the next view and the phone keeps it; Show msat amounts adds msat; the currency becoming
-// none moves a £ view to sat; the last rate stays while the server can't be read; the rate's age once it is old.
+// The wallet's one view of every amount, rendered: the unit
+// and hidden are set (Settings' rows, the Wallet page's eye) and the phone keeps them; an amount is text, not a
+// button; the currency becoming none moves £ to sat; the last rate stays while the server can't be read; the rate's
+// age once it is old.
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
@@ -13,10 +14,16 @@ const nowS = () => Math.floor(Date.now() / 1000);
 /** The server's pound at mempool's price of 15 Oct 2026, age seconds old. */
 const GBP = (age = 0): Fiat => ({ currency: 'GBP', price: 61_352, time: nowS() - age });
 
-/** Show msat amounts, as Settings' switch turns it. */
-function MsatSwitch() {
-  const { showMsat, setShowMsat } = useAmountView();
-  return <button onClick={() => setShowMsat(!showMsat)}>{showMsat ? 'msat on' : 'msat off'}</button>;
+/** Settings' rows and the eye, as buttons: a unit, and hide or show. */
+function Controls() {
+  const { unit, hidden, setUnit, setHidden } = useAmountView();
+  return (
+    <>
+      <span>{`unit ${unit}${hidden ? ' hidden' : ''}`}</span>
+      {(['fiat', 'sat', 'msat'] as const).map((u) => <button key={u} onClick={() => setUnit(u)}>{`in ${u}`}</button>)}
+      <button onClick={() => setHidden(!hidden)}>{hidden ? 'show' : 'hide'}</button>
+    </>
+  );
 }
 
 const With = ({ kv, fiat, children }: { kv: ViewKv; fiat: Fiat | null; children: ReactNode }) => (
@@ -26,85 +33,106 @@ const With = ({ kv, fiat, children }: { kv: ViewKv; fiat: Fiat | null; children:
 );
 
 describe('Amount and the view', () => {
-  it('starts on sat on a new phone; a tap on any amount moves every amount to the next view, and the phone keeps it', async () => {
+  it('starts on sat, shown, on a new phone; a unit chosen and hiding are kept apart, so showing comes back to the unit', async () => {
     const kv = memoryViewKv();
     render(
       <With kv={kv} fiat={GBP()}>
         <Amount msat={13_291_204} size="large" alt />
         <Amount msat={4_412} sign="−" />
+        <Controls />
       </With>,
     );
-    const big = await screen.findByRole('button', { name: '13,291 sat' });
+    const big = await screen.findByLabelText('13,291 sat');
     // Phoenix's way: the number, then its unit.
     expect(big.textContent).toBe('13,291 sat');
     expect(screen.getByText('≈ £8.15')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'minus 4 sat' }).textContent).toBe('−4 sat');
-    // Show msat amounts is off: sat, then ***, then £.
-    fireEvent.click(big);
-    expect(screen.getAllByRole('button', { name: 'amount hidden' }).map((b) => b.textContent)).toEqual(['***', '***']);
-    expect(screen.queryByText('≈ £8.15')).toBeNull();
-    expect(kv.saved.view).toBe('hidden');
-    fireEvent.click(screen.getAllByRole('button', { name: 'amount hidden' })[1]);
-    expect(screen.getByRole('button', { name: "8 pounds 15 at today's rate" }).textContent).toBe('8.15 GBP');
+    expect(screen.getByLabelText('minus 4 sat').textContent).toBe('−4 sat');
+    fireEvent.click(screen.getByText('in fiat'));
+    expect(screen.getByLabelText("8 pounds 15 at today's rate").textContent).toBe('8.15 GBP');
     expect(screen.getByText('13,291 sat')).toBeTruthy();
-    expect(screen.getByRole('button', { name: "minus under 1 penny at today's rate" }).textContent).toBe('−under 0.01 GBP');
-    expect(kv.saved.view).toBe('fiat');
-  });
-
-  it('puts msat in the cycle only while Show msat amounts is on; turning it off in msat view goes to sat', async () => {
-    const kv = memoryViewKv({ showMsat: true });
-    render(
-      <With kv={kv} fiat={GBP()}>
-        <Amount msat={13_291_204} size="large" alt />
-        <MsatSwitch />
-      </With>,
-    );
-    await screen.findByText('msat on');
-    fireEvent.click(screen.getByRole('button', { name: '13,291 sat' }));
-    expect(screen.getByRole('button', { name: '13,291,204 millisat' }).textContent).toBe('13,291,204 msat');
+    expect(screen.getByLabelText("minus under 1 penny at today's rate").textContent).toBe('−under 0.01 GBP');
+    expect(kv.saved).toMatchObject({ unit: 'fiat', hidden: false });
+    fireEvent.click(screen.getByText('hide'));
+    expect(screen.getAllByLabelText('amount hidden').map((b) => b.textContent)).toEqual(['***', '***']);
+    expect(screen.queryByText('≈ £8.15')).toBeNull();
+    expect(kv.saved).toMatchObject({ unit: 'fiat', hidden: true });
+    expect(screen.getByText('unit fiat hidden')).toBeTruthy();
+    fireEvent.click(screen.getByText('show'));
+    expect(screen.getByLabelText("8 pounds 15 at today's rate")).toBeTruthy();
+    fireEvent.click(screen.getByText('in msat'));
+    expect(screen.getByLabelText('13,291,204 millisat').textContent).toBe('13,291,204 msat');
     expect(screen.getByText('≈ £8.15')).toBeTruthy();
-    fireEvent.click(screen.getByText('msat on'));
-    expect(kv.saved).toMatchObject({ showMsat: false, view: 'sat' });
-    expect(screen.getByRole('button', { name: '13,291 sat' })).toBeTruthy();
   });
 
-  it('opens in the view the phone kept; a currency with no rate yet draws sat and keeps £, the currency none moves £ to sat', async () => {
-    const kv = memoryViewKv({ view: 'fiat' });
-    const { rerender } = render(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /></With>);
-    expect(await screen.findByRole('button', { name: "8 pounds 15 at today's rate" })).toBeTruthy();
-    rerender(<With kv={kv} fiat={{ currency: 'GBP' }}><Amount msat={13_291_204} /></With>);
-    expect(screen.getByRole('button', { name: '13,291 sat' })).toBeTruthy();
-    expect(kv.saved.view).toBe('fiat');
-    rerender(<With kv={kv} fiat={{ currency: 'none' }}><Amount msat={13_291_204} /></With>);
-    expect(screen.getByRole('button', { name: '13,291 sat' })).toBeTruthy();
-    expect(kv.saved.view).toBe('sat');
-    rerender(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /></With>);
-    expect(screen.getByRole('button', { name: '13,291 sat' })).toBeTruthy();
+  it('is text, not a button: a tap on an amount changes nothing', async () => {
+    const kv = memoryViewKv();
+    render(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} size="large" alt /></With>);
+    const big = await screen.findByLabelText('13,291 sat');
+    expect(screen.queryByRole('button', { name: '13,291 sat' })).toBeNull();
+    fireEvent.click(big);
+    expect(screen.getByLabelText('13,291 sat')).toBeTruthy();
+    expect(kv.saved).toMatchObject({ unit: 'sat', hidden: false });
+  });
+
+  it('opens in the unit and hidden the phone kept', async () => {
+    const kv = memoryViewKv({ unit: 'msat', hidden: true });
+    render(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /><Controls /></With>);
+    expect(await screen.findByText('unit msat hidden')).toBeTruthy();
+    expect(screen.getByLabelText('amount hidden')).toBeTruthy();
+    fireEvent.click(screen.getByText('show'));
+    expect(screen.getByLabelText('13,291,204 millisat')).toBeTruthy();
+  });
+
+  it('keeps an eye press made before the kept values were read, and still reads the unit', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const inner = memoryViewKv({ unit: 'msat', hidden: false });
+    const kv = { ...inner, amountUnit: async () => (await gate, inner.amountUnit()), amountsHidden: async () => (await gate, inner.amountsHidden()) };
+    render(<With kv={kv} fiat={GBP()}><Controls /></With>);
+    fireEvent.click(screen.getByText('hide'));
+    await act(async () => release());
+    expect(await screen.findByText('unit msat hidden')).toBeTruthy();
+    expect(inner.saved.hidden).toBe(true);
+  });
+
+  it('draws sat while £ has no rate yet and keeps £; the currency none moves £ to sat and keeps hidden', async () => {
+    const kv = memoryViewKv({ unit: 'fiat' });
+    const { rerender } = render(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /><Controls /></With>);
+    expect(await screen.findByLabelText("8 pounds 15 at today's rate")).toBeTruthy();
+    rerender(<With kv={kv} fiat={{ currency: 'GBP' }}><Amount msat={13_291_204} /><Controls /></With>);
+    expect(screen.getByLabelText('13,291 sat')).toBeTruthy();
+    expect(screen.getByText('unit fiat')).toBeTruthy();
+    expect(kv.saved.unit).toBe('fiat');
+    fireEvent.click(screen.getByText('hide'));
+    rerender(<With kv={kv} fiat={{ currency: 'none' }}><Amount msat={13_291_204} /><Controls /></With>);
+    expect(screen.getByText('unit sat hidden')).toBeTruthy();
+    expect(kv.saved).toMatchObject({ unit: 'sat', hidden: true });
+    rerender(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /><Controls /></With>);
+    expect(screen.getByLabelText('amount hidden')).toBeTruthy();
   });
 
   it("keeps the last rate while the server can't be read: an old rate is still used", async () => {
-    const kv = memoryViewKv({ view: 'fiat' });
+    const kv = memoryViewKv({ unit: 'fiat' });
     const { rerender } = render(<With kv={kv} fiat={GBP()}><Amount msat={13_291_204} /></With>);
-    await screen.findByRole('button', { name: "8 pounds 15 at today's rate" });
+    await screen.findByLabelText("8 pounds 15 at today's rate");
     rerender(<With kv={kv} fiat={null}><Amount msat={13_291_204} /></With>);
-    expect(screen.getByRole('button', { name: "8 pounds 15 at today's rate" })).toBeTruthy();
+    expect(screen.getByLabelText("8 pounds 15 at today's rate")).toBeTruthy();
   });
 
   it("shows the rate's age once it is over an hour, and not while every amount is hidden", async () => {
     const kv = memoryViewKv();
-    const { rerender } = render(<With kv={kv} fiat={GBP(600)}><RateAgeLine /><Amount msat={1_000} /></With>);
-    await screen.findByRole('button', { name: '1 sat' });
+    const { rerender } = render(<With kv={kv} fiat={GBP(600)}><RateAgeLine /><Amount msat={1_000} /><Controls /></With>);
+    await screen.findByLabelText('1 sat');
     expect(screen.queryByText(/at a rate/)).toBeNull();
-    rerender(<With kv={kv} fiat={GBP(2 * 3600 + 60)}><RateAgeLine /><Amount msat={1_000} /></With>);
+    rerender(<With kv={kv} fiat={GBP(2 * 3600 + 60)}><RateAgeLine /><Amount msat={1_000} /><Controls /></With>);
     expect(screen.getByText('£ at a rate 2 h old')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '1 sat' }));
+    fireEvent.click(screen.getByText('hide'));
     expect(screen.queryByText(/at a rate/)).toBeNull();
   });
 
-  it('draws sat with no rate outside any provider, and a tap there changes nothing', () => {
+  it('draws sat with no rate outside any provider', () => {
     render(<Amount msat={13_291_204} size="large" alt />);
-    fireEvent.click(screen.getByRole('button', { name: '13,291 sat' }));
-    expect(screen.getByRole('button', { name: '13,291 sat' })).toBeTruthy();
+    expect(screen.getByLabelText('13,291 sat')).toBeTruthy();
     expect(screen.queryByText(/≈/)).toBeNull();
   });
 });

@@ -23,7 +23,7 @@ vi.mock('../../ui/lock', () => ({ screenLock: vi.fn(async () => null) }));
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: 'sat', rated: null, fiat: null, showMsat: false, next: () => {}, setShowMsat: () => {},
+    view: 'sat', rated: null, fiat: null, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {},
     typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));

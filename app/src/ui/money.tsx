@@ -49,11 +49,11 @@ export function AccountHeader({ card, msat, note, held }: { card?: ReactNode; ms
 /**
  * An amount in the wallet's view, drawn as Phoenix draws one: the
  * number in the amount's style, its unit (GBP, sat, msat) smaller and muted after it on the same baseline, no unit
- * when hidden. It is a button: a tap moves every amount in the app to the next view; TalkBack reads the figure in
+ * when hidden. It is text: the view is set in Settings and by the Wallet page's eye; TalkBack reads the figure in
  * words. size: large (a balance), mid (Check's figure), row (a list's, right-aligned). sign: '+' or '−' before the
  * number, never on ***. alt: the other figure small under it ("≈ £8.15" under sat or msat, "13,291 sat" under £).
- * force: drawn in this view whatever the app's (Send out, Move and Renew show sat while the view hides); a
- * tap still moves the app's view. incoming: green, as money in. onBand: on the dark title band, in its colours.
+ * force: drawn in this view whatever the app's (Send out, Move and Renew show the unit while amounts are
+ * hidden). incoming: green, as money in. onBand: on the dark title band, in its colours.
  */
 export function Amount({ msat, size = 'row', sign, alt, force, incoming, onBand, struck }: {
   msat: number; size?: 'large' | 'mid' | 'row'; sign?: '+' | '−'; alt?: boolean; force?: ViewKind; incoming?: boolean; onBand?: boolean;
@@ -61,7 +61,7 @@ export function Amount({ msat, size = 'row', sign, alt, force, incoming, onBand,
   struck?: boolean;
 }) {
   const s = useStyles(makeStyles);
-  const { view, rated, next } = useAmountView();
+  const { view, rated } = useAmountView();
   const v = force ?? view;
   const a = shown(msat, v, rated);
   const signed = a.unit === '' ? '' : (sign ?? '');
@@ -72,10 +72,7 @@ export function Amount({ msat, size = 'row', sign, alt, force, incoming, onBand,
   return (
     <View style={size === 'row' ? layout.amountRow : undefined}>
       <Text
-        accessibilityRole="button"
         accessibilityLabel={said}
-        accessibilityHint="Double-tap for the next view"
-        onPress={next}
         style={[figure, incoming && !struck && s.amountIn, onBand && s.onBand, struck && s.struck]}
       >
         {signed}
@@ -181,7 +178,7 @@ export function HistoryList({ days, onOpen }: { days: HistoryDay[]; onOpen?: (id
                     </Text>
                   )}
                 </View>
-                {/* The figure in the app's view (a tap moves it on); in £ view it is today's value, marked "now". */}
+                {/* The figure in the app's view; in £ view it is today's value, marked "now". */}
                 <View style={layout.entryEnd}>
                   <Amount msat={r.msat} size="row" sign={r.sign === '' ? undefined : r.sign} incoming={r.incoming} struck={r.refunded} />
                   {r.now && <Text style={s.now}>now</Text>}
@@ -307,6 +304,7 @@ export function FromLine({ label, figure }: { label: string; figure: string }) {
  */
 export function ReadBack({ rows, force }: { rows: ReadRow[]; force?: ViewKind }) {
   const s = useStyles(makeStyles);
+  const { view, rated } = useAmountView();
   return (
     <View style={s.readBack}>
       {rows.map(([label, value]) =>
@@ -316,8 +314,8 @@ export function ReadBack({ rows, force }: { rows: ReadRow[]; force?: ViewKind })
             <Text style={s.readValue}>{value}</Text>
           </View>
         ) : (
-          // Not one element: the amount is its own button, which moves the view.
-          <View key={label} style={layout.readRow}>
+          // One element, as a string row: the amount is text.
+          <View key={label} style={layout.readRow} accessible accessibilityLabel={`${label}: ${shown(value.msat, force ?? view, rated).spoken}`}>
             <Text style={s.readLabel}>{label}</Text>
             <View style={layout.readAmount}>
               <Amount msat={value.msat} size="mid" alt force={force} />

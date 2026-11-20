@@ -29,7 +29,7 @@ const look: { view: View; rated: Rated | null } = { view: 'sat', rated: null };
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: look.view, rated: look.rated, fiat: look.rated, showMsat: false, next: () => {}, setShowMsat: () => {},
+    view: look.view, rated: look.rated, fiat: look.rated, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {},
     typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));
