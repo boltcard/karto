@@ -7,9 +7,13 @@ COPY ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --chown=65532:65532 data/ /data/
 COPY cardd /cardd
 USER 65532:65532
+# SQLITE_TMPDIR: SQLite's temporary files (a snapshot's VACUUM of a database
+# past its 2 MB page cache, a large sort) need a writable directory, and /data
+# is the image's only one: without it they fail with "disk I/O error (6410)".
 ENV CARDD_DB=/data/cardd.db \
     CARDD_ISSUER_KEY_FILE=/data/issuer.key \
-    CARDD_ADDR=:8080
+    CARDD_ADDR=:8080 \
+    SQLITE_TMPDIR=/data
 EXPOSE 8080
 HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=6 CMD ["/cardd", "healthcheck"]
 ENTRYPOINT ["/cardd"]

@@ -376,7 +376,7 @@ snap=$(./install.sh final-snapshot) || fail "final-snapshot"
 version=$(echo "$snap" | sed -n 's/^{"version":\([0-9]*\),"created":[0-9]*}$/\1/p')
 [ -n "$version" ] || fail "final-snapshot printed '$snap'"
 docker compose cp "cardd:/data/backups/$version.age" "$work/final.age" >/dev/null 2>&1 || fail "no snapshot $version"
-(cd "$root/server" && CARDD_BACKUP_TEST_FILE="$work/final.age" CARDD_BACKUP_TEST_PLAIN="$work/final.db" CARDD_BACKUP_TEST_OWE=1 go test -count=1 -run TestAStackSnapshotDecrypts ./internal/backup/) >/dev/null ||
+(cd "$root/server" && CARDD_BACKUP_TEST_FILE="$work/final.age" CARDD_BACKUP_TEST_PLAIN="$work/final.db" CARDD_BACKUP_TEST_OWE=1 CARDD_BACKUP_TEST_BIG=1 go test -count=1 -run TestAStackSnapshotDecrypts ./internal/backup/) >/dev/null ||
 	fail "the final snapshot doesn't open with the backup key"
 
 echo "== restore: bad arguments, and never over a database it didn't restore"
@@ -439,6 +439,9 @@ CARDD_RESTORE_CHANNEL_WAIT=10s ./install.sh up || fail "up after the restore"
 [ "$(./cardd-ctl meta get restore.reconcile)" = pending ] || fail "restore.reconcile isn't pending"
 [ "$(./cardd-ctl meta get vm.id)" = 1004 ] || fail "vm.id isn't the new VM's"
 [ "$(./cardd-ctl device list)" = "$(printf 'b18b86ce1389e46d\ttest\tactive')" ] || fail "this phone wasn't re-activated: $(./cardd-ctl device list)"
+# The restored copy is over 2 MB (CARDD_BACKUP_TEST_BIG): its snapshot's VACUUM needs a temporary file, and the
+# container's only writable place is /data (Dockerfile.cardd's SQLITE_TMPDIR).
+./cardd-ctl backup now >/dev/null || fail "no snapshot of a database over 2 MB: SQLite had nowhere for its temporary file"
 pub /health | grep -q '"alert"' || fail "spending isn't paused while the restore is pending"
 if out=$(./cardd-ctl ledger reconcile 2>&1); then fail "set the books while the restore is pending"; fi
 echo "$out" | grep -q 'after a restore' || fail "ledger reconcile said '$out'"
