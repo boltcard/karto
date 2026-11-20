@@ -46,9 +46,13 @@ describe('AppStore', () => {
     /** A connection that can be made to fail every call, as expo-sqlite's did once its native binding was gone. */
     const killable = (path: string) => {
       const db = nodeSqlite(path);
-      const c = { dead: false, closed: 0 };
+      const c = { dead: false, hang: false, closed: 0 };
       const live = <A extends unknown[], R>(f: (...a: A) => Promise<R>) => (...a: A) =>
-        c.dead ? Promise.reject(new Error("Call to function 'NativeDatabase.prepareAsync' has been rejected.")) : f(...a);
+        c.hang
+          ? new Promise<R>(() => {})
+          : c.dead
+            ? Promise.reject(new Error("Call to function 'NativeDatabase.prepareAsync' has been rejected."))
+            : f(...a);
       return Object.assign(c, {
         execAsync: live(db.execAsync),
         runAsync: live(db.runAsync),
@@ -104,6 +108,31 @@ describe('AppStore', () => {
       expect(opened).toHaveLength(1);
       expect(opened[0].closed).toBe(0);
       expect(await store.reconnect(open)).toBe(false); // done, and the new one answers
+    });
+
+    // The store's steps on a connection run one at a time (store.ts step): a failed one doesn't stop the next.
+    it('goes on to the next step after one that failed', async () => {
+      const first = killable(file());
+      const store = await AppStore.open(first);
+      first.dead = true;
+      await expect(store.cards()).rejects.toThrow('NativeDatabase.prepareAsync');
+      first.dead = false;
+      expect(await store.cards()).toEqual({});
+    });
+
+    // A step that never ends holds up the steps after it on its connection, but not Try again nor the new connection.
+    it("reads through the new connection while a step on the old one never ends", async () => {
+      const path = file();
+      const first = killable(path);
+      const store = await AppStore.open(first);
+      await store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'active' });
+      first.hang = true;
+      void store.cards();
+      await new Promise((r) => setTimeout(r, 0)); // the step has begun, and won't end
+      first.hang = false;
+      first.dead = true;
+      expect(await store.reconnect(async () => killable(path))).toBe(true);
+      expect(Object.keys(await store.cards())).toEqual(['c1']);
     });
 
     it('keeps the old connection, and throws, when the new one fails', async () => {
@@ -430,18 +459,53 @@ describe("AppStore beside the background job's connection", () => {
        const db = new DatabaseSync(workerData.path);
        db.exec("PRAGMA busy_timeout = 5000; BEGIN IMMEDIATE; INSERT OR REPLACE INTO kv (key, value) VALUES ('job', '1')");
        parentPort.postMessage('holding');
-       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
+       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
        db.exec('COMMIT');
        db.close();`,
       { eval: true, workerData: { path } },
     );
     try {
-      await new Promise((r) => job.once('message', r));
+      await new Promise((ok, fail) => {
+        job.once('message', ok);
+        job.once('error', fail);
+      });
       await Promise.all([store.cards(), store.dismissRemovedPhoneCards()]);
       expect(await store.removedPhoneCards()).toEqual([]);
     } finally {
       await job.terminate();
     }
+  });
+
+  // A save that changes nothing writes nothing: no commit for the job's connection to wait on, every failed status check.
+  it('writes nothing when a save changes nothing', async () => {
+    const db = nodeSqlite();
+    let writes = 0;
+    const counted = { ...db, runAsync: (sql: string, ...p: (string | number | null)[]) => (writes++, db.runAsync(sql, ...p)) };
+    const store = await AppStore.open(counted);
+    await store.noteCarddAnswered(false, 1);
+    await store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'wiping', pending: 'wipe' });
+    const before = writes;
+    await store.noteCarddAnswered(false, 2);
+    await store.saveCard({ id: 'c1', version: 1, name: 'Daily', state: 'active' }, { unlessPending: true });
+    expect(writes).toBe(before);
+    expect(await store.carddUnreachableSince()).toBe(1);
+    expect((await store.cards()).c1?.pending).toBe('wipe');
+  });
+
+  // The wait first (the switch to WAL then waits for the job's connection too), deleted data overwritten (photos,
+  // notes, old card lists don't linger in free pages), and on an iPhone each commit flushed past the drive's cache.
+  it('opens each connection waiting first, in WAL, overwriting what it deletes and flushing fully', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'cardapp-')), 'app.db');
+    const db = nodeSqlite(path);
+    const sent: string[] = [];
+    await AppStore.open({ ...db, execAsync: (sql: string) => (sent.push(sql), db.execAsync(sql)) });
+    const first = sent.join('\n');
+    expect(first.indexOf('busy_timeout')).toBeGreaterThanOrEqual(0);
+    expect(first.indexOf('busy_timeout')).toBeLessThan(first.indexOf('journal_mode'));
+    expect(await db.getFirstAsync('PRAGMA journal_mode')).toEqual({ journal_mode: 'wal' });
+    expect(await db.getFirstAsync('PRAGMA busy_timeout')).toEqual({ timeout: 5000 });
+    expect(await db.getFirstAsync('PRAGMA secure_delete')).toEqual({ secure_delete: 1 });
+    expect(await db.getFirstAsync('PRAGMA fullfsync')).toEqual({ fullfsync: 1 });
   });
 
   // A read and the write after it are one step: two saves at once keep both.

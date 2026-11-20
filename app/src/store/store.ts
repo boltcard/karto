@@ -119,9 +119,15 @@ export class AppStore {
 
   private static async prepare(db: SqlDb): Promise<void> {
     // busy_timeout: the background job writes on a connection of its own (backup/jobDb.ts), and a write that meets
-    // the other connection's waits for it, up to 5 s, rather than failing at once with "database is locked".
-    await db.execAsync(`PRAGMA journal_mode = WAL;
-      PRAGMA busy_timeout = 5000;
+    // the other connection's waits for it, up to 5 s, rather than failing at once with "database is locked". First,
+    // so the switch to WAL waits too (the other connection closing holds the file for its last checkpoint).
+    // secure_delete: what is deleted or replaced (a dropped photo, an old card list, a note) is overwritten, not left
+    // in the file's free pages. fullfsync: on an iPhone each commit is flushed past the drive's cache, so a pending
+    // wipe's record outlives a power cut (Android ignores it).
+    await db.execAsync(`PRAGMA busy_timeout = 5000;
+      PRAGMA journal_mode = WAL;
+      PRAGMA secure_delete = ON;
+      PRAGMA fullfsync = ON;
       CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL);`);
   }
 
@@ -192,9 +198,16 @@ export class AppStore {
     return this.step((db) => write(db, key, value));
   }
 
-  /** A value read and its new value written as one step: two at once each see the other's write. */
+  /**
+   * A value read and its new value written as one step: two on this store at once each see the other's write (the
+   * job's store, on its own connection, is not in this queue). next giving back what it was handed writes nothing.
+   */
   private update<T>(key: string, next: (old: T | null) => unknown): Promise<void> {
-    return this.step(async (db) => write(db, key, next(await read<T>(db, key))));
+    return this.step(async (db) => {
+      const old = await read<T>(db, key);
+      const value = next(old);
+      if (value !== old) await write(db, key, value);
+    });
   }
 
   /** The saved setup, its finished steps read as this app knows them (savedSteps: an older app's 'system'). */

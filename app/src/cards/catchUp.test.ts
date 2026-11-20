@@ -27,12 +27,18 @@ describe('rememberCards beside a wipe', () => {
   it('leaves a wipe saved while the list is being kept', async () => {
     const cache = await AppStore.open(nodeSqlite());
     const a = 'a'.repeat(32);
+    const b = 'b'.repeat(32);
     const wiping = { id: a, version: 1, name: 'Daily', state: 'wiping' as const, pending: 'wipe' as const };
+    // The wipe of a lands between the list's save of b and its save of a.
     await Promise.all([
-      rememberCards(cache, [{ id: a, version: 1, state: 'active', counter: 4, name: 'Daily', created: 0, updated: 0 }]),
+      rememberCards(cache, [
+        { id: b, version: 1, state: 'active', counter: 2, name: 'Kids', created: 0, updated: 0 },
+        { id: a, version: 1, state: 'active', counter: 4, name: 'Daily', created: 0, updated: 0 },
+      ]),
       cache.saveCard(wiping),
     ]);
     expect((await cache.cards())[a]).toEqual(wiping);
+    expect((await cache.cards())[b]?.state).toBe('active');
   });
 });
 

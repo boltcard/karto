@@ -41,7 +41,8 @@ export function expoLikeSqlite(path: string, o: { afterStep?: () => void } = {})
       rows.return?.();
       return first.done ? null : (first.value as T);
     },
-    // Its read is open from the first row (execute) to the native getAll's end, as expo-sqlite's getAllAsync.
+    // Its read is open from the first row (execute) across a yield, as expo-sqlite's getAllAsync (which holds it a
+    // little longer: until its finalize, after the native getAll).
     getAllAsync: async <T>(sql: string, ...params: (string | number | null)[]) => {
       const rows = db.prepare(sql).iterate(...params);
       const first = rows.next();
