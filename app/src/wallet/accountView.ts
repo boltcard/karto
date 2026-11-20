@@ -5,7 +5,7 @@ import type { CardState, HostingStatus, WalletCard } from '../cardd/client';
 import { shortDate, thousands, whenText } from '../money/format';
 import { minorText, type Rated } from '../money/fiat';
 import { coversText, hostingWarnings, paidUntil } from '../money/hosting';
-import { confirmView, viewText, type View } from '../money/view';
+import { viewText, type Unit, type View } from '../money/view';
 import type { RowTone } from '../ui/look';
 
 const STATE: Record<string, string> = { active: 'Active', frozen: 'Frozen', programming: 'Being added', wiping: 'Being wiped' };
@@ -89,10 +89,10 @@ export function wipeLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'> | undef
  * The red I no longer have this card row's line, and its confirm's: where the balance goes (in sat while amounts
  * are hidden, as a wipe's), and that taps of the card are refused; off while a payment holds some of it.
  */
-export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, v: View = 'sat', r: Rated | null = null): { line: string; disabled: boolean } {
+export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, unit: Unit = 'sat', r: Rated | null = null): { line: string; disabled: boolean } {
   if (c.heldMsat > 0) return { line: 'Wait for the payment in progress', disabled: true };
   const refused = 'taps of it are refused.';
-  return { line: c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, confirmView(v), r)} move to Pool; ${refused}` : `Taps of it are refused.`, disabled: false };
+  return { line: c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, unit, r)} move to Pool; ${refused}` : `Taps of it are refused.`, disabled: false };
 }
 
 /** A card given up on its page, for the Wallet page: its name, the balance that moved to Pool, and whether the server's finish is still to come (the catch-up makes it). */
@@ -107,12 +107,12 @@ export function gaveUpNotice(g: readonly GaveUp[], v: View = 'sat', r: Rated | n
 }
 
 /** The More sheet's rows for a card. hasPhoto: the phone holds its photo. Wipe's line confirms money: in sat while ***. */
-export function moreRows(c: Pick<WalletCard, 'state' | 'version' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, hasPhoto: boolean, v: View = 'sat', r: Rated | null = null): MoreRows {
+export function moreRows(c: Pick<WalletCard, 'state' | 'version' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, hasPhoto: boolean, v: View = 'sat', r: Rated | null = null, unit: Unit = v === 'hidden' ? 'sat' : v): MoreRows {
   return {
     limits: limitsLine(c, v),
     photo: hasPhoto ? 'Take a new picture of the card' : 'Take a picture of the card',
-    wipe: wipeLine(c, confirmView(v), r),
-    giveUp: giveUpLine(c, v, r),
+    wipe: wipeLine(c, unit, r),
+    giveUp: giveUpLine(c, unit, r),
     foot: `${STATE[c.state] ?? c.state} · version ${c.version}`,
   };
 }

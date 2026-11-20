@@ -300,7 +300,7 @@ export function FromLine({ label, figure }: { label: string; figure: string }) {
 /**
  * Label and value lines in a panel: Check's read-back (money/steps.ts sendReadBack, moveReadBack), a card's limits on
  * its page, the pay screen's balance. A value that is an amount is drawn as one, with the other figure under it,
- * in force's view (Check's confirmView: sat while ***).
+ * in force's view (Check's: the chosen unit, also while amounts are hidden).
  */
 export function ReadBack({ rows, force }: { rows: ReadRow[]; force?: ViewKind }) {
   const s = useStyles(makeStyles);

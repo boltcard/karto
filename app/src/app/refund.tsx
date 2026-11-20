@@ -13,7 +13,7 @@ import { requestId } from '../money/requests';
 import { scanSlot } from '../money/scanSlot';
 import { feeEstimateSat, followSend } from '../money/send';
 import type { ReadRow } from '../money/steps';
-import { aboutText, confirmView, viewText } from '../money/view';
+import { aboutText, viewText } from '../money/view';
 import { localTime } from '../money/words';
 import { fiatText } from '../money/fiat';
 import { useCardDeps } from '../services/server';
@@ -36,7 +36,7 @@ export default function Refund() {
   const account = params.account ?? 'shop';
   const txId = Number(params.tx);
   const look = useAmountView();
-  const cv = confirmView(look.view);
+  const cv = look.unit;
   const r = look.rated;
   const [line, setLine] = useState<TxDetail | null>(null);
   const [wallet, setWallet] = useState<Wallet | null>(null);

@@ -7,7 +7,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { AppState, StyleSheet, Vibration, View } from 'react-native';
 import { availableMsat } from '../money/format';
-import { confirmView } from '../money/view';
 import { Pay, type PayView } from '../phoneCard/pay';
 import { useCardDeps, useServer } from '../services/server';
 import { useRouteGuard, useServices } from '../services/services';
@@ -28,7 +27,7 @@ export default function PayScreen() {
   const { snap, watch } = useServer();
   // The pay screen confirms money: its amounts in the app's view, in sat while *** (rule 5).
   const look = useAmountView();
-  const cv = confirmView(look.view);
+  const cv = look.unit;
   const [view, setView] = useState<PayView>({ at: 'opening' });
   const [error, setError] = useState<string | null>(null);
   /** Pay again: the screen starts over, the lock asked afresh. */

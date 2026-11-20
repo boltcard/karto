@@ -4,7 +4,7 @@
 import { CarddError, type CardState, type WalletCard } from '../cardd/client';
 import { isNetworkFailure } from '../lightning/lightning';
 import { minorText, type Rated } from '../money/fiat';
-import { confirmView, feeViewText, viewText, type View } from '../money/view';
+import { feeViewText, viewText, type Unit, type View } from '../money/view';
 import { thousands } from '../money/words';
 import type { NfcState } from '../native/nfc';
 import { CounterSpent, phoneCardId, phonesCardsWide } from '../phoneCard/id';
@@ -78,7 +78,7 @@ type Paid = Extract<PayView, { at: 'paid' }>;
 type Over = Extract<PayView, { at: 'over' }>;
 type Cant = Extract<PayView, { at: 'cant' }>;
 
-/** The pay screen while the phone is a card no till has read. warning: the amber panel, in the small line's place. mode: confirmView's view. */
+/** The pay screen while the phone is a card no till has read. warning: the amber panel, in the small line's place. mode: the unit, also while amounts are hidden. */
 export function readyWords(v: Ready, card: { name: string; availableMsat: number | null; perTapSat: number | null; limits?: WalletCard['limits'] }, mode: View = 'sat', r: Rated | null = null) {
   // A limit set in a currency is said in it.
   const upTo = card.limits ? minorText(card.limits.perTapMinor, card.limits.currency) : card.perTapSat === null ? null : `${thousands(card.perTapSat)} sat`;
@@ -147,11 +147,11 @@ const STATE: Record<string, string> = { active: 'Active', frozen: 'Frozen', prog
  * card, with the wipe's own line about the balance and off as that is. No photo rows. Another phone's card has no
  * Remove: the wallet removes that by itself (phoneCard/keep.ts).
  */
-export function phoneMoreRows(c: Pick<WalletCard, 'state' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, own: boolean, mode: View = 'sat', r: Rated | null = null): {
+export function phoneMoreRows(c: Pick<WalletCard, 'state' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, own: boolean, mode: View = 'sat', r: Rated | null = null, unit: Unit = mode === 'hidden' ? 'sat' : mode): {
   limits: string; remove: { line: string; disabled: boolean } | null; foot: string;
 } {
-  const wipe = wipeLine(c, confirmView(mode), r);
-  const line = wipe.disabled ? wipe.line : c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, confirmView(mode), r)} move to Pool; this phone stops being a card.` : 'This phone stops being a card.';
+  const wipe = wipeLine(c, unit, r);
+  const line = wipe.disabled ? wipe.line : c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, unit, r)} move to Pool; this phone stops being a card.` : 'This phone stops being a card.';
   return {
     limits: limitsLine(c, mode),
     remove: own ? { line, disabled: wipe.disabled } : null,

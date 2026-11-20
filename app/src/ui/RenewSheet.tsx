@@ -9,7 +9,7 @@ import { moneyError } from '../money/format';
 import { daysText, hostingSyncer, RENEW_PRESETS, renewDays, renewedText, renewProblem, renewSat } from '../money/hosting';
 import { requestId, runRequest } from '../money/requests';
 import { feeEstimateSat, WATCH_SEND_MS } from '../money/send';
-import { aboutText, confirmView, viewText } from '../money/view';
+import { aboutText, viewText } from '../money/view';
 import { syncHostingIfDue, useServices } from '../services/services';
 import { useAmountView } from './amountView';
 import { screenLock } from './lock';
@@ -37,7 +37,7 @@ export function RenewSheet({ deps, status, load, availableMsat, onChanged, off, 
   const [state, setState] = useState<State>({ at: 'ready' });
   // Renew shows its amounts in the app's view, in sat while ***: the price is confirmed here.
   const look = useAmountView();
-  const cv = confirmView(look.view);
+  const cv = look.unit;
 
   const days = renewDays(typed);
   const sat = days && status?.synced ? renewSat(days, status.msatPerDay) : null;

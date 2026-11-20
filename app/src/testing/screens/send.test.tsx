@@ -11,7 +11,7 @@ import Send from '../../app/send';
 import type { CardDeps } from '../../cards/deps';
 import type { Rated } from '../../money/fiat';
 import { scanSlot } from '../../money/scanSlot';
-import type { View } from '../../money/view';
+import type { Unit, View } from '../../money/view';
 import { screenLock } from '../../ui/lock';
 import { cardWorld } from '../cardWorld';
 import { refocus } from './focus';
@@ -34,12 +34,12 @@ vi.mock('../../services/server', () => ({
 vi.mock('../../services/services', () => ({ useRouteGuard: () => true }));
 vi.mock('../../ui/lock', () => ({ screenLock: vi.fn(async () => null) }));
 
-/** The app's view, as the screen's hook gives it (ui/amountView.tsx): sat, no rate, unless a test sets them. */
-const look: { view: View; rated: Rated | null; typingUnit: 'fiat' | 'sat' } = { view: 'sat', rated: null, typingUnit: 'sat' };
+/** The app's view, as the screen's hook gives it (ui/amountView.tsx): sat, no rate, unless a test sets them. unit: the one kept under ***. */
+const look: { view: View; unit: Unit; rated: Rated | null; typingUnit: 'fiat' | 'sat' } = { view: 'sat', unit: 'sat', rated: null, typingUnit: 'sat' };
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: look.view, rated: look.rated, fiat: look.rated, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {},
+    view: look.view, rated: look.rated, fiat: look.rated, unit: look.view === 'hidden' ? look.unit : look.view, hidden: look.view === 'hidden', setUnit: () => {}, setHidden: () => {},
     typingUnit: look.typingUnit, setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));
@@ -493,6 +493,23 @@ describe('Send out typed in pounds', () => {
       expect(world.cardd.balances.get('pool')).toBe(91_850_000);
     } finally {
       look.view = 'sat';
+    }
+  });
+
+  it('confirms in £ while amounts are hidden with £ chosen: "Send £5.00"', async () => {
+    await open();
+    look.view = 'hidden';
+    look.unit = 'fiat';
+    try {
+      rerender(<Send />);
+      fireEvent.change(field(), { target: { value: 'alice@example.com' } });
+      press('Next');
+      fireEvent.change(await screen.findByPlaceholderText('Amount in £'), { target: { value: '5' } });
+      press('Next');
+      expect(await screen.findByRole('button', { name: 'Send £5.00' })).toBeTruthy();
+    } finally {
+      look.view = 'sat';
+      look.unit = 'sat';
     }
   });
 

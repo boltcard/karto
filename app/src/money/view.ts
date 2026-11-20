@@ -66,12 +66,6 @@ export function ageLine(r: Rated | null, v: View, nowS: number): string | null {
   return age && `${symbol(r.currency).trim()} at a rate ${age}`;
 }
 
-/**
- * The view where money is being confirmed: Send out, Move, Renew, a wipe and the pay screen show their
- * amounts once you are on them, so *** shows sat there; the other views stand.
- */
-export const confirmView = (v: View): View => (v === 'hidden' ? 'sat' : v);
-
 /** An estimate in the view: "about 9 sat", "about £28.99"; one already under the smallest unit stays "under £0.01". */
 export function aboutText(msat: number, v: View, r: Rated | null): string {
   const t = viewText(msat, v, r);

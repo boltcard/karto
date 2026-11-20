@@ -10,7 +10,7 @@ import type { TapCheck } from '../cards/check';
 import { sheetLink } from '../cards/hold';
 import type { Identity } from '../cards/identify';
 import { ACTION_LABELS, sheetFor, tapCheckText, type SheetAction } from '../cards/labels';
-import { confirmView, viewText } from '../money/view';
+import { viewText } from '../money/view';
 import { wipeLine } from '../wallet/accountView';
 import { useAmountView } from './amountView';
 import { CardOutline } from './cards';
@@ -27,7 +27,7 @@ export function TapSheet({ identity, check, colour, balanceMsat, card, photo, on
   const look = useAmountView();
   const s = sheetFor(identity);
   // The wipe row's money: a wipe confirms money, so in sat while ***.
-  const wipe = wipeLine(card, confirmView(look.view), look.rated);
+  const wipe = wipeLine(card, look.unit, look.rated);
   const go = (a: SheetAction | 'wipe') => {
     onClose();
     if (a === 'add') router.push('/card-add');

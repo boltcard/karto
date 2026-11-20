@@ -232,7 +232,7 @@ export const renewSat = (days: number, msatPerDay: number) => Math.ceil((days * 
 
 export const daysText = (d: number) => `${d} ${d === 1 ? 'day' : 'days'}`;
 
-/** Renew now's result: what was paid, for how long, and the fee, in the view Renew shows (confirmView's). */
+/** Renew now's result: what was paid, for how long, and the fee, in the unit Renew shows (the chosen one, also while amounts are hidden). */
 export const renewedText = (amountMsat: number, days: number, feeMsat: number, v: View = 'sat', r: Rated | null = null) =>
   `Renewed: ${viewText(amountMsat, v, r)} for ${daysText(days)} (${feeViewText(feeMsat, v, r)}).`;
 

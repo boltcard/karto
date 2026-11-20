@@ -29,7 +29,6 @@ import { useRouteGuard, useServices } from '../services/services';
 import { HoldPicture } from '../ui/cards';
 import { screenLock, useLockKind } from '../ui/lock';
 import { lockName } from '../ui/lockName';
-import { confirmView } from '../money/view';
 import { useAmountView } from '../ui/amountView';
 import { ResultPage, StepBar } from '../ui/money';
 import { DoneFold, Progress } from '../ui/setup';
@@ -111,7 +110,7 @@ export default function CardScreen() {
   // The page before the lock: none for a re-point, which asks for none.
   const intro =
     op === 'wipe'
-      ? { ...wipeIntro({ name, state: row?.state, balanceMsat, unreachable: snap.unreachable, lock: lockName(lock) }, confirmView(look.view), look.rated), needs: 'wiping a card', button: 'Unlock to wipe' }
+      ? { ...wipeIntro({ name, state: row?.state, balanceMsat, unreachable: snap.unreachable, lock: lockName(lock) }, look.unit, look.rated), needs: 'wiping a card', button: 'Unlock to wipe' }
       : op === 'repoint'
         ? null
         : { ...addIntro({ op, name, lock: lockName(lock) }), needs: 'adding a card', button: 'Unlock to add' };
@@ -274,7 +273,7 @@ export default function CardScreen() {
   const bar = op !== 'wipe' && op !== 'repoint' && <StepBar names={ADD_BAR} at={1} />;
 
   if (outcome) {
-    const r = holdResult(outcome, confirmView(look.view), look.rated);
+    const r = holdResult(outcome, look.unit, look.rated);
     const onDone = () => {
       if (r.next === 'photo' && added) router.replace({ pathname: '/card-photo', params: { id: added.id, step: r.step, name: added.name } });
       else toWallet();

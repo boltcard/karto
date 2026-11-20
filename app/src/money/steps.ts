@@ -158,7 +158,7 @@ const within = (a: MoveAccount) => `${a.card ? 'on' : 'in'} ${a.name}`;
 export const moveLock = (to: MoveAccount, title: string, ownPhoneCard: string | null = null): { prompt: string; needs: string } | null =>
   to.card && to.id !== ownPhoneCard ? { prompt: title, needs: 'moving money onto a card' } : null;
 
-/** "13,292 sat available on Daily card.", "£29.76 available in Pool.": in the view Move shows (confirmView's). */
+/** "13,292 sat available on Daily card.", "£29.76 available in Pool.": in the unit Move shows (the chosen one, also while amounts are hidden). */
 export const moveAvailable = (a: MoveAccount, v: View = 'sat', r: Rated | null = null): string => `${viewText(a.availableMsat, v, r)} available ${within(a)}.`;
 
 /** The Amount step's panel: where the money goes. An invoice with no description has an empty value: its label stands alone. */
