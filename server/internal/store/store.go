@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -305,6 +306,9 @@ type Store struct {
 
 // Open opens or creates the database at path and applies migrations.
 func Open(path string) (*Store, error) {
+	if err := ownersAlone(path); err != nil {
+		return nil, err
+	}
 	// _txlock=immediate: every transaction takes the write lock when it
 	// begins, so a second process (cardd-ctl next to cardd serve) waits on
 	// busy_timeout instead of failing with SQLITE_BUSY mid-transaction.
@@ -325,6 +329,25 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// ownersAlone makes the database at path its owner's alone: a new one is
+// made 0600 here, before SQLite makes it 0644, and SQLite gives its -wal and
+// -shm the database's mode. An older one, made 0644, is brought to 0600 with
+// any -wal and -shm a crash left. Every cardd process runs as the files'
+// owner, so that can't fail; if it ever does, cardd runs on as before.
+func ownersAlone(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	f.Close()
+	for _, p := range []string{path, path + "-wal", path + "-shm"} {
+		if fi, err := os.Stat(p); err == nil && fi.Mode().Perm()&0o077 != 0 {
+			os.Chmod(p, fi.Mode().Perm()&0o700)
+		}
+	}
+	return nil
 }
 
 // ownTables are the tables (or, for a migration that makes none, an index)
