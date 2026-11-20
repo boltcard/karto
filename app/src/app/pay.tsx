@@ -25,7 +25,7 @@ export default function PayScreen() {
   const sv = useServices();
   const deps = useCardDeps();
   const { snap, watch } = useServer();
-  // The pay screen confirms money: its amounts in the app's view, in sat while *** (rule 5).
+  // The pay screen confirms money: its amounts in the app's view, in the chosen unit while *** (rule 5).
   const look = useAmountView();
   const cv = look.unit;
   const [view, setView] = useState<PayView>({ at: 'opening' });

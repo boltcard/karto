@@ -45,7 +45,7 @@ export default function Move() {
   // the currency becomes whole sats there, once; Check and the move carry those sats.
   const look = useAmountView();
   const { rated, typingUnit } = look;
-  // Move shows its amounts in the app's view, and in sat while it is *** (rule 5): here money is being confirmed.
+  // Move shows its amounts in the app's view, and in the chosen unit while it is *** (rule 5): here money is being confirmed.
   const cv = look.unit;
   const [taken, setTaken] = useState<number | null>(null);
 

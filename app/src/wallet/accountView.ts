@@ -86,7 +86,7 @@ export function wipeLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'> | undef
 }
 
 /**
- * The red I no longer have this card row's line, and its confirm's: where the balance goes (in sat while amounts
+ * The red I no longer have this card row's line, and its confirm's: where the balance goes (in the chosen unit while amounts
  * are hidden, as a wipe's), and that taps of the card are refused; off while a payment holds some of it.
  */
 export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, unit: Unit = 'sat', r: Rated | null = null): { line: string; disabled: boolean } {
@@ -106,7 +106,7 @@ export function gaveUpNotice(g: readonly GaveUp[], v: View = 'sat', r: Rated | n
   });
 }
 
-/** The More sheet's rows for a card. hasPhoto: the phone holds its photo. Wipe's line confirms money: in sat while ***. */
+/** The More sheet's rows for a card. hasPhoto: the phone holds its photo. Wipe's line confirms money: in the chosen unit while *** (unit; sat when not given and hidden). */
 export function moreRows(c: Pick<WalletCard, 'state' | 'version' | 'perTapSat' | 'dailySat' | 'limits' | 'balanceMsat' | 'heldMsat'>, hasPhoto: boolean, v: View = 'sat', r: Rated | null = null, unit: Unit = v === 'hidden' ? 'sat' : v): MoreRows {
   return {
     limits: limitsLine(c, v),

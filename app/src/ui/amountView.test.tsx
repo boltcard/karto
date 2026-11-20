@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 import type { CurrencyCode, Fiat } from '../money/fiat';
 import { memoryViewKv } from '../testing/viewKv';
 import { AmountViewWith, useAmountView, type ViewKv } from './amountView';
-import { Amount, RateAgeLine } from './money';
+import { Amount, RateAgeLine, ReadBack } from './money';
 
 const nowS = () => Math.floor(Date.now() / 1000);
 /** The server's pound at mempool's price of 15 Oct 2026, age seconds old. */
@@ -128,6 +128,11 @@ describe('Amount and the view', () => {
     expect(screen.getByText('£ at a rate 2 h old')).toBeTruthy();
     fireEvent.click(screen.getByText('hide'));
     expect(screen.queryByText(/at a rate/)).toBeNull();
+  });
+
+  it("reads a read-back row as one element: its label, the figure and the other figure under it", async () => {
+    render(<With kv={memoryViewKv()} fiat={GBP()}><ReadBack rows={[['Amount', { msat: 13_291_204 }]]} /></With>);
+    expect(await screen.findByLabelText('Amount: 13,291 sat, ≈ £8.15')).toBeTruthy();
   });
 
   it('draws sat with no rate outside any provider', () => {
