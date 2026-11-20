@@ -26,7 +26,7 @@ export function TapSheet({ identity, check, colour, balanceMsat, card, photo, on
 }) {
   const look = useAmountView();
   const s = sheetFor(identity);
-  // The wipe row's money: a wipe confirms money, so in sat while ***.
+  // The wipe row's money: a wipe confirms money, so in the chosen unit while ***.
   const wipe = wipeLine(card, look.unit, look.rated);
   const go = (a: SheetAction | 'wipe') => {
     onClose();

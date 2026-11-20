@@ -4,7 +4,7 @@
 // historyRows, money/steps.ts, wallet/accountView.ts).
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View, type TextInputProps } from 'react-native';
-import { currencyOf, symbol, typedFiatLine, type CurrencyCode } from '../money/fiat';
+import { currencyOf, symbol, typedFiatLine, type CurrencyCode, type Rated } from '../money/fiat';
 import { convertTyped, type HistoryDay } from '../money/format';
 import type { ProofRow } from '../money/payment';
 import { barLabel, type ReadRow } from '../money/steps';
@@ -297,6 +297,12 @@ export function FromLine({ label, figure }: { label: string; figure: string }) {
   );
 }
 
+/** A read-back amount row as a screen reader hears it: "Amount: 13,291 sat, ≈ £8.15", the other figure too. */
+const readAmountLabel = (label: string, msat: number, v: ViewKind, r: Rated | null) => {
+  const under = altText(msat, v, r);
+  return `${label}: ${shown(msat, v, r).spoken}${under ? `, ${under}` : ''}`;
+};
+
 /**
  * Label and value lines in a panel: Check's read-back (money/steps.ts sendReadBack, moveReadBack), a card's limits on
  * its page, the pay screen's balance. A value that is an amount is drawn as one, with the other figure under it,
@@ -315,7 +321,7 @@ export function ReadBack({ rows, force }: { rows: ReadRow[]; force?: ViewKind })
           </View>
         ) : (
           // One element, as a string row: the amount is text.
-          <View key={label} style={layout.readRow} accessible accessibilityLabel={`${label}: ${shown(value.msat, force ?? view, rated).spoken}`}>
+          <View key={label} style={layout.readRow} accessible accessibilityLabel={readAmountLabel(label, value.msat, force ?? view, rated)}>
             <Text style={s.readLabel}>{label}</Text>
             <View style={layout.readAmount}>
               <Amount msat={value.msat} size="mid" alt force={force} />

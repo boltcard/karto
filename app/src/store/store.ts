@@ -332,9 +332,13 @@ export class AppStore {
     return isUnit(v) ? v : 'sat';
   }
 
-  /** The unit is written over the old one value, so a phone from before keeps its hidden in its own row first. */
+  /**
+   * The unit is written over the old one value, so a phone from before that kept 'hidden' keeps it in its own row
+   * first. Only true is ever written here: an eye press landing between these steps can't be undone by a stale false.
+   */
   async setAmountUnit(unit: Unit): Promise<void> {
-    if (typeof (await this.get<unknown>(AMOUNTS_HIDDEN).catch(() => null)) !== 'boolean') await this.put(AMOUNTS_HIDDEN, await this.amountsHidden());
+    const kept = await this.get<unknown>(AMOUNT_VIEW).catch(() => null);
+    if (kept === 'hidden' && typeof (await this.get<unknown>(AMOUNTS_HIDDEN).catch(() => null)) !== 'boolean') await this.put(AMOUNTS_HIDDEN, true);
     await this.put(AMOUNT_VIEW, unit);
   }
 

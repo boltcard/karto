@@ -417,6 +417,15 @@ describe('the amounts view', () => {
     expect(await store.amountsHidden()).toBe(false);
   });
 
+  it("writes no hidden row when a unit is chosen on a phone that wasn't hidden, so an eye press then is never undone", async () => {
+    const db = nodeSqlite();
+    const store = await AppStore.open(db);
+    await db.runAsync("INSERT INTO kv (key, value) VALUES ('view.amount', '\"sat\"')");
+    await store.setAmountUnit('fiat');
+    expect(await db.getFirstAsync("SELECT value FROM kv WHERE key = 'view.hidden'")).toBeNull();
+    expect([await store.amountUnit(), await store.amountsHidden()]).toEqual(['fiat', false]);
+  });
+
   it('keeps an old hidden phone hidden when a unit is chosen on it', async () => {
     const path = join(mkdtempSync(join(tmpdir(), 'store-')), 'app.db');
     const db = nodeSqlite(path);

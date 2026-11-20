@@ -70,7 +70,7 @@ export default function Send() {
   // the currency becomes whole sats there, once; Check and the request carry those sats, so the rate can't move between them.
   const look = useAmountView();
   const { rated, typingUnit } = look;
-  // Send out shows its amounts in the app's view, and in sat while it is *** (rule 5): here money is being confirmed.
+  // Send out shows its amounts in the app's view, and in the chosen unit while it is *** (rule 5): here money is being confirmed.
   const cv = look.unit;
   const [taken, setTaken] = useState<number | null>(null);
 

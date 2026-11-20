@@ -35,7 +35,7 @@ export function RenewSheet({ deps, status, load, availableMsat, onChanged, off, 
   const sv = useServices();
   const [typed, setTyped] = useState('');
   const [state, setState] = useState<State>({ at: 'ready' });
-  // Renew shows its amounts in the app's view, in sat while ***: the price is confirmed here.
+  // Renew shows its amounts in the app's view, in the chosen unit while ***: the price is confirmed here.
   const look = useAmountView();
   const cv = look.unit;
 
