@@ -11,10 +11,11 @@ import { alertsClient, useRouteGuard, useServices } from '../services/services';
 import { useAmountView } from '../ui/amountView';
 import { SwitchRow } from '../ui/cards';
 import { CurrencySheet } from '../ui/CurrencySheet';
+import { UnitSheet } from '../ui/UnitSheet';
 import { WalletNameSheet } from '../ui/WalletNameSheet';
 import type { IconName } from '../ui/icons';
 import { ListGroup, ListRow, Screen, Small } from '../ui/ui';
-import { currencyRow } from '../wallet/currencySetting';
+import { currencyRow, unitRow } from '../wallet/currencySetting';
 import { serverView } from '../wallet/serverView';
 import { settingsRows, type SettingsRow } from '../wallet/settingsRows';
 import { walletNameRow } from '../wallet/walletName';
@@ -39,6 +40,7 @@ export default function Settings() {
   const [, tick] = useState(0);
   const amounts = useAmountView();
   const [choosing, setChoosing] = useState(false);
+  const [unitList, setUnitList] = useState(false);
   // The wallet's name: its sheet, and a name just saved, shown until the wallet's answer says it.
   const [naming, setNaming] = useState(false);
   const [savedName, setSavedName] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export default function Settings() {
     outlivesApp: sv.phrase.outlivesApp,
     alerts: alerts.supported ? alertsRow(alerts.view, alerts.server, alerts.error) : undefined,
   });
-  // The server's one currency and this phone's Show msat amounts, under the server's group.
+  // The server's one currency, then this phone's Show amounts in and Hide amounts, under the server's group.
   const currency = currencyRow(snap.wallet, amounts.fiat);
   const name = walletNameRow(snap.wallet, savedName);
   const amountsGroup = (
@@ -92,7 +94,9 @@ export default function Settings() {
       <ListGroup>
         <ListRow icon="phone" name="Wallet name" line={name.line} disabled={name.off} onPress={() => setNaming(true)} />
         <ListRow icon="currency" name="Currency" line={currency.line} disabled={currency.off} divider onPress={() => setChoosing(true)} />
+        <ListRow icon="currency" name="Show amounts in" line={unitRow(amounts.unit, amounts.fiat)} divider onPress={() => setUnitList(true)} />
       </ListGroup>
+      <SwitchRow icon="hide" name="Hide amounts" line="Shows *** in place of every amount" value={amounts.hidden} onChange={amounts.setHidden} />
     </>
   );
   return (
@@ -116,6 +120,7 @@ export default function Settings() {
           onClose={() => setNaming(false)}
         />
       )}
+      {unitList && <UnitSheet unit={amounts.unit} fiat={amounts.fiat} onChoose={amounts.setUnit} onClose={() => setUnitList(false)} />}
       {choosing && <CurrencySheet current={amounts.fiat?.currency ?? null} onChoose={amounts.chooseCurrency} onClose={() => setChoosing(false)} />}
     </Screen>
   );

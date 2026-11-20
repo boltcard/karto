@@ -307,7 +307,7 @@ export function lineAmount(t: Tx): { msat: number; plus: boolean } {
  */
 export function historyRows(txs: Tx[], nowS: number, offsetMin: number, more: HistoryMore = {}): HistoryDay[] {
   const r = more.rated ?? null;
-  // A £ view needs a rate: the provider settles the view (money/view.ts settleView); this keeps a row from ever being empty.
+  // A £ view needs a rate: the provider draws £ with no rate as sat (ui/amountView.tsx); this keeps a row from ever being empty.
   const v: View = more.view === 'fiat' && !r ? 'sat' : (more.view ?? 'sat');
   const days: HistoryDay[] = [];
   let lastStart = NaN;

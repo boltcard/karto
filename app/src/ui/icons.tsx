@@ -19,9 +19,10 @@ export type IconName =
   | 'list'
   // Onboarding: the country search, and the Done line's fold.
   | 'search' | 'down' | 'up'
-  // The card screens: hiding a card's ID from readers.
-  | 'hide'
-  // Settings: the currency, and Show msat amounts.
+  // The card screens: hiding a card's ID from readers; Settings' Hide amounts and the Wallet page's eye (struck while
+  // hidden, open while shown).
+  | 'hide' | 'eye'
+  // Settings: the currency, and Show amounts in.
   | 'currency'
   // Settings → Alerts.
   | 'bell';
@@ -144,6 +145,12 @@ const SHAPES: Record<IconName, ReactNode> = {
     <>
       <Path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" />
       <Path d="M4 4l16 16" />
+    </>
+  ),
+  eye: (
+    <>
+      <Path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" />
+      <Circle cx={12} cy={12} r={3} />
     </>
   ),
   bell: (

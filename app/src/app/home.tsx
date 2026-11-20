@@ -20,7 +20,8 @@ import { WalletNameAsk } from '../ui/WalletNameAsk';
 import { Amount, RateAgeLine } from '../ui/money';
 import { AMOUNT, TYPE, type Theme } from '../ui/theme';
 import { Body, Button, Callout, ErrorText, Screen } from '../ui/ui';
-import { useStyles } from '../ui/useTheme';
+import { Icon } from '../ui/icons';
+import { useStyles, useTheme } from '../ui/useTheme';
 import { BannerView, CardFace, STACK_OVERLAP } from '../ui/wallet';
 import { bannerInput } from '../wallet/bannerInput';
 import { walletBanners, type Banner } from '../wallet/banners';
@@ -45,6 +46,7 @@ export default function Home() {
   const read = useReadCard();
   const sv = useServices();
   const s = useStyles(makeStyles);
+  const t = useTheme();
   const look = useAmountView();
   // A newer release on GitHub, for a wallet installed from there.
   const appUpdate = useAppUpdate();
@@ -107,6 +109,24 @@ export default function Home() {
       <Text style={s.gear}>{'⚙︎'}</Text>
     </Pressable>
   );
+  // Before Settings, the eye: hides every amount in one press (Settings' Hide amounts), or shows them again.
+  const eye = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={look.hidden ? 'Show amounts' : 'Hide amounts'}
+      hitSlop={10}
+      onPress={() => look.setHidden(!look.hidden)}
+      style={({ pressed }) => pressed && layout.pressed}
+    >
+      <Icon name={look.hidden ? 'hide' : 'eye'} colour={t.headerMuted} size={24} />
+    </Pressable>
+  );
+  const bandEnd = (
+    <View style={layout.bandEnd}>
+      {eye}
+      {gear}
+    </View>
+  );
   const bannerViews = banners.map((b) => <BannerView key={b.key} banner={b} onPress={() => openBanner(b)} />);
   // A server that may not be the person's: none of its money, as the server page showed only the warning.
   if (view.keyNotice.kind === 'mismatch') {
@@ -136,7 +156,7 @@ export default function Home() {
   const shop = shopTile(wallet, snap.salesToday, snap.hadShop);
   return (
     // The wallet's name after Wallet, once it has one.
-    <Screen title="Wallet" titleAfter={wallet?.name || undefined} right={gear}>
+    <Screen title="Wallet" titleAfter={wallet?.name || undefined} right={bandEnd}>
       {bannerViews}
       <RateAgeLine />
       {snap.notices.map((n) => (
@@ -235,8 +255,8 @@ export default function Home() {
 
 /**
  * Pool or Hosting: its available balance as an Amount, the other figure under it ("…" until the wallet answers). The
- * tile opens the account's page; a tap on the figure moves every amount to the next view (rule 1). Its label says
- * the figure, so a screen reader hears it too.
+ * tile opens the account's page, a tap on its figure too: a box does one thing. Its label says the figure, so a
+ * screen reader hears it too.
  */
 function Tile({ name, account, onPress }: { name: string; account: WalletAccount | undefined; onPress: () => void }) {
   const s = useStyles(makeStyles);
@@ -288,6 +308,8 @@ const makeStyles = (t: Theme) =>
 
 const layout = StyleSheet.create({
   pressed: { opacity: 0.7 },
+  // The eye and the gear at the band's end, apart enough that their hit areas don't meet.
+  bandEnd: { flexDirection: 'row', alignItems: 'center', gap: 20 },
   tiles: { flexDirection: 'row', gap: 12 },
   // The wide tile: its name over its balance at the left, today's sales at the right on the balance's line.
   wide: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 },
