@@ -205,9 +205,13 @@ export class AppStore {
    * A value read and its new value written as one step: two on this store at once each see the other's write (the
    * job's store, on its own connection, is not in this queue). next giving back what it was handed writes nothing.
    */
-  private update<T>(key: string, next: (old: T | null) => unknown): Promise<void> {
+  /** damagedAsNone: a value that isn't JSON reads as none, for a key whose value is only ever added to. */
+  private update<T>(key: string, next: (old: T | null) => unknown, o: { damagedAsNone?: boolean } = {}): Promise<void> {
     return this.step(async (db) => {
-      const old = await read<T>(db, key);
+      const old = await read<T>(db, key).catch((e) => {
+        if (o.damagedAsNone && e instanceof SyntaxError) return null;
+        throw e;
+      });
       const value = next(old);
       if (value !== old) await write(db, key, value);
     });
@@ -318,7 +322,7 @@ export class AppStore {
   }
 
   async noteRemovedPhoneCard(removed: RemovedPhoneCard): Promise<void> {
-    await this.update<unknown>(REMOVED_PHONE_CARDS, (rows) => [...removedOf(rows), { name: removed.name, amountMsat: removed.amountMsat }]);
+    await this.update<unknown>(REMOVED_PHONE_CARDS, (rows) => [...removedOf(rows), { name: removed.name, amountMsat: removed.amountMsat }], { damagedAsNone: true });
   }
 
   /** The person has read the notice. */
