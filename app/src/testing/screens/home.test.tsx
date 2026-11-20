@@ -1,8 +1,9 @@
 // Home rendered: Pool, Hosting and Shop as Amounts
-// in the app's view with the other figure under them; in *** every amount on it is hidden; a tap on any amount moves
-// the app to the next view. The watch's snapshot is given as Home reads it; what decides the banners, the stack and
+// in the app's view with the other figure under them; in *** every amount on it is hidden; a tap anywhere on a box,
+// its figure too, opens its account. The watch's snapshot is given as Home reads it; what decides the banners, the stack and
 // the phone's card is left out (their own tests cover them), and the view's hook is the test's.
 import { fireEvent, render, screen } from '@testing-library/react';
+import { router } from 'expo-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Home from '../../app/home';
 import type { Wallet } from '../../cardd/client';
@@ -13,7 +14,7 @@ import type { GaveUp } from '../../wallet/accountView';
 const NOW_S = Math.floor(Date.now() / 1000);
 const FIAT: Fiat = { currency: 'GBP', price: 61_352, time: NOW_S };
 const RATED: Rated = { currency: 'GBP', price: 61_352, time: NOW_S };
-const look: { view: View; next: () => void } = { view: 'sat', next: vi.fn() };
+const look: { view: View } = { view: 'sat' };
 
 const wallet = {
   cards: [], paused: false, pausedReason: '', liquidity: null, restore: null, rev: '0a1b2c3d-1', fiat: FIAT,
@@ -39,7 +40,7 @@ vi.mock('../../wallet/phoneCardView', () => ({ payButton: () => null, removedNot
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
   useAmountView: () => ({
-    view: look.view, rated: RATED, fiat: FIAT, showMsat: false, next: look.next, setShowMsat: () => {},
+    view: look.view, unit: 'sat', hidden: look.view === 'hidden', setUnit: () => {}, setHidden: () => {}, rated: RATED, fiat: FIAT,
     typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {},
   }),
 }));
@@ -47,7 +48,7 @@ vi.mock('../../ui/amountView', async (original) => ({
 describe("Home in the app's view", () => {
   beforeEach(() => {
     look.view = 'sat';
-    vi.mocked(look.next).mockClear();
+    vi.mocked(router.push).mockClear();
   });
 
   it("shows Pool, Hosting and Shop to the nearest sat, with today's value under them", () => {
@@ -66,11 +67,10 @@ describe("Home in the app's view", () => {
     expect(text).toContain('3 sales today');
   });
 
-  it('moves every amount to the next view at a tap on any of them', () => {
+  it("opens Pool's account at a tap on its figure: a box does one thing", () => {
     render(<Home />);
-    const pool = screen.getAllByRole('button').find((b) => (b.textContent ?? '').startsWith('13,291'));
-    fireEvent.click(pool!);
-    expect(look.next).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByLabelText('13,291 sat'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/account', params: { id: 'pool' } });
   });
 });
 

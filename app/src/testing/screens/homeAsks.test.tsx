@@ -40,7 +40,7 @@ vi.mock('../../wallet/banners', () => ({ walletBanners: () => [] }));
 vi.mock('../../wallet/phoneCardView', () => ({ payButton: () => null, removedNotice: () => null }));
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
-  useAmountView: () => ({ view: 'sat', rated: null, fiat: null, showMsat: false, next: () => {}, setShowMsat: () => {}, typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {} }),
+  useAmountView: () => ({ view: 'sat', rated: null, fiat: null, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {}, typingUnit: 'sat', setTypingUnit: () => {}, chooseCurrency: async () => {} }),
 }));
 
 const WAIT = { timeout: 3000 };

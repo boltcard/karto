@@ -1,5 +1,5 @@
 // The wallet's one view of every amount: the currency,
-// sat, msat or hidden, moved on by a tap on any amount, as Phoenix's. Pure: the cycle, what an amount shows in each
+// sat, msat or hidden, set in Settings (and hidden by the Wallet page's eye). Pure: what an amount shows in each
 // view, the figure under a large one, a fee's words and the rate's age line. A leaf: it imports fiat.ts and words.ts
 // alone, so Karto PoS may use it. sat is the nearest whole sat: a figure shown, never one checked
 // against a balance, which compare msat.
@@ -7,32 +7,16 @@ import { fiatNumber, fiatSpoken, fiatText, rateAge, symbol, type Rated } from '.
 import { thousands } from './words';
 
 export type View = 'fiat' | 'sat' | 'msat' | 'hidden';
-/** What the cycle may hold now: fiat while the server has a currency with a rate; msat while Show msat amounts is on. */
-export type ViewOptions = { fiat: boolean; msat: boolean };
 /** An amount as Amount draws it: the number, its unit after it ('' when hidden), and its words for a screen reader. */
 export type Shown = { number: string; unit: string; spoken: string };
 
 const ORDER: readonly View[] = ['fiat', 'sat', 'msat', 'hidden'];
-const allowed = (v: View, o: ViewOptions) => !(v === 'fiat' && !o.fiat) && !(v === 'msat' && !o.msat);
 
 export const isView = (x: unknown): x is View => typeof x === 'string' && (ORDER as readonly string[]).includes(x);
 
 /** The unit amounts are shown in, chosen in Settings: hidden is kept apart from it, so showing again comes back to it. */
 export type Unit = 'fiat' | 'sat' | 'msat';
 export const isUnit = (x: unknown): x is Unit => x === 'fiat' || x === 'sat' || x === 'msat';
-
-/** A view no longer allowed (msat turned off, the currency none) is sat. */
-export const settleView = (v: View, o: ViewOptions): View => (allowed(v, o) ? v : 'sat');
-
-/** The next view after a tap: £ → sat → msat → *** → £, leaving out what isn't allowed. */
-export function nextView(v: View, o: ViewOptions): View {
-  const at = ORDER.indexOf(settleView(v, o));
-  for (let k = 1; k <= ORDER.length; k++) {
-    const n = ORDER[(at + k) % ORDER.length];
-    if (allowed(n, o)) return n;
-  }
-  return 'sat';
-}
 
 const satFigure = (msat: number) => thousands(Math.round(Math.abs(msat) / 1000));
 const msatFigure = (msat: number) => thousands(Math.abs(msat));

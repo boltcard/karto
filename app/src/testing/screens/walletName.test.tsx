@@ -26,7 +26,7 @@ vi.mock('../../wallet/serverView', () => ({ serverView: () => ({ keyNotice: { ki
 vi.mock('../../wallet/settingsRows', () => ({ settingsRows: () => [{ key: 'server', name: 'Server', line: '', tone: 'none', opens: null }] }));
 vi.mock('../../ui/amountView', async (original) => ({
   ...(await original<typeof import('../../ui/amountView')>()),
-  useAmountView: () => ({ fiat: { currency: 'none' }, showMsat: false, setShowMsat: () => {}, chooseCurrency: async () => {} }),
+  useAmountView: () => ({ fiat: { currency: 'none' }, unit: 'sat', hidden: false, setUnit: () => {}, setHidden: () => {}, chooseCurrency: async () => {} }),
 }));
 
 const row = () => screen.getByRole('button', { name: /Wallet name/ });

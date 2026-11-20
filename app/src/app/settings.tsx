@@ -93,7 +93,6 @@ export default function Settings() {
         <ListRow icon="phone" name="Wallet name" line={name.line} disabled={name.off} onPress={() => setNaming(true)} />
         <ListRow icon="currency" name="Currency" line={currency.line} disabled={currency.off} divider onPress={() => setChoosing(true)} />
       </ListGroup>
-      <SwitchRow icon="currency" name="Show msat amounts" line="Exact amounts, as one more view a tap moves to" value={amounts.showMsat} onChange={amounts.setShowMsat} />
     </>
   );
   return (

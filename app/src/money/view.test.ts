@@ -1,39 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Rated } from './fiat';
-import { ageLine, altText, aboutText, apartText, confirmView, feeViewText, isUnit, isView, nextView, settleView, shown, viewText, type View, type ViewOptions } from './view';
+import { ageLine, altText, aboutText, apartText, confirmView, feeViewText, isUnit, isView, shown, viewText, type View } from './view';
 
 const T = 1_792_037_404;
 const GBP: Rated = { currency: 'GBP', price: 61_352, time: T };
-const cycle = (start: View, o: ViewOptions, n: number) => {
-  const seen = [start];
-  for (let i = 0; i < n; i++) seen.push(nextView(seen.at(-1)!, o));
-  return seen;
-};
 
-// £ → sat → msat → *** → £, leaving out what isn't allowed.
-describe('nextView and settleView', () => {
-  it('goes £, sat, msat, *** and back to £ with a rate and Show msat amounts on', () => {
-    expect(cycle('fiat', { fiat: true, msat: true }, 4)).toEqual(['fiat', 'sat', 'msat', 'hidden', 'fiat']);
-  });
-
-  it('leaves msat out while Show msat amounts is off, as on a new phone', () => {
-    expect(cycle('sat', { fiat: true, msat: false }, 3)).toEqual(['sat', 'hidden', 'fiat', 'sat']);
-  });
-
-  it('leaves £ out with the currency none, or no rate ever', () => {
-    expect(cycle('sat', { fiat: false, msat: true }, 3)).toEqual(['sat', 'msat', 'hidden', 'sat']);
-    expect(cycle('sat', { fiat: false, msat: false }, 2)).toEqual(['sat', 'hidden', 'sat']);
-  });
-
-  it('moves a view no longer allowed to sat, and on from there', () => {
-    expect(settleView('fiat', { fiat: false, msat: true })).toBe('sat');
-    expect(settleView('msat', { fiat: true, msat: false })).toBe('sat');
-    expect(settleView('hidden', { fiat: false, msat: false })).toBe('hidden');
-    expect(settleView('fiat', { fiat: true, msat: false })).toBe('fiat');
-    expect(nextView('fiat', { fiat: false, msat: false })).toBe('hidden');
-    expect(nextView('msat', { fiat: true, msat: false })).toBe('hidden');
-  });
-
+describe('isView and isUnit', () => {
   it('knows a view from anything else kept', () => {
     for (const v of ['fiat', 'sat', 'msat', 'hidden']) expect(isView(v)).toBe(true);
     for (const v of ['pounds', '', null, 3, undefined]) expect(isView(v)).toBe(false);
