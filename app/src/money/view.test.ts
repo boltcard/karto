@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Rated } from './fiat';
-import { ageLine, altText, aboutText, apartText, confirmView, feeViewText, isUnit, isView, shown, viewText, type View } from './view';
+import { ageLine, altText, aboutText, apartText, feeViewText, isUnit, isView, shown, viewText, type View } from './view';
 
 const T = 1_792_037_404;
 const GBP: Rated = { currency: 'GBP', price: 61_352, time: T };
@@ -82,15 +82,8 @@ describe('ageLine', () => {
   });
 });
 
-// Send out, Move and Renew show their amounts once you are on
-// them, in sat when the view is ***: there you are confirming money.
-describe('confirmView and aboutText', () => {
+describe('aboutText', () => {
   const GBP_NOW: Rated = { currency: 'GBP', price: 61_352, time: 1_792_037_404 };
-
-  it('shows a hidden view in sat where money is being confirmed, and leaves the others as they are', () => {
-    expect(confirmView('hidden')).toBe('sat');
-    expect((['fiat', 'sat', 'msat'] as View[]).map(confirmView)).toEqual(['fiat', 'sat', 'msat']);
-  });
 
   it('says an estimate as about, but not one already under the smallest unit', () => {
     expect(aboutText(9_000, 'sat', null)).toBe('about 9 sat');

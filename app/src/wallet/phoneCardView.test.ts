@@ -203,7 +203,7 @@ describe('the notice of a removed card', () => {
   });
 });
 
-// The pay screen confirms money (in sat while ***, so the screen passes confirmView); a card limited in pounds
+// The pay screen confirms money (in the chosen unit while ***, so the screen passes the unit); a card limited in pounds
 // says its limit in pounds; the More rows and the removed notice in the view.
 describe("the phone's card in the app's view", () => {
   const GBP = { currency: 'GBP' as const, price: 61_352, time: 1_792_037_404 };
@@ -220,7 +220,12 @@ describe("the phone's card in the app's view", () => {
     });
   });
 
-  it("hides the limits in ***, keeps Remove's money in sat, and hides the removed card's money on Home", () => {
+  it("says Remove's money in the chosen unit while hidden", () => {
+    const c = { state: 'active' as const, version: 0, perTapSat: 20_000, dailySat: 50_000, balanceMsat: 6_000_000, heldMsat: 0 };
+    expect(phoneMoreRows(c, true, 'hidden', GBP, 'fiat').remove!.line).toBe('Its £3.68 move to Pool; this phone stops being a card.');
+  });
+
+  it("hides the limits in ***, says Remove's money in sat with no unit given, and hides the removed card's money on Home", () => {
     const c = { state: 'active' as const, version: 0, perTapSat: 20_000, dailySat: 50_000, balanceMsat: 6_000_000, heldMsat: 0 };
     expect(phoneMoreRows(c, true, 'hidden', GBP)).toMatchObject({
       limits: '*** per payment · *** a day', remove: { line: 'Its 6,000 sat move to Pool; this phone stops being a card.', disabled: false },

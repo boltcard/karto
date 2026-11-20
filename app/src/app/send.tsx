@@ -20,7 +20,7 @@ import {
 } from '../money/steps';
 import { useCardDeps, useServer } from '../services/server';
 import { useRouteGuard } from '../services/services';
-import { confirmView, viewText } from '../money/view';
+import { viewText } from '../money/view';
 import { useAmountView } from '../ui/amountView';
 import { screenLock } from '../ui/lock';
 import { RecentList } from '../ui/RecentList';
@@ -71,7 +71,7 @@ export default function Send() {
   const look = useAmountView();
   const { rated, typingUnit } = look;
   // Send out shows its amounts in the app's view, and in sat while it is *** (rule 5): here money is being confirmed.
-  const cv = confirmView(look.view);
+  const cv = look.unit;
   const [taken, setTaken] = useState<number | null>(null);
 
   // The destination as it is now, for the focus effect, whose closure keeps the first render's.

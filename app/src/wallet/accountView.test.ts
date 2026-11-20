@@ -53,16 +53,23 @@ describe('moreRows', () => {
     expect(moreRows({ ...card, balanceMsat: 400 }, true).wipe).toEqual({ line: 'The card is blank again.', disabled: false });
   });
 
+  it("says a wipe's and a give-up's money in the chosen unit while amounts are hidden; sat when no unit is given", () => {
+    const hidden = moreRows(card, true, 'hidden', GBP, 'fiat');
+    expect(hidden.wipe.line).toBe('Its £8.15 move to Pool; the card is blank again.');
+    expect(hidden.giveUp.line).toBe('Its £8.15 move to Pool; taps of it are refused.');
+    expect(moreRows(card, true, 'hidden', GBP).wipe.line).toBe('Its 13,291 sat move to Pool; the card is blank again.');
+  });
+
   it('greys Wipe while a payment holds some of the balance: cardd refuses it', () => {
     expect(moreRows({ ...card, heldMsat: 2_105_000 }, true).wipe).toEqual({ line: 'Wait for the payment in progress', disabled: true });
   });
 });
 
-// "I no longer have this card": the money that moves, said in sat even while amounts are hidden, as Wipe's is.
+// "I no longer have this card": the money that moves, said in the chosen unit even while amounts are hidden, as Wipe's is.
 describe('giveUpLine', () => {
   it('names the money that moves to Pool, and that taps of the card are refused', () => {
     expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 0 })).toEqual({ line: 'Its 5,000 sat move to Pool; taps of it are refused.', disabled: false });
-    expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 0 }, 'hidden')).toEqual({ line: 'Its 5,000 sat move to Pool; taps of it are refused.', disabled: false });
+    expect(giveUpLine({ balanceMsat: 5_000_000, heldMsat: 0 }, 'fiat', GBP)).toEqual({ line: 'Its £3.07 move to Pool; taps of it are refused.', disabled: false });
   });
   it('says only that taps are refused with under a sat on the card', () => {
     expect(giveUpLine({ balanceMsat: 0, heldMsat: 0 })).toEqual({ line: 'Taps of it are refused.', disabled: false });
@@ -73,7 +80,8 @@ describe('giveUpLine', () => {
   });
   it("is More's row", () => {
     expect(moreRows(card, true).giveUp).toEqual(giveUpLine(card));
-    expect(moreRows(card, true, 'hidden').giveUp).toEqual(giveUpLine(card, 'hidden'));
+    expect(moreRows(card, true, 'hidden').giveUp).toEqual(giveUpLine(card, 'sat'));
+    expect(moreRows(card, true, 'hidden', GBP, 'fiat').giveUp).toEqual(giveUpLine(card, 'fiat', GBP));
   });
 });
 

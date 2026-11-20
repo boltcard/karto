@@ -381,12 +381,12 @@ export default function Account() {
       )}
       {sheet === 'photo' && photo && <CardPhotoView photo={photo} onClose={() => setSheet(null)} />}
       {sheet === 'more' && card && !phone && (
-        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated)} off={off} onLimits={() => setSheet('limits')} onGiveUp={() => setSheet('give-up')} onClose={() => setSheet(null)} />
+        <MoreSheet card={card} rows={moreRows(card, !!photo, look.view, look.rated, look.unit)} off={off} onLimits={() => setSheet('limits')} onGiveUp={() => setSheet('give-up')} onClose={() => setSheet(null)} />
       )}
       {sheet === 'more' && card && phone && (
         <PhoneMoreSheet
           card={card}
-          rows={phoneMoreRows(card, phone === 'own', look.view, look.rated)}
+          rows={phoneMoreRows(card, phone === 'own', look.view, look.rated, look.unit)}
           off={off}
           onLimits={() => setSheet('limits')}
           onRemove={() => void removePhone()}
@@ -394,7 +394,7 @@ export default function Account() {
         />
       )}
       {sheet === 'give-up' && card && !phone && (
-        <GiveUpSheet {...giveUpLine(card, look.view, look.rated)} name={name} onConfirm={() => void giveUp(card)} onClose={() => setSheet(null)} />
+        <GiveUpSheet {...giveUpLine(card, look.unit, look.rated)} name={name} onConfirm={() => void giveUp(card)} onClose={() => setSheet(null)} />
       )}
       {sheet === 'limits' && card && (
         <LimitsSheet

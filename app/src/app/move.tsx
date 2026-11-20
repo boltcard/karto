@@ -13,7 +13,7 @@ import { requestId, runRequest } from '../money/requests';
 import { afterMove, moveAvailable, moveBack, moveLock, moveReadBack, moveStart, moveTargets, resultView, type MoveAccount, type Ran, type Result, type Step, STEP_NAMES, stepAt } from '../money/steps';
 import { useCardDeps, useServer } from '../services/server';
 import { useRouteGuard } from '../services/services';
-import { confirmView, viewText } from '../money/view';
+import { viewText } from '../money/view';
 import { useAmountView } from '../ui/amountView';
 import { screenLock } from '../ui/lock';
 import { AmountField, RateAgeLine, ReadBack, ResultPage, StepBar } from '../ui/money';
@@ -46,7 +46,7 @@ export default function Move() {
   const look = useAmountView();
   const { rated, typingUnit } = look;
   // Move shows its amounts in the app's view, and in sat while it is *** (rule 5): here money is being confirmed.
-  const cv = confirmView(look.view);
+  const cv = look.unit;
   const [taken, setTaken] = useState<number | null>(null);
 
   useEffect(() => {

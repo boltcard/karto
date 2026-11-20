@@ -495,7 +495,7 @@ describe('holdNames', () => {
   });
 });
 
-// A wipe confirms money, so the page and its result are given confirmView's view by the screen.
+// A wipe confirms money, so the page and its result are given the chosen unit by the screen, also while amounts are hidden.
 describe("the wipe's money in the app's view", () => {
   const GBP = { currency: 'GBP' as const, price: 61_352, time: 1_792_037_404 };
   it('says where the balance goes, and went, in the view', () => {

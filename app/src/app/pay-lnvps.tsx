@@ -11,7 +11,6 @@ import QRCode from 'react-native-qrcode-svg';
 import { CarddClient } from '../cardd/client';
 import { LnvpsClient } from '../lnvps/client';
 import { hostingSyncer, PAY_PRESETS } from '../money/hosting';
-import { confirmView } from '../money/view';
 import { countdown } from '../onboarding/progress';
 import { fetchFn, syncHostingIfDue, useRouteGuard, useServices } from '../services/services';
 import { useAmountView } from '../ui/amountView';
@@ -84,14 +83,14 @@ export default function PayLnvps() {
       {!inv && !error && sat === null && <Body muted>{busy ? LNVPS_BUSY : 'Asking LNVPS for an invoice…'}</Body>}
       {!inv && !error && sat !== null && (
         <Panel>
-          <Amount msat={sat * 1000} size="large" alt force={confirmView(look.view)} />
+          <Amount msat={sat * 1000} size="large" alt force={look.unit} />
           <Body>for {days} days of hosting</Body>
           <Body muted>{busy ? LNVPS_BUSY : 'Getting the invoice for the days chosen…'}</Body>
         </Panel>
       )}
       {inv && !expired && (
         <Panel>
-          <Amount msat={inv.sat * 1000} size="large" alt force={confirmView(look.view)} />
+          <Amount msat={inv.sat * 1000} size="large" alt force={look.unit} />
           <Body>for {inv.days} days of hosting</Body>
           <View style={styles.qr} accessible accessibilityLabel="QR code for this invoice">
             <QRCode value={inv.bolt11.toUpperCase()} size={220} />
