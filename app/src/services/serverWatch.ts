@@ -19,6 +19,7 @@ import { DROPS_WAITED, type OnboardingState } from '../onboarding/machine';
 import { RECONNECT_MS } from '../onboarding/runner';
 import { SshDropped } from '../onboarding/ssh';
 import type { CachedPhoto, RemovedPhoneCard } from '../store/store';
+import type { GaveUp } from '../wallet/accountView';
 import { phonesAmong } from '../wallet/phoneCardView';
 import { photoUri, syncPhotos } from '../wallet/photos';
 import { hasShop, salesToday } from '../wallet/shop';
@@ -143,6 +144,8 @@ export type WatchSnapshot = {
   nfc: NfcState | null;
   /** What became of the moves and sends left from before (once per app open). */
   notices: string[];
+  /** The cards given up on their pages, for the Wallet page's line until the person has read it. */
+  gaveUp: GaveUp[];
   /** When the host key was last checked: the time the key notice is judged at. */
   keyCheckedAt: number;
   /** LNVPS's answers about the VMs, for the rebuild suggestion and the old server's warning. */
@@ -225,7 +228,7 @@ export class ServerWatch {
   constructor(private readonly d: WatchDeps) {
     this.snap = {
       state: null, deps: null, status: null, unreachable: false, cards: null, cardsDown: false, cardsError: null,
-      wallet: null, hosting: null, nfc: null, notices: [], keyCheckedAt: d.now(),
+      wallet: null, hosting: null, nfc: null, notices: [], gaveUp: [], keyCheckedAt: d.now(),
       lnvps: null, lnvpsExpires: null, backups: null, update: null, retire: { running: false }, photos: {}, salesToday: null, hadShop: false,
       phoneCard: NO_PHONE_CARD, cantRead: false,
     };
@@ -524,7 +527,7 @@ export class ServerWatch {
     return {
       status: null, unreachable: false, cards: null, cardsDown: false, cardsError: null, wallet: null, hosting: null,
       lnvps: null, lnvpsExpires: null, backups: null, update: update?.running ? update : null, retire: { running: retire.running },
-      salesToday: null, hadShop: false, phoneCard: NO_PHONE_CARD,
+      salesToday: null, hadShop: false, phoneCard: NO_PHONE_CARD, gaveUp: [],
     };
   }
 
@@ -617,6 +620,16 @@ export class ServerWatch {
     if (deps !== this.snap.deps) return;
     const { ids, own } = phonesAmong(deps.issuer, cards, record);
     this.set({ phoneCard: { supported, record, ids: [...ids], own, removed } });
+  }
+
+  /** A card given up on its page (account.tsx): the Wallet page says so. */
+  noteGaveUp(g: GaveUp): void {
+    this.set({ gaveUp: [...this.snap.gaveUp, g] });
+  }
+
+  /** The person has read the line of the cards given up. */
+  dismissGaveUp(): void {
+    this.set({ gaveUp: [] });
   }
 
   /** The person has read the notice of the removed cards. */

@@ -18,7 +18,7 @@ const base = {
 const snap: { wallet: Wallet | null } & Record<string, unknown> = {
   cantRead: false, update: null, state: { host: { hostname: 'karto.example' } }, notices: [], cards: [], cardsError: null, wallet: null,
   salesToday: 0, hadShop: false, photos: {}, nfc: null, backups: null, status: null, unreachable: false,
-  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] },
+  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] }, gaveUp: [],
 };
 const store = { offered: false };
 const setAlertsOffered = vi.fn(async () => void (store.offered = true));

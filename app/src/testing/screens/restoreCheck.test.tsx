@@ -28,7 +28,7 @@ const snap = {
   cantRead: false, update: null, state: { host: { hostname: HOST } }, notices: [], cards, cardsError: null, wallet,
   salesToday: 0, hadShop: false, photos: {}, nfc: 'on', backups: null, status: null, unreachable: false,
   hosting: null, lnvpsExpires: null,
-  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] },
+  phoneCard: { supported: false, ids: [], own: null, record: null, removed: [] }, gaveUp: [],
 };
 
 vi.mock('../../services/server', () => ({ useWatcher: () => ({ snap, watch: {} }), useReadCard: () => null }));

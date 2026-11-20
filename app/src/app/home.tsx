@@ -24,6 +24,7 @@ import { useStyles } from '../ui/useTheme';
 import { BannerView, CardFace, STACK_OVERLAP } from '../ui/wallet';
 import { bannerInput } from '../wallet/bannerInput';
 import { walletBanners, type Banner } from '../wallet/banners';
+import { gaveUpNotice } from '../wallet/accountView';
 import { payButton, removedNotice } from '../wallet/phoneCardView';
 import { serverView } from '../wallet/serverView';
 import { shopTile } from '../wallet/shop';
@@ -130,6 +131,8 @@ export default function Home() {
     own: stack.find((c) => c.phone === 'own'),
   });
   const removed = removedNotice(pc.removed, pc.supported && !pc.record, look.view, look.rated);
+  // The cards given up on their pages (account.tsx), until read.
+  const gaveUp = gaveUpNotice(snap.gaveUp, look.view, look.rated);
   const shop = shopTile(wallet, snap.salesToday, snap.hadShop);
   return (
     // The wallet's name after Wallet, once it has one.
@@ -146,6 +149,14 @@ export default function Home() {
           <Body>{removed.text}</Body>
           {removed.add && <Body>{removed.add}</Body>}
           <Button title="OK" kind="secondary" onPress={() => void watch.dismissRemovedPhoneCards().catch(() => {})} />
+        </Callout>
+      )}
+      {gaveUp.length > 0 && (
+        <Callout>
+          {gaveUp.map((line, i) => (
+            <Body key={i}>{line}</Body>
+          ))}
+          <Button title="OK" kind="secondary" onPress={() => watch.dismissGaveUp()} />
         </Callout>
       )}
       <View style={layout.tiles}>

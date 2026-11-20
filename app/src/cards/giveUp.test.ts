@@ -1,6 +1,7 @@
 // Giving a card up without holding it: the wipe's two server calls, with no card in between.
 import { describe, expect, it, vi } from 'vitest';
 import type { CardInfo } from '../cardd/client';
+import { CarddError } from '../cardd/error';
 import { cardWorld } from '../testing/cardWorld';
 import { catchUp } from './catchUp';
 import { GIVE_UP_BUSY, GIVE_UP_UNREACHABLE, GiveUpError, giveUpCard } from './giveUp';
@@ -78,6 +79,25 @@ describe('giveUpCard', () => {
     const t = await world('reset');
     expect(await giveUpCard(t.deps, CARD)).toEqual({ finished: true });
     expect((await t.cache.cards())[ID]?.state).toBe('reset');
+  });
+
+  it('counts a card the server no longer lists after a refused start as done', async () => {
+    const t = await world('active');
+    vi.spyOn(t.deps.cardd, 'wipeCard').mockImplementationOnce(async () => {
+      t.cardd.cards.delete(ID);
+      throw new CarddError(409, 'conflict', 'not wipeable');
+    });
+    expect(await giveUpCard(t.deps, CARD)).toEqual({ finished: true });
+    expect((await t.cache.cards())[ID]?.state).toBe('reset');
+  });
+
+  it("says the server can't be reached when its list can't be read after a refused start", async () => {
+    const t = await world('active', { sat: 5000 });
+    t.cardd.held.set(ID, 1_000_000);
+    vi.spyOn(t.deps.cardd, 'cards').mockRejectedValueOnce(new TypeError('fetch failed: no answer'));
+    const e = await reason(giveUpCard(t.deps, CARD));
+    expect((e as GiveUpError).why).toBe('unreachable');
+    expect(t.cardd.cards.get(ID)?.state).toBe('active');
   });
 
   it("leaves the finish to the catch-up when it can't reach the server", async () => {

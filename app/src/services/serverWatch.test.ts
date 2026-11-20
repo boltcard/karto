@@ -314,7 +314,7 @@ describe('ServerWatch', () => {
     await settle();
     expect(watch.snapshot()).toEqual({
       state: saved(), deps: expect.objectContaining({ host: HOST }), status: OK, unreachable: false,
-      cards: srv.cards, cardsDown: false, cardsError: null, wallet: WALLET, hosting: HOSTING, nfc: 'on', notices: [], keyCheckedAt: T0,
+      cards: srv.cards, cardsDown: false, cardsError: null, wallet: WALLET, hosting: HOSTING, nfc: 'on', notices: [], gaveUp: [], keyCheckedAt: T0,
       lnvps: LNVPS, lnvpsExpires: EXPIRES, backups: BACKUPS, update: null, retire: { running: false }, photos: {}, salesToday: null, hadShop: false,
       phoneCard: NO_PHONE_CARD, cantRead: false,
     });
@@ -461,7 +461,7 @@ describe('ServerWatch', () => {
     watch.forget();
     expect(watch.snapshot()).toEqual({
       state: null, deps: null, status: null, unreachable: false, cards: null, cardsDown: false, cardsError: null, wallet: null, hosting: null,
-      nfc: 'on', notices: [], keyCheckedAt: T0, lnvps: null, lnvpsExpires: null, backups: null, update: null, retire: { running: false },
+      nfc: 'on', notices: [], gaveUp: [], keyCheckedAt: T0, lnvps: null, lnvpsExpires: null, backups: null, update: null, retire: { running: false },
       photos: {}, // the phone's, kept: the next answered list brings them up to date
       salesToday: null, hadShop: false, phoneCard: NO_PHONE_CARD, cantRead: false,
     });
@@ -1543,6 +1543,22 @@ describe('ServerWatch and the phone as a card', () => {
     await settle();
     expect(w.phone.kept).toEqual([]);
     expect(watch.snapshot()).toMatchObject({ cardsDown: true, phoneCard: { supported: true, record: { n: 0, removing: false }, ids: [pid(0)], own: pid(0), removed: [] } });
+  });
+
+  // A card given up on its page: the Wallet page says so until the person has read it.
+  it('keeps the cards given up for the Wallet page until the person has read it', async () => {
+    const { watch } = world();
+    watch.watch();
+    await settle();
+    expect(watch.snapshot().gaveUp).toEqual([]);
+    watch.noteGaveUp({ name: 'Daily', amountMsat: 5_000_000, pending: false });
+    watch.noteGaveUp({ name: 'Old', amountMsat: 0, pending: true });
+    expect(watch.snapshot().gaveUp).toEqual([
+      { name: 'Daily', amountMsat: 5_000_000, pending: false },
+      { name: 'Old', amountMsat: 0, pending: true },
+    ]);
+    watch.dismissGaveUp();
+    expect(watch.snapshot().gaveUp).toEqual([]);
   });
 
   it('empties the notice of removed cards when the person has read it, on the phone too', async () => {
