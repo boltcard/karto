@@ -563,14 +563,17 @@ export class ServerWatch {
       const list = await deps.cardd.cards();
       // Forgotten meanwhile: the cache may be a removed wallet's, emptied, and this list is not put back in it.
       if (deps !== this.snap.deps) return;
+      // Shown first: the phone's copy is a write per card, each flushed to disk, and the page doesn't wait for it.
+      if (current()) {
+        this.cardsUnreached = false;
+        this.set({ cards: list, cardsDown: false, cardsError: null });
+      }
       // The phone's copy (the list while the server can't be reached) failing to save doesn't hide the list the
       // server sent: the next list saves it again. A line in the log, for the next report from a phone.
       await rememberCards(deps.cache, list).catch((e: unknown) =>
         console.log('CARDAPP-CARDS', JSON.stringify({ kept: e instanceof Error ? e.message : String(e) })),
       );
       if (!current()) return;
-      this.cardsUnreached = false;
-      this.set({ cards: list, cardsDown: false, cardsError: null });
       this.photoList = list;
       void this.oneAtATime('photos', 'again', (d) => this.syncPhotos(d));
       this.phoneList = list;
