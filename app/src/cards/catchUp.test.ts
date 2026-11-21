@@ -74,4 +74,26 @@ describe('catchUp', () => {
     expect(t.cardd.cards.get(id)?.state).toBe('reset');
     expect((await t.cache.cards())[id]).toEqual({ id, version: 1, name: 'Daily', state: 'reset' });
   });
+
+  // The old wipe's record (version 0) is read, then, before catchUp saves cardd's version over it, the card added
+  // again at version 1 is wiped too and its end not yet told: the same pending value, a newer card. Kept.
+  it('keeps a newer wipe of the card added again, though its pending value is the same', async () => {
+    const t = await cardWorld();
+    const id = 'e'.repeat(32);
+    await t.cache.saveCard({ id, version: 0, name: 'Daily', state: 'reset', pending: 'wiped' });
+    t.cardd.cards.set(id, { id, version: 1, state: 'active', counter: 2, name: 'Daily', created: 0, updated: 0 });
+    const newer = { id, version: 1, name: 'Daily', state: 'reset' as const, pending: 'wiped' as const };
+    const cards = t.deps.cardd.cards.bind(t.deps.cardd);
+    t.deps.cardd.cards = async () => {
+      const list = await cards();
+      await t.cache.saveCard(newer);
+      return list;
+    };
+    await catchUp(t.deps);
+    expect((await t.cache.cards())[id]).toEqual(newer);
+    t.deps.cardd.cards = cards;
+    await catchUp(t.deps);
+    expect(t.cardd.cards.get(id)?.state).toBe('reset');
+    expect((await t.cache.cards())[id]).toEqual({ id, version: 1, name: 'Daily', state: 'reset' });
+  });
 });

@@ -239,13 +239,14 @@ export class AppStore {
 
   /**
    * Read in the same step as the write: unlessPending keeps the record as it is if it has a wipe cardd hasn't heard
-   * of; ifPending writes only while the record still has that pending wipe (a wipe that moved on meanwhile stays).
+   * of; ifStill writes only while the record still has that version and pending wipe (a wipe that moved on meanwhile,
+   * or a newer wipe of the card added again, stays).
    */
-  saveCard(c: CachedCard, o: { unlessPending?: boolean; ifPending?: CachedCard['pending'] } = {}): Promise<void> {
+  saveCard(c: CachedCard, o: { unlessPending?: boolean; ifStill?: Pick<CachedCard, 'version' | 'pending'> } = {}): Promise<void> {
     return this.update<Record<string, CachedCard>>(CARDS, (all) => {
-      const was = all?.[c.id]?.pending;
-      if (o.unlessPending && was) return all;
-      if (o.ifPending && was !== o.ifPending) return all;
+      const was = all?.[c.id];
+      if (o.unlessPending && was?.pending) return all;
+      if (o.ifStill && (was?.version !== o.ifStill.version || was?.pending !== o.ifStill.pending)) return all;
       return { ...all, [c.id]: c };
     });
   }

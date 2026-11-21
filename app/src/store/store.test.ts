@@ -538,6 +538,25 @@ describe("AppStore beside the background job's connection", () => {
     expect((await store.cards()).c1?.pending).toBe('wipe');
   });
 
+  // ifStill (catchUp's saves): written only over the record that was read, the same version and pending wipe; not over
+  // a newer one, and not back into a cache emptied meanwhile (the wallet removed).
+  it('saves a card ifStill only over the record that was read', async () => {
+    const store = await AppStore.open(nodeSqlite());
+    const seen = { id: 'c1', version: 1, name: 'Daily', state: 'wiping' as const, pending: 'wipe' as const };
+    const told = { id: 'c1', version: 1, name: 'Daily', state: 'wiping' as const };
+    await store.saveCard(seen);
+    await store.saveCard(told, { ifStill: seen });
+    expect((await store.cards()).c1).toEqual(told);
+    for (const now of [{ ...seen, pending: 'wiped' as const, state: 'reset' as const }, { ...seen, version: 2 }]) {
+      await store.saveCard(now);
+      await store.saveCard(told, { ifStill: seen });
+      expect((await store.cards()).c1).toEqual(now);
+    }
+    await store.clear();
+    await store.saveCard(told, { ifStill: seen });
+    expect((await store.cards()).c1).toBeUndefined();
+  });
+
   // The wait first (the switch to WAL then waits for the job's connection too), deleted data overwritten (photos,
   // notes, old card lists don't linger in free pages), and on an iPhone each commit flushed past the drive's cache.
   it('opens each connection waiting first, in WAL, overwriting what it deletes and flushing fully', async () => {
