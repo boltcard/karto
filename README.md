@@ -31,9 +31,10 @@ Google Play services. **They handle real bitcoin**: use amounts you can afford t
   one signer, `Signer #1 certificate SHA-256 digest:
   554f2672bbb9e8ef7018874211004b6dd7925aa6706d7baf64df8954517bf784` (`deploy/signing/signer.sha256`; keytool and
   Android's settings write it `55:4F:26:…:7B:F7:84`), and `sha256sum -c SHA256SUMS` checks the downloads.
-- **Updates:** each app says on its main screen when a newer release is here (it asks GitHub's API once a day,
-  and only in these APKs). Install the next release's APK over the one you have, or with Obtainium add this
-  repository and filter by `karto-wallet` or `karto-pos` (one release holds both apps).
+- **Updates:** each app says on its main screen when a newer release is here (it asks GitHub's API once an hour
+  while open, and each time Settings or This PoS opens, and only in these APKs). Install the next release's APK
+  over the one you have, or with Obtainium add this repository and filter by `karto-wallet` or `karto-pos` (one
+  release holds both apps).
 - **Alerts** with the app closed need the ntfy app (UnifiedPush) on a phone without Google Play services' push.
 - A release and a `.dev` build are two apps: each claims `karto://` links (Android asks which), and a release
   wallet pairs with a release till, a `.dev` wallet with a `.dev` one.

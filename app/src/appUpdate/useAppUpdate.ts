@@ -1,32 +1,69 @@
-// The newer release a GitHub build should mention (appUpdate.ts): checked when the screen opens and each time the app
-// comes back to the front, which asks GitHub at most once a day. Null in every other build.
+// The newer release a GitHub build should mention (appUpdate.ts), from one checker the whole app shares. Home's
+// banner and the till's link ask on opening, each time the app comes back to the front, and on a tick while it is in
+// front (a till can sit in front all day), the hour's rhythm deciding when GitHub is asked. Settings' and This PoS's
+// line asks each time the page comes into view, no more than once a minute. Nothing in any other build.
 import Constants from 'expo-constants';
+import { useFocusEffect } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { AppState, Platform } from 'react-native';
-import { withTimeout } from '../lightning/lightning';
-import { asksGithub, updateChecker } from './appUpdate';
+import { withTimeout, type FetchFn } from '../lightning/lightning';
+import { asksGithub, newerOf, ON_OPEN, updateChecker, type Build, type KeyValue, type UpdateChecker, type UpdateStatus } from './appUpdate';
 
-const check = updateChecker(SecureStore, withTimeout((url, init) => fetch(url, init), 15_000));
+/** How often Home and the till give the hour's rhythm a chance while in front: GitHub is asked only when it is due. */
+export const TICK_MS = 5 * 60 * 1000;
+
 // Metro inlines these two where they are written out in full.
-const BUILD = { os: Platform.OS, release: process.env.EXPO_PUBLIC_KARTO_RELEASE, store: process.env.EXPO_PUBLIC_KARTO_STORE };
+let build: Build = { os: Platform.OS, release: process.env.EXPO_PUBLIC_KARTO_RELEASE, store: process.env.EXPO_PUBLIC_KARTO_STORE };
+let checker: UpdateChecker = updateChecker(SecureStore, withTimeout((url, init) => fetch(url, init), 15_000));
+
+/** For screen tests (a test page is Platform 'web', never a GitHub build): this build, store and GitHub. */
+export function setUpdateCheckerForTests(b: Build, kv: KeyValue, f: FetchFn): void {
+  build = b;
+  checker = updateChecker(kv, f);
+}
+
+/** This app's version when it is a build that asks GitHub; null otherwise. */
+const asking = (): string | null => (asksGithub(build) && Constants.expoConfig?.version) || null;
+const useStatus = (): UpdateStatus => useSyncExternalStore(checker.subscribe, checker.status);
 
 export function useAppUpdate(): string | null {
-  const [newer, setNewer] = useState<string | null>(null);
+  const status = useStatus();
   useEffect(() => {
-    const current = Constants.expoConfig?.version;
-    if (!asksGithub(BUILD) || !current) return;
-    let live = true;
-    const ask = () =>
-      void check(current, Date.now())
-        .then((v) => live && setNewer(v))
-        .catch(() => {});
+    const current = asking();
+    if (!current) return;
+    const c = checker;
+    const ask = () => void c.check(current, Date.now()).catch(() => {});
     ask();
+    // Not tied to focus: Home under Settings and the till under This PoS keep ticking. That is harmless (the hour's
+    // rhythm decides, the answer is shared) and is what keeps a till that never leaves the front asking.
+    const timer = setInterval(() => {
+      if (AppState.currentState === 'active') ask();
+    }, TICK_MS);
     const sub = AppState.addEventListener('change', (s) => s === 'active' && ask());
     return () => {
-      live = false;
+      clearInterval(timer);
       sub.remove();
     };
   }, []);
-  return newer;
+  const current = asking();
+  return current ? newerOf(status, current) : null;
+}
+
+/** What Settings' and This PoS's line draws from, asking as the page comes into view; null in a build that doesn't ask. */
+export function useUpdateStatus(): { status: UpdateStatus; current: string } | null {
+  const status = useStatus();
+  useFocusEffect(
+    useCallback(() => {
+      const current = asking();
+      if (!current) return;
+      const c = checker;
+      const ask = () => void c.check(current, Date.now(), ON_OPEN).catch(() => {});
+      ask();
+      const sub = AppState.addEventListener('change', (s) => s === 'active' && ask());
+      return () => sub.remove();
+    }, []),
+  );
+  const current = asking();
+  return current ? { status, current } : null;
 }

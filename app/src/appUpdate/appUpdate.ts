@@ -1,18 +1,35 @@
 // A GitHub build's notice of a newer release: Karto Wallet and Karto PoS installed from the repository's APKs update
-// only when the person installs the next APK, so each asks GitHub, at most once a day, which release is the latest
-// and says so when it is newer than itself. Only those builds ask: a Play build is updated by Play (and Play's rules
+// only when the person installs the next APK, so each asks GitHub which release is the latest and says so when it is
+// newer than itself: Home and the till at most once an hour, Settings and This PoS each time they open (at most once
+// a minute), all sharing one answer. Only those builds ask: a Play build is updated by Play (and Play's rules
 // allow no other way), an iPhone's by the App Store, a .dev build by its developer. The answer is read for its
 // version alone; the notice opens the repository's own releases page, never an address from the answer.
 // GitHub's API: https://docs.github.com/en/rest/releases/releases#get-the-latest-release (the latest full release:
 // drafts and pre-releases are never it, and with none it answers 404).
 import type { FetchFn } from '../lightning/lightning';
+import { whenText } from '../money/words';
 
 export const RELEASES_PAGE = 'https://github.com/boltcard/karto/releases/latest';
 export const LATEST_RELEASE_API = 'https://api.github.com/repos/boltcard/karto/releases/latest';
-/** How long an answer stands before GitHub is asked again. */
-export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
-/** How long after an ask that failed (no answer, a refusal, an answer that couldn't be kept) before the next. */
+/** How long an answer stands before Home or the till asks GitHub again. */
+export const CHECK_EVERY_MS = 60 * 60 * 1000;
+/** How long after a fetch that got no answer before Home or the till asks again; a refusal's own wait when it names none. */
 export const RETRY_AFTER_MS = 60 * 60 * 1000;
+
+/** How old an answer may be before a caller asks again, and how long it waits after a fetch that got no answer. */
+export type Rhythm = { everyMs: number; retryMs: number };
+/** Home's and the till's. */
+export const BACKGROUND: Rhythm = { everyMs: CHECK_EVERY_MS, retryMs: RETRY_AFTER_MS };
+/**
+ * Settings' and This PoS's: each time the page opens, no more than once a minute. GitHub answers /releases/latest
+ * with `cache-control: public, max-age=60`, and React Native's OkHttp keeps a disk cache, so a publish can take about
+ * a minute to show and an ask inside the minute could be answered from the phone anyway. (No ETag: GitHub spares a
+ * 304 from the hour's allowance only for a request with an Authorization header, and these carry none.)
+ */
+export const ON_OPEN: Rhythm = { everyMs: 60_000, retryMs: 60_000 };
+/** A refusal's wait, as its headers name it, kept within these. */
+const REFUSED_MIN_MS = 60_000;
+const REFUSED_MAX_MS = 60 * 60 * 1000;
 /** expo-secure-store's key: letters, digits, '.', '-' and '_' only. */
 export const SAVED_KEY = 'karto.appUpdate';
 
@@ -38,13 +55,45 @@ export function isNewer(a: string, b: string): boolean {
 }
 
 /**
- * The latest full release's version (X.Y.Z), or null when there is none (404) or the answer names none. Throws when
- * GitHub can't be reached or refuses (a 403 or 429 when the addresses behind one carrier's or shop's network have
- * used up the hour's 60 asks), so a refusal is never taken for "no newer release".
+ * GitHub refused (403, 429): the addresses behind one carrier's or shop's network have used up the hour's 60 asks.
+ * Its docs say not to ask again before `retry-after` (seconds) or `x-ratelimit-reset` (epoch seconds, by GitHub's
+ * clock: read against the answer's `date`, so a phone's clock that is out doesn't shorten or stretch it), and that
+ * asking while refused may get the client banned. notBefore is that time on this phone's clock.
  */
-export async function latestRelease(fetch: FetchFn): Promise<string | null> {
+export class Refused extends Error {
+  constructor(
+    readonly status: number,
+    readonly notBefore: number,
+  ) {
+    super(`GitHub answered ${status}`);
+    this.name = 'Refused';
+  }
+}
+
+function refusedUntil(r: Response, nowMs: number): number {
+  const header = (name: string) => {
+    const v = r.headers?.get?.(name)?.trim();
+    return v ? Number(v) : NaN;
+  };
+  const wait = (ms: number) => nowMs + Math.min(REFUSED_MAX_MS, Math.max(REFUSED_MIN_MS, ms));
+  const after = header('retry-after');
+  if (Number.isFinite(after)) return wait(after * 1000);
+  const reset = header('x-ratelimit-reset');
+  if (Number.isFinite(reset)) {
+    const theirs = Date.parse(r.headers?.get?.('date') ?? '');
+    return wait(reset * 1000 - (Number.isFinite(theirs) ? theirs : nowMs));
+  }
+  return nowMs + RETRY_AFTER_MS;
+}
+
+/**
+ * The latest full release's version (X.Y.Z), or null when there is none (404) or the answer names none. Throws when
+ * GitHub can't be reached, Refused when it refuses, so a refusal is never taken for "no newer release".
+ */
+export async function latestRelease(fetch: FetchFn, nowMs = Date.now()): Promise<string | null> {
   const r = await fetch(LATEST_RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
   if (r.status === 404) return null;
+  if (r.status === 403 || r.status === 429) throw new Refused(r.status, refusedUntil(r, nowMs));
   if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
   const body: unknown = await r.json();
   if (typeof body !== 'object' || body === null) return null;
@@ -58,7 +107,7 @@ export type KeyValue = {
   getItemAsync(key: string): Promise<string | null>;
   setItemAsync(key: string, value: string): Promise<void>;
 };
-type Saved = { checkedAt: number; latest: string | null };
+export type Saved = { checkedAt: number; latest: string | null };
 
 async function readSaved(kv: KeyValue): Promise<Saved | null> {
   try {
@@ -71,41 +120,119 @@ async function readSaved(kv: KeyValue): Promise<Saved | null> {
   }
 }
 
-/** What one app remembers between checks while it runs: the last answer had, and when an ask last failed. */
-export type Memory = { saved: Saved | null; failedAt: number | null };
+/**
+ * What one app knows, shared by every caller. The secure store is read once, at the first check (`loading`); after
+ * that this is the truth and the store is only written, so a stale stored answer never beats a fresh one.
+ */
+export type Memory = {
+  saved: Saved | null;
+  /** When the last fetch got no answer or a refusal; null once GitHub answers. */
+  failedAt: number | null;
+  /** A refusal's: no caller asks before it. */
+  notBefore: number | null;
+  loading: Promise<void> | null;
+  fetching: Promise<void> | null;
+  /** Told on every change. */
+  onChange?: () => void;
+};
 
 const due = (at: number, every: number, nowMs: number) => nowMs - at >= every || nowMs < at;
+/** A refusal's wait still running (not one left in the future by a clock gone back further than any wait). */
+const held = (notBefore: number | null, nowMs: number) => notBefore !== null && nowMs < notBefore && notBefore - nowMs <= REFUSED_MAX_MS;
 
-/**
- * The newer version to tell the person about, or null. GitHub is asked when the last answer is a day old (or from a
- * clock that has since gone back), and not within an hour of an ask that failed; a failed ask leaves the last answer
- * standing. The answer is kept in the secure store, and in memory too, in case the store can't keep it.
- */
-export async function newerRelease(kv: KeyValue, fetch: FetchFn, current: string, nowMs: number, memory: Memory): Promise<string | null> {
-  const kept = await readSaved(kv);
-  let saved = kept && (!memory.saved || kept.checkedAt >= memory.saved.checkedAt) ? kept : memory.saved;
-  if ((!saved || due(saved.checkedAt, CHECK_EVERY_MS, nowMs)) && (memory.failedAt === null || due(memory.failedAt, RETRY_AFTER_MS, nowMs))) {
-    try {
-      saved = { checkedAt: nowMs, latest: await latestRelease(fetch) };
-      memory.saved = saved;
-      memory.failedAt = null;
-      await kv.setItemAsync(SAVED_KEY, JSON.stringify(saved));
-    } catch {
-      // No answer, a refusal, or one the store couldn't keep: the last answer stands, and GitHub waits an hour.
-      memory.failedAt = nowMs;
-    }
+async function fetchLatest(kv: KeyValue, fetch: FetchFn, nowMs: number, memory: Memory): Promise<void> {
+  try {
+    const latest = await latestRelease(fetch, nowMs);
+    memory.saved = { checkedAt: nowMs, latest };
+    memory.failedAt = null;
+    memory.notBefore = null;
+    // Kept for the next start, not waited for: a store that can't keep it (or never answers) is no failed ask and
+    // holds no page or later check; the answer stands in memory.
+    void Promise.resolve()
+      .then(() => kv.setItemAsync(SAVED_KEY, JSON.stringify({ checkedAt: nowMs, latest })))
+      .catch(() => {});
+  } catch (e) {
+    // No answer or a refusal: the last answer stands, and the caller's rhythm (or the refusal) says when to ask again.
+    memory.failedAt = nowMs;
+    if (e instanceof Refused) memory.notBefore = e.notBefore;
+  } finally {
+    memory.fetching = null;
+    memory.onChange?.();
   }
-  return saved?.latest && isNewer(saved.latest, current) ? saved.latest : null;
 }
 
-/** One app's checks: two that overlap (the screen opening as the app comes to the front) share one ask. */
-export function updateChecker(kv: KeyValue, fetch: FetchFn): (current: string, nowMs: number) => Promise<string | null> {
-  const memory: Memory = { saved: null, failedAt: null };
-  let running: Promise<string | null> | null = null;
-  return (current, nowMs) => {
-    running ??= newerRelease(kv, fetch, current, nowMs, memory).finally(() => {
-      running = null;
-    });
-    return running;
+/**
+ * The newer version to tell the person about, or null. What is shared is the fetch, not the decision: a caller that
+ * comes while one runs waits for it, then asks if its own rhythm still finds the answer old (Home's hour must not
+ * stand for Settings' minute). GitHub is asked when the last answer is older than the rhythm's (or from a clock that
+ * has since gone back), not within the rhythm's retry of a fetch that got no answer, and not before a refusal's time.
+ */
+export async function newerRelease(kv: KeyValue, fetch: FetchFn, current: string, nowMs: number, memory: Memory, rhythm: Rhythm = BACKGROUND): Promise<string | null> {
+  memory.loading ??= readSaved(kv).then((kept) => {
+    if (kept && !memory.saved) {
+      memory.saved = kept;
+      memory.onChange?.();
+    }
+  });
+  await memory.loading;
+  while (memory.fetching) await memory.fetching;
+  const { saved, failedAt, notBefore } = memory;
+  if ((!saved || due(saved.checkedAt, rhythm.everyMs, nowMs)) && (failedAt === null || due(failedAt, rhythm.retryMs, nowMs)) && !held(notBefore, nowMs)) {
+    memory.fetching = fetchLatest(kv, fetch, nowMs, memory);
+    memory.onChange?.();
+    await memory.fetching;
+  }
+  return newerOf(memory, current);
+}
+
+/** The newer version an answer names, or null. */
+export const newerOf = (s: { saved: Saved | null }, current: string): string | null =>
+  s.saved?.latest && isNewer(s.saved.latest, current) ? s.saved.latest : null;
+
+/** What a page draws from: a new object on every change, the same one between (useSyncExternalStore). */
+export type UpdateStatus = { saved: Saved | null; asking: boolean; failedAt: number | null; notBefore: number | null };
+
+export type UpdateChecker = {
+  check(current: string, nowMs: number, rhythm?: Rhythm): Promise<string | null>;
+  status(): UpdateStatus;
+  subscribe(listener: () => void): () => void;
+};
+
+/** One app's checker: every caller's answer, fetch and failure are shared, and each change is told to its listeners. */
+export function updateChecker(kv: KeyValue, fetch: FetchFn): UpdateChecker {
+  const memory: Memory = { saved: null, failedAt: null, notBefore: null, loading: null, fetching: null };
+  let status: UpdateStatus = { saved: null, asking: false, failedAt: null, notBefore: null };
+  const listeners = new Set<() => void>();
+  memory.onChange = () => {
+    status = { saved: memory.saved, asking: memory.fetching !== null, failedAt: memory.failedAt, notBefore: memory.notBefore };
+    for (const l of [...listeners]) l();
   };
+  return {
+    check: (current, nowMs, rhythm = BACKGROUND) => newerRelease(kv, fetch, current, nowMs, memory, rhythm),
+    status: () => status,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+  };
+}
+
+/**
+ * Settings' and This PoS's line, or null for none. A failure is silent (the person's call): the last answer stands,
+ * with its own time, and with none there is no line. A newer release is a link to the releases page.
+ */
+export function updateLine(
+  s: UpdateStatus,
+  current: string,
+  app: 'Karto Wallet' | 'Karto PoS',
+  nowMs: number,
+  offsetMin = -new Date(nowMs).getTimezoneOffset(),
+): { text: string; link: boolean } | null {
+  const newer = newerOf(s, current);
+  if (newer) return { text: `${app} ${newer} is out on GitHub ›`, link: true };
+  const { saved } = s;
+  // An answer from a clock since gone back has no time to give; after a failure it can't say "up to date" bare.
+  if (saved && saved.checkedAt <= nowMs) return { text: `Up to date · checked ${whenText(saved.checkedAt / 1000, nowMs / 1000, offsetMin)}`, link: false };
+  if (saved && s.failedAt === null) return { text: 'Up to date', link: false };
+  return s.asking ? { text: 'Asking GitHub for a newer version…', link: false } : null;
 }

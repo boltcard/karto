@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { alertsRow } from '../alerts/alertsView';
 import { useAlerts } from '../alerts/useAlerts';
+import { UpdateLine } from '../appUpdate/UpdateLine';
 import { buildLabel } from '../deploy/bundle';
 import { useCardDeps, useWatcher } from '../services/server';
 import { alertsClient, useRouteGuard, useServices } from '../services/services';
@@ -113,6 +114,8 @@ export default function Settings() {
       )}
       {/* Every build of a version has the same number: this tells the person which one is installed. */}
       <Small>{buildLabel(sv.build)}</Small>
+      {/* A GitHub build's: asks GitHub for a newer version each time Settings comes into view. */}
+      <UpdateLine app="Karto Wallet" />
       {naming && deps && (
         <WalletNameSheet
           start={savedName ?? snap.wallet?.name ?? ''}

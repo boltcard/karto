@@ -15,9 +15,10 @@
 # SHA256SUMS and the notes, all in .release/v<version>/, and the draft, made only once all of that has passed.
 # Nothing is pushed: GitHub makes the tag, at this commit, when the draft is published.
 #
-# The draft is a full release: once published it is GitHub's latest, and every app installed from these APKs says
-# so within a day (app/src/appUpdate). To publish a build for testers alone, tick "Set as a pre-release" when
-# publishing the draft: the apps and Obtainium's default leave pre-releases alone.
+# The draft is a full release: once published it is GitHub's latest, and every app installed from these APKs says so
+# within an hour while it is open, or within about a minute on opening Settings / This PoS (app/src/appUpdate). To
+# publish a build for testers alone, tick "Set as a pre-release" when publishing the draft: the apps and Obtainium's
+# default leave pre-releases alone.
 #
 # A release installs beside the .dev builds, as another app. To prove that a release updates over the one before:
 # install the draft's arm64-v8a wallet on a test phone, raise app.json's version by hand (not committed), run
@@ -162,7 +163,7 @@ Signer #1 certificate SHA-256 digest: $pin
 
 (the same certificate as \`$fingerprint\`, as keytool and Android's settings write it), and \`sha256sum -c SHA256SUMS\` checks the files. An app signed by any other key can't update these, and these can't update it.
 
-Updates: each app says on its main screen when a newer release is here (it asks GitHub once a day). Install the next release's APK over this one, or with Obtainium add this repository and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
+Updates: each app says on its main screen when a newer release is here (it asks GitHub once an hour, and each time Settings or This PoS opens). Install the next release's APK over this one, or with Obtainium add this repository and filter the APKs by \`karto-wallet\` or \`karto-pos\`, since one release holds both apps.
 EOF
 
 if [ -n "$is_local" ]; then
