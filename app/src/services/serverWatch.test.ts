@@ -1611,11 +1611,11 @@ describe('ServerWatch and the phone as a card', () => {
     watch.watch();
     await settle();
     expect(watch.snapshot().gaveUp).toEqual([]);
-    watch.noteGaveUp({ name: 'Daily', amountMsat: 5_000_000, pending: false });
-    watch.noteGaveUp({ name: 'Old', amountMsat: 0, pending: true });
+    watch.noteGaveUp({ name: 'Daily', hadBalance: true, pending: false });
+    watch.noteGaveUp({ name: 'Old', hadBalance: false, pending: true });
     expect(watch.snapshot().gaveUp).toEqual([
-      { name: 'Daily', amountMsat: 5_000_000, pending: false },
-      { name: 'Old', amountMsat: 0, pending: true },
+      { name: 'Daily', hadBalance: true, pending: false },
+      { name: 'Old', hadBalance: false, pending: true },
     ]);
     watch.dismissGaveUp();
     expect(watch.snapshot().gaveUp).toEqual([]);

@@ -152,7 +152,7 @@ export default function Home() {
   });
   const removed = removedNotice(pc.removed, pc.supported && !pc.record, look.view, look.rated);
   // The cards given up on their pages (account.tsx), until read.
-  const gaveUp = gaveUpNotice(snap.gaveUp, look.view, look.rated);
+  const gaveUp = gaveUpNotice(snap.gaveUp);
   const shop = shopTile(wallet, snap.salesToday, snap.hadShop);
   return (
     // The wallet's name after Wallet, once it has one.

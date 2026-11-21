@@ -240,19 +240,20 @@ describe('checkLine', () => {
   });
 });
 
-// The Wallet page's line after a card was given up, until it is dismissed: what moved, in the page's own view.
+// The Wallet page's line after a card was given up, until it is dismissed. No figure: the server moves the balance it
+// has at the start, which a top-up or a tap during the screen lock can have changed from the one on the card's page;
+// Pool's history holds the exact amount.
 describe('gaveUpNotice', () => {
-  it('says each card given up was removed and what moved to Pool', () => {
-    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 5_000_000, pending: false }])).toEqual(['Daily was removed: its 5,000 sat moved to Pool.']);
-    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 999, pending: false }])).toEqual(['Daily was removed.']);
+  it('says each card given up was removed, and that its balance moved to Pool when it had one', () => {
+    expect(gaveUpNotice([{ name: 'Daily', hadBalance: true, pending: false }])).toEqual(['Daily was removed: its balance moved to Pool.']);
+    expect(gaveUpNotice([{ name: 'Daily', hadBalance: false, pending: false }])).toEqual(['Daily was removed.']);
     expect(gaveUpNotice([
-      { name: 'Daily', amountMsat: 5_000_000, pending: false },
-      { name: 'Old', amountMsat: 0, pending: true },
-    ])).toEqual(['Daily was removed: its 5,000 sat moved to Pool.', 'Old was removed. Your server will be told when it answers.']);
+      { name: 'Daily', hadBalance: true, pending: false },
+      { name: 'Old', hadBalance: false, pending: true },
+    ])).toEqual(['Daily was removed: its balance moved to Pool.', 'Old was removed. Your server will be told when it answers.']);
   });
 
-  it('keeps the amount hidden while amounts are, and says nothing when none was given up', () => {
-    expect(gaveUpNotice([{ name: 'Daily', amountMsat: 5_000_000, pending: false }], 'hidden')).toEqual(['Daily was removed: its *** moved to Pool.']);
+  it('says nothing when none was given up', () => {
     expect(gaveUpNotice([])).toEqual([]);
   });
 });
