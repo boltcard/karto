@@ -195,7 +195,7 @@ export default function Move() {
       )}
       {phase.at === 'steps' && at === 'check' && to && (
         <>
-          <RateAgeLine />
+          <RateAgeLine unit={cv} />
           <ReadBack rows={moveReadBack(from, to, amountMsat ?? 0, cv, rated)} force={cv} />
           {problem && <Body muted>{problem}</Body>}
           <Button title={moveTitle} disabled={problem !== null} onPress={move} />
