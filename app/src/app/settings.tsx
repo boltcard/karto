@@ -111,7 +111,7 @@ export default function Settings() {
             </Fragment>
           ),
       )}
-      {/* Every build calls itself 1.0.0: this tells the person which one is installed. */}
+      {/* Every build of a version has the same number: this tells the person which one is installed. */}
       <Small>{buildLabel(sv.build)}</Small>
       {naming && deps && (
         <WalletNameSheet

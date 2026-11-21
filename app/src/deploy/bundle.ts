@@ -45,7 +45,7 @@ export async function loadManifest(native: { readAssetText(path: string): Promis
 export type BuildInfo = { commit: string; builtAt: number };
 
 /**
- * The build packed in the APK, for the server page: every build calls itself 1.0.0, so
+ * The build packed in the APK, for the server page: every build of a version has the same number, so
  * this is how the person tells the latest app is installed. Null when the APK has none or a malformed one.
  */
 export async function loadBuildInfo(native: { readAssetText(path: string): Promise<string> }): Promise<BuildInfo | null> {
