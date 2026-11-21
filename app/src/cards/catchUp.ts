@@ -1,4 +1,6 @@
-// Tells cardd about wipes the phone did while it couldn't be reached.
+// Tells cardd about wipes the phone did while it couldn't be reached. Each save is made only while the card's record
+// still has the wipe acted on (saveCard's ifPending): a wipe that moved on during the calls to cardd (the card reset
+// meanwhile) is kept, for the next catch-up.
 import type { CardInfo } from '../cardd/client';
 import type { CardDeps } from './deps';
 
@@ -10,13 +12,13 @@ export async function catchUp(d: Pick<CardDeps, 'cardd' | 'cache'>): Promise<num
     const s = server.get(c.id);
     if (s && s.version !== c.version) {
       // The card was added again since this phone wiped it: that wipe is old news.
-      await d.cache.saveCard({ id: s.id, version: s.version, name: s.name, state: s.state });
+      await d.cache.saveCard({ id: s.id, version: s.version, name: s.name, state: s.state }, { ifPending: c.pending });
       continue;
     }
     if (s && s.state !== 'wiping' && s.state !== 'reset') await d.cardd.wipeCard(c.id);
     if (s && c.pending === 'wiped' && s.state !== 'reset') await d.cardd.wipedCard(c.id);
     const { pending: _, ...rest } = c;
-    await d.cache.saveCard({ ...rest, state: c.pending === 'wiped' ? 'reset' : 'wiping' });
+    await d.cache.saveCard({ ...rest, state: c.pending === 'wiped' ? 'reset' : 'wiping' }, { ifPending: c.pending });
   }
   return pending.length;
 }
