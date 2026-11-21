@@ -835,6 +835,27 @@ describe('ServerWatch', () => {
     expect(w.cache.rows.c2).toEqual({ id: 'c2', version: 1, name: 'c2', state: 'active' });
   });
 
+  // The list is shown as soon as the server sends it; saving the phone's copy (a write per card, each flushed to disk:
+  // 85-190 ms on the 9a) comes after, not between the answer and the page.
+  it("shows the server's list before the phone's copy is saved", async () => {
+    const { w, watch } = world();
+    const srv = w.at(HOST);
+    const kept = w.cache.saveCard;
+    let release = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    w.cache.saveCard = async (...a) => {
+      await held;
+      return kept(...a);
+    };
+    watch.watch();
+    await settle();
+    expect(watch.snapshot()).toMatchObject({ cards: srv.cards, cardsDown: false, cardsError: null });
+    expect(w.cache.rows.c2).toBeUndefined();
+    release();
+    await settle();
+    expect(w.cache.rows.c2).toEqual({ id: 'c2', version: 1, name: 'c2', state: 'active' });
+  });
+
   // Back in front after a list that failed: asked for again, not left until the person leaves the page and returns.
   it('asks for the cards again on the return to the front when the last list failed', async () => {
     const { w, watch } = world();
