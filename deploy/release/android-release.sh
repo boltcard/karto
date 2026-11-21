@@ -15,10 +15,10 @@
 # SHA256SUMS and the notes, all in .release/v<version>/, and the draft, made only once all of that has passed.
 # Nothing is pushed: GitHub makes the tag, at this commit, when the draft is published.
 #
-# The draft is a full release: once published it is GitHub's latest, and every app installed from these APKs says
-# so within an hour, or at once on opening Settings / This PoS (app/src/appUpdate). To publish a build for testers
-# alone, tick "Set as a pre-release" when publishing the draft: the apps and Obtainium's default leave pre-releases
-# alone.
+# The draft is a full release: once published it is GitHub's latest, and every app installed from these APKs says so
+# within an hour while it is open, or within about a minute on opening Settings / This PoS (app/src/appUpdate). To
+# publish a build for testers alone, tick "Set as a pre-release" when publishing the draft: the apps and Obtainium's
+# default leave pre-releases alone.
 #
 # A release installs beside the .dev builds, as another app. To prove that a release updates over the one before:
 # install the draft's arm64-v8a wallet on a test phone, raise app.json's version by hand (not committed), run
