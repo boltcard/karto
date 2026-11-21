@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { asksGithub, BACKGROUND, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, ON_OPEN, parseVersion, Refused, RETRY_AFTER_MS, SAVED_KEY, updateChecker, type KeyValue, type Memory } from './appUpdate';
+import { asksGithub, BACKGROUND, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, ON_OPEN, parseVersion, Refused, RETRY_AFTER_MS, SAVED_KEY, updateChecker, updateLine, type KeyValue, type Memory, type UpdateStatus } from './appUpdate';
+import { whenText } from '../money/words';
 
 const answer = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers), json: async () => body }) as Response;
@@ -290,3 +291,38 @@ describe('updateChecker', () => {
 });
 
 const newerOfStatus = (c: ReturnType<typeof updateChecker>) => c.status().saved?.latest ?? null;
+
+describe('updateLine', () => {
+  const st = (o: Partial<UpdateStatus>): UpdateStatus => ({ saved: null, asking: false, failedAt: null, notBefore: null, ...o });
+  const line = (o: Partial<UpdateStatus>, current = '1.0.1', app: 'Karto Wallet' | 'Karto PoS' = 'Karto Wallet') => updateLine(st(o), current, app, NOW, 0);
+  const at = NOW - 60_000;
+  const when = whenText(at / 1000, NOW / 1000, 0);
+
+  it('draws nothing before anything is known, and says it is asking while the first fetch runs', () => {
+    expect(line({})).toBeNull();
+    expect(line({ asking: true })).toEqual({ text: 'Asking GitHub for a newer version…', link: false });
+  });
+  it('names a newer release as a link, after a failure too, in the app\'s own name', () => {
+    const newer = { saved: { checkedAt: at, latest: '1.0.2' } };
+    expect(line(newer)).toEqual({ text: 'Karto Wallet 1.0.2 is out on GitHub ›', link: true });
+    expect(line({ ...newer, failedAt: NOW })).toEqual({ text: 'Karto Wallet 1.0.2 is out on GitHub ›', link: true });
+    expect(line(newer, '1.0.1', 'Karto PoS')).toEqual({ text: 'Karto PoS 1.0.2 is out on GitHub ›', link: true });
+  });
+  it('says up to date with the time of the answer, while a new fetch runs too', () => {
+    expect(when).toMatch(/^today at /);
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' } })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: null } })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, asking: true })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+  });
+  // The person: "a fail should be silent". The last answer stands, with its own time.
+  it('keeps the last answer\'s line after a failure, and draws nothing after one with no answer', () => {
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, failedAt: NOW })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+    expect(line({ failedAt: NOW })).toBeNull();
+    expect(line({ failedAt: NOW, notBefore: NOW + 60_000 })).toBeNull();
+  });
+  it('leaves the time off an answer from a clock since gone back, and draws nothing for one after a failure', () => {
+    const future = { saved: { checkedAt: NOW + 3_600_000, latest: '1.0.1' } };
+    expect(line(future)).toEqual({ text: 'Up to date', link: false });
+    expect(line({ ...future, failedAt: NOW })).toBeNull();
+  });
+});
