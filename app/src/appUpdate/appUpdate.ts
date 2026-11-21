@@ -7,6 +7,7 @@
 // GitHub's API: https://docs.github.com/en/rest/releases/releases#get-the-latest-release (the latest full release:
 // drafts and pre-releases are never it, and with none it answers 404).
 import type { FetchFn } from '../lightning/lightning';
+import { whenText } from '../money/words';
 
 export const RELEASES_PAGE = 'https://github.com/boltcard/karto/releases/latest';
 export const LATEST_RELEASE_API = 'https://api.github.com/repos/boltcard/karto/releases/latest';
@@ -211,4 +212,24 @@ export function updateChecker(kv: KeyValue, fetch: FetchFn): UpdateChecker {
       return () => void listeners.delete(listener);
     },
   };
+}
+
+/**
+ * Settings' and This PoS's line, or null for none. A failure is silent (the person's call): the last answer stands,
+ * with its own time, and with none there is no line. A newer release is a link to the releases page.
+ */
+export function updateLine(
+  s: UpdateStatus,
+  current: string,
+  app: 'Karto Wallet' | 'Karto PoS',
+  nowMs: number,
+  offsetMin = -new Date(nowMs).getTimezoneOffset(),
+): { text: string; link: boolean } | null {
+  const newer = newerOf(s, current);
+  if (newer) return { text: `${app} ${newer} is out on GitHub ›`, link: true };
+  const { saved } = s;
+  // An answer from a clock since gone back has no time to give; after a failure it can't say "up to date" bare.
+  if (saved && saved.checkedAt <= nowMs) return { text: `Up to date · checked ${whenText(saved.checkedAt / 1000, nowMs / 1000, offsetMin)}`, link: false };
+  if (saved && s.failedAt === null) return { text: 'Up to date', link: false };
+  return s.asking ? { text: 'Asking GitHub for a newer version…', link: false } : null;
 }
