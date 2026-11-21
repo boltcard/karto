@@ -513,6 +513,28 @@ describe('Send out typed in pounds', () => {
     }
   });
 
+  // Check confirms in £ while amounts are hidden with £ chosen: a £ figure is on the page, so the rate's age is said.
+  it('says the rate is old on Check while amounts are hidden with £ chosen', async () => {
+    await open();
+    const fresh = look.rated;
+    look.rated = { currency: 'GBP', price: 61_352, time: Math.floor(Date.now() / 1000) - 5 * 3600 };
+    look.view = 'hidden';
+    look.unit = 'fiat';
+    try {
+      rerender(<Send />);
+      fireEvent.change(field(), { target: { value: 'alice@example.com' } });
+      press('Next');
+      fireEvent.change(await screen.findByPlaceholderText('Amount in £'), { target: { value: '5' } });
+      press('Next');
+      expect(await screen.findByRole('button', { name: 'Send £5.00' })).toBeTruthy();
+      expect(screen.getByText(/^£ at a rate .* old$/)).toBeTruthy();
+    } finally {
+      look.rated = fresh;
+      look.view = 'sat';
+      look.unit = 'sat';
+    }
+  });
+
   it('empties the pounds typed when the rate goes while Check shows, so Back finds no "5" to read as 5 sat', async () => {
     await open();
     fireEvent.change(field(), { target: { value: 'alice@example.com' } });

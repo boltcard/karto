@@ -86,11 +86,13 @@ export function Amount({ msat, size = 'row', sign, alt, force, incoming, onBand,
 
 /**
  * The rate's age at the top of Home, the account pages and Check, while it is over an hour and a £ figure can be
- * on screen: "£ at a rate 2 h old". The clock is read again each minute.
+ * on screen: "£ at a rate 2 h old". The clock is read again each minute. unit: the page's own, where it draws its
+ * amounts in the chosen unit while they are hidden (a confirm page), so a £ figure there gets the line too.
  */
-export function RateAgeLine() {
+export function RateAgeLine({ unit }: { unit?: ViewKind } = {}) {
   const s = useStyles(makeStyles);
-  const { rated, view } = useAmountView();
+  const { rated, view: appView } = useAmountView();
+  const view = unit ?? appView;
   const [nowS, setNowS] = useState(() => Date.now() / 1000);
   useEffect(() => {
     const t = setInterval(() => setNowS(Date.now() / 1000), 60_000);

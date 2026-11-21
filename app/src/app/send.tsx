@@ -289,7 +289,7 @@ export default function Send() {
       )}
       {phase.at === 'steps' && at === 'check' && payable && (
         <>
-          <RateAgeLine />
+          <RateAgeLine unit={cv} />
           <ReadBack rows={sendReadBack(payable, amountMsat ?? 0, available, cv, rated)} force={cv} />
           {notes && (
             <>
