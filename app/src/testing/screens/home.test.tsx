@@ -95,10 +95,10 @@ describe("Home in the app's view", () => {
 describe('Home after a card was given up', () => {
   it('says so until the person presses OK', () => {
     look.view = 'sat';
-    snap.gaveUp = [{ name: 'Daily', amountMsat: 5_000_000, pending: false }];
+    snap.gaveUp = [{ name: 'Daily', hadBalance: true, pending: false }];
     try {
       render(<Home />);
-      expect(screen.getByText('Daily was removed: its 5,000 sat moved to Pool.')).toBeTruthy();
+      expect(screen.getByText('Daily was removed: its balance moved to Pool.')).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'OK' }));
       expect(watch.dismissGaveUp).toHaveBeenCalledTimes(1);
     } finally {

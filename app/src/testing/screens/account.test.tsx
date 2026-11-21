@@ -105,7 +105,7 @@ describe("A card's I no longer have this card", () => {
     expect(world.cardd.balances.get('pool')).toBe(5_000_000);
     await vi.waitFor(() => expect(router.back).toHaveBeenCalled());
     // The Wallet page says what was removed.
-    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', amountMsat: 5_000_000, pending: false });
+    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', hadBalance: true, pending: false });
   });
 
   // The start waits for its answer until the test lets it go.
@@ -140,7 +140,7 @@ describe("A card's I no longer have this card", () => {
     vi.spyOn(world.deps.cardd, 'wipedCard').mockRejectedValueOnce(new TypeError('fetch failed: no answer'));
     await confirm();
     await vi.waitFor(() => expect(router.back).toHaveBeenCalled());
-    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', amountMsat: 5_000_000, pending: true });
+    expect(server.watch.noteGaveUp).toHaveBeenCalledWith({ name: 'Daily', hadBalance: true, pending: true });
     expect(world.cardd.cards.get(DAILY)?.state).toBe('wiping');
   });
 

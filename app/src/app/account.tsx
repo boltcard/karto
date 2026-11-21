@@ -265,7 +265,7 @@ export default function Account() {
       setGiveUpError(null);
       setRemoving(true);
       const { finished } = await giveUpCard(deps, { id: c.id, version: c.version, name: c.name });
-      watch.noteGaveUp({ name, amountMsat: c.balanceMsat, pending: !finished });
+      watch.noteGaveUp({ name, hadBalance: c.balanceMsat >= 1000, pending: !finished });
       await watch.reloadCards().catch(() => {});
       if (front.current) goBack();
     } catch (e) {

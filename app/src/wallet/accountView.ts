@@ -95,13 +95,17 @@ export function giveUpLine(c: Pick<WalletCard, 'balanceMsat' | 'heldMsat'>, unit
   return { line: c.balanceMsat >= 1000 ? `Its ${viewText(c.balanceMsat, unit, r)} move to Pool; ${refused}` : `Taps of it are refused.`, disabled: false };
 }
 
-/** A card given up on its page, for the Wallet page: its name, the balance that moved to Pool, and whether the server's finish is still to come (the catch-up makes it). */
-export type GaveUp = { name: string; amountMsat: number; pending: boolean };
+/**
+ * A card given up on its page, for the Wallet page: its name, whether its page showed a balance when it was confirmed,
+ * and whether the server's finish is still to come (the catch-up makes it). No figure: the server moves the balance it
+ * has at the start, which a top-up or a tap during the screen lock can have changed; Pool's history has the amount.
+ */
+export type GaveUp = { name: string; hadBalance: boolean; pending: boolean };
 
-/** The Wallet page's lines for the cards given up, one each, in the page's own view (hidden stays hidden). */
-export function gaveUpNotice(g: readonly GaveUp[], v: View = 'sat', r: Rated | null = null): string[] {
-  return g.map(({ name, amountMsat, pending }) => {
-    const moved = amountMsat >= 1000 ? `${name} was removed: its ${viewText(amountMsat, v, r)} moved to Pool.` : `${name} was removed.`;
+/** The Wallet page's lines for the cards given up, one each. */
+export function gaveUpNotice(g: readonly GaveUp[]): string[] {
+  return g.map(({ name, hadBalance, pending }) => {
+    const moved = hadBalance ? `${name} was removed: its balance moved to Pool.` : `${name} was removed.`;
     return pending ? `${moved} Your server will be told when it answers.` : moved;
   });
 }
