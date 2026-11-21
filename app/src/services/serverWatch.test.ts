@@ -851,6 +851,7 @@ describe('ServerWatch', () => {
     await settle();
     expect(watch.snapshot()).toMatchObject({ cards: srv.cards, cardsDown: false, cardsError: null });
     expect(w.cache.rows.c2).toBeUndefined();
+    expect(w.cache.photoReads).toBe(2); // the wake's, then the photo sync's: it doesn't wait for the copy either
     release();
     await settle();
     expect(w.cache.rows.c2).toEqual({ id: 'c2', version: 1, name: 'c2', state: 'active' });

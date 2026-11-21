@@ -564,9 +564,12 @@ export class ServerWatch {
       // Forgotten meanwhile: the cache may be a removed wallet's, emptied, and this list is not put back in it.
       if (deps !== this.snap.deps) return;
       // Shown first: the phone's copy is a write per card, each flushed to disk, and the page doesn't wait for it.
+      // Nor do the photos, which don't read the copy.
       if (current()) {
         this.cardsUnreached = false;
         this.set({ cards: list, cardsDown: false, cardsError: null });
+        this.photoList = list;
+        void this.oneAtATime('photos', 'again', (d) => this.syncPhotos(d));
       }
       // The phone's copy (the list while the server can't be reached) failing to save doesn't hide the list the
       // server sent: the next list saves it again. A line in the log, for the next report from a phone.
@@ -574,8 +577,7 @@ export class ServerWatch {
         console.log('CARDAPP-CARDS', JSON.stringify({ kept: e instanceof Error ? e.message : String(e) })),
       );
       if (!current()) return;
-      this.photoList = list;
-      void this.oneAtATime('photos', 'again', (d) => this.syncPhotos(d));
+      // After the copy: keeping the phone's card reads its remembered name from it (services.tsx rememberedName).
       this.phoneList = list;
       void this.oneAtATime('phoneCard', 'again', (d) => this.keepPhoneCard(d));
     } catch (e) {
