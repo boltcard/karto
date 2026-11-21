@@ -237,9 +237,17 @@ export class AppStore {
     return (await this.get<Record<string, CachedCard>>(CARDS)) ?? {};
   }
 
-  /** unlessPending: kept as it is if its record has a wipe cardd hasn't heard of (read in the same step as the write). */
-  saveCard(c: CachedCard, o: { unlessPending?: boolean } = {}): Promise<void> {
-    return this.update<Record<string, CachedCard>>(CARDS, (all) => (o.unlessPending && all?.[c.id]?.pending ? all : { ...all, [c.id]: c }));
+  /**
+   * Read in the same step as the write: unlessPending keeps the record as it is if it has a wipe cardd hasn't heard
+   * of; ifPending writes only while the record still has that pending wipe (a wipe that moved on meanwhile stays).
+   */
+  saveCard(c: CachedCard, o: { unlessPending?: boolean; ifPending?: CachedCard['pending'] } = {}): Promise<void> {
+    return this.update<Record<string, CachedCard>>(CARDS, (all) => {
+      const was = all?.[c.id]?.pending;
+      if (o.unlessPending && was) return all;
+      if (o.ifPending && was !== o.ifPending) return all;
+      return { ...all, [c.id]: c };
+    });
   }
 
   async pendingRequests(): Promise<MoneyRequest[]> {

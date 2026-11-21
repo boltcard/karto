@@ -53,4 +53,25 @@ describe('catchUp', () => {
     expect(t.cardd.cards.get(id)?.state).toBe('active');
     expect((await t.cache.cards())[id]?.pending).toBeUndefined();
   });
+
+  // The card is reset on the phone while catchUp is telling cardd about its wipe: the newer record ('wiped') is kept,
+  // not overwritten from the copy catchUp read first, and the next catchUp tells cardd the wipe is done.
+  it('keeps a wipe that finished while it was telling cardd', async () => {
+    const t = await cardWorld();
+    const id = 'd'.repeat(32);
+    await t.cache.saveCard({ id, version: 1, name: 'Daily', state: 'wiping', pending: 'wipe' });
+    t.cardd.cards.set(id, { id, version: 1, state: 'active', counter: 2, name: 'Daily', created: 0, updated: 0 });
+    const wiped = { id, version: 1, name: 'Daily', state: 'reset' as const, pending: 'wiped' as const };
+    const wipeCard = t.deps.cardd.wipeCard.bind(t.deps.cardd);
+    t.deps.cardd.wipeCard = async (cardId) => {
+      const answer = await wipeCard(cardId);
+      await t.cache.saveCard(wiped);
+      return answer;
+    };
+    await catchUp(t.deps);
+    expect((await t.cache.cards())[id]).toEqual(wiped);
+    await catchUp(t.deps);
+    expect(t.cardd.cards.get(id)?.state).toBe('reset');
+    expect((await t.cache.cards())[id]).toEqual({ id, version: 1, name: 'Daily', state: 'reset' });
+  });
 });
