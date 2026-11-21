@@ -5,7 +5,11 @@
 // made later, unattended, at a balance nobody confirmed, and its finish would wait for a hold that never comes).
 // A finish that doesn't is recorded pending, and the wallet's catch-up (catchUp.ts) makes it.
 import { CarddError } from '../cardd/error';
+import { isGatewayError } from '../money/requests';
 import { isNetworkFailure, type CardDeps } from './deps';
+
+// Out of reach: no answer, or the gateway's 5xx while cardd restarts (Update server), which may come after cardd acted.
+const unreached = (e: unknown) => isNetworkFailure(e) || isGatewayError(e);
 
 // No answer may still mean the start reached the server (its answer was lost): the money may have moved, so the words
 // don't say nothing did. Pressing again finishes it: the start can be repeated.
@@ -25,7 +29,7 @@ export async function giveUpCard(d: Pick<CardDeps, 'cardd' | 'cache'>, card: { i
   try {
     await d.cardd.wipeCard(card.id);
   } catch (e) {
-    if (isNetworkFailure(e)) throw new GiveUpError('unreachable');
+    if (unreached(e)) throw new GiveUpError('unreachable');
     if (e instanceof CarddError && e.status === 409) {
       // A wipe is refused for a payment in progress, and for a card already reset (another phone gave it up): the
       // server's list says which.
@@ -33,7 +37,7 @@ export async function giveUpCard(d: Pick<CardDeps, 'cardd' | 'cache'>, card: { i
       try {
         listed = (await d.cardd.cards()).find((c) => c.id === card.id);
       } catch (x) {
-        if (isNetworkFailure(x)) throw new GiveUpError('unreachable');
+        if (unreached(x)) throw new GiveUpError('unreachable');
         throw x;
       }
       if (listed && listed.state !== 'reset') throw new GiveUpError('busy');
@@ -45,7 +49,7 @@ export async function giveUpCard(d: Pick<CardDeps, 'cardd' | 'cache'>, card: { i
   try {
     await d.cardd.wipedCard(card.id);
   } catch (e) {
-    if (isNetworkFailure(e)) return { finished: false };
+    if (unreached(e)) return { finished: false };
     if (!(e instanceof CarddError && e.code === 'not_found')) throw e;
   }
   await d.cache.saveCard(record);

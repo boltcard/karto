@@ -112,6 +112,31 @@ describe('giveUpCard', () => {
     expect((await t.cache.cards())[ID]?.pending).toBeUndefined();
   });
 
+  // Caddy's 502 while cardd restarts (Update server): the server out of reach, as the money pages treat it, not a
+  // refusal. The money has moved: the finish is the catch-up's, and the Wallet page says what was removed.
+  it("leaves the finish to the catch-up when the server's gateway answers for it", async () => {
+    const t = await world('active', { sat: 5000 });
+    vi.spyOn(t.deps.cardd, 'wipedCard').mockRejectedValueOnce(new CarddError(502, 'http', 'HTTP 502'));
+    expect(await giveUpCard(t.deps, CARD)).toEqual({ finished: false });
+    expect(t.cardd.balances.get('pool')).toBe(5_000_000);
+    expect((await t.cache.cards())[ID]).toMatchObject({ state: 'reset', pending: 'wiped' });
+  });
+
+  // The start met the gateway: cardd may have moved the money before it went (a restart mid-answer), so the words
+  // are the ones for a lost answer, not a bare error; nothing is recorded, and a second try finishes it.
+  it("says the card may not be removed yet when the server's gateway answers the start", async () => {
+    const t = await world('active', { sat: 5000 });
+    const real = t.deps.cardd.wipeCard.bind(t.deps.cardd);
+    vi.spyOn(t.deps.cardd, 'wipeCard').mockImplementationOnce(async (id: string) => {
+      await real(id);
+      throw new CarddError(502, 'http', 'HTTP 502');
+    });
+    const e = await reason(giveUpCard(t.deps, CARD));
+    expect((e as GiveUpError).message).toBe(GIVE_UP_UNREACHABLE);
+    expect(await giveUpCard(t.deps, CARD)).toEqual({ finished: true });
+    expect(t.cardd.balances.get('pool')).toBe(5_000_000);
+  });
+
   it('keeps the finish pending when the server refuses it for another reason', async () => {
     const t = await world('active');
     vi.spyOn(t.deps.cardd, 'wipedCard').mockRejectedValueOnce(new Error('HTTP 502'));
