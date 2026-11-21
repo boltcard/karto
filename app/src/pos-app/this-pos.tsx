@@ -3,6 +3,7 @@
 // phone, the phone forgets the shop, and Pair opens.
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
+import { UpdateLine } from '../appUpdate/UpdateLine';
 import { usePos } from '../pos/app';
 import { BUILD_LABEL } from '../pos/build';
 import { unpair, unpairWords } from '../pos/pairing';
@@ -42,6 +43,8 @@ export default function ThisPos() {
         </ListGroup>
       )}
       <Small>{BUILD_LABEL()}</Small>
+      {/* A GitHub build's: asks GitHub for a newer version each time This PoS comes into view. */}
+      <UpdateLine app="Karto PoS" />
     </Screen>
   );
 }
