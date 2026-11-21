@@ -7,7 +7,7 @@ import { AppState, Platform } from 'react-native';
 import { withTimeout } from '../lightning/lightning';
 import { asksGithub, updateChecker } from './appUpdate';
 
-const check = updateChecker(SecureStore, withTimeout((url, init) => fetch(url, init), 15_000));
+const checker = updateChecker(SecureStore, withTimeout((url, init) => fetch(url, init), 15_000));
 // Metro inlines these two where they are written out in full.
 const BUILD = { os: Platform.OS, release: process.env.EXPO_PUBLIC_KARTO_RELEASE, store: process.env.EXPO_PUBLIC_KARTO_STORE };
 
@@ -18,7 +18,7 @@ export function useAppUpdate(): string | null {
     if (!asksGithub(BUILD) || !current) return;
     let live = true;
     const ask = () =>
-      void check(current, Date.now())
+      void checker.check(current, Date.now())
         .then((v) => live && setNewer(v))
         .catch(() => {});
     ask();

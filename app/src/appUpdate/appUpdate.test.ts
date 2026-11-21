@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { asksGithub, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, parseVersion, RETRY_AFTER_MS, SAVED_KEY, updateChecker, type KeyValue, type Memory } from './appUpdate';
+import { asksGithub, BACKGROUND, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, ON_OPEN, parseVersion, Refused, RETRY_AFTER_MS, SAVED_KEY, updateChecker, type KeyValue, type Memory } from './appUpdate';
 
-const answer = (status: number, body: unknown) => ({ ok: status >= 200 && status < 300, status, json: async () => body }) as Response;
-const github = (body: unknown, status = 200) => vi.fn(async (_url: string, _init?: RequestInit) => answer(status, body));
+const answer = (status: number, body: unknown, headers: Record<string, string> = {}) =>
+  ({ ok: status >= 200 && status < 300, status, headers: new Headers(headers), json: async () => body }) as Response;
+const github = (body: unknown, status = 200, headers?: Record<string, string>) => vi.fn(async (_url: string, _init?: RequestInit) => answer(status, body, headers));
 const unreachable = () =>
   vi.fn(async (_url: string, _init?: RequestInit): Promise<Response> => {
     throw new Error('fetch failed: no answer from api.github.com in 15 s');
@@ -62,7 +63,7 @@ describe('latestRelease', () => {
   });
 });
 
-const fresh = (): Memory => ({ saved: null, failedAt: null });
+const fresh = (): Memory => ({ saved: null, failedAt: null, notBefore: null, loading: null, fetching: null });
 
 describe('newerRelease', () => {
   it('names a newer release, and saves the answer', async () => {
@@ -75,7 +76,7 @@ describe('newerRelease', () => {
     expect(await newerRelease(memory(), github({ tag_name: 'v0.9.0' }), '1.0.0', NOW, fresh())).toBeNull();
     expect(await newerRelease(memory(), github({ message: 'Not Found' }, 404), '1.0.0', NOW, fresh())).toBeNull();
   });
-  it('asks at most once a day', async () => {
+  it('asks at most once an hour', async () => {
     const kv = memory({ checkedAt: NOW - CHECK_EVERY_MS + 1, latest: '1.0.1' });
     const fetch = github({ tag_name: 'v1.0.2' });
     const m = fresh();
@@ -119,27 +120,173 @@ describe('newerRelease', () => {
     expect(await newerRelease(kv, fetch, '1.0.0', NOW, m)).toBe('1.0.1');
     expect(await newerRelease(kv, fetch, '1.0.0', NOW + 60_000, m)).toBe('1.0.1');
     expect(fetch).toHaveBeenCalledTimes(1);
+    // GitHub answered: a store that couldn't keep it is no failed ask.
+    expect(m.failedAt).toBeNull();
   });
 });
 
 describe('updateChecker', () => {
-  it('shares one ask between checks that overlap', async () => {
-    let answer!: (r: Response) => void;
-    const fetch = vi.fn((_url: string, _init?: RequestInit) => new Promise<Response>((r) => (answer = r)));
-    const check = updateChecker(memory(), fetch);
-    const a = check('1.0.0', NOW);
-    const b = check('1.0.0', NOW);
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
-    answer({ ok: true, status: 200, json: async () => ({ tag_name: 'v1.0.1' }) } as Response);
+  const v = (tag: string) => answer(200, { tag_name: tag });
+  function held() {
+    const answers: ((r: Response) => void)[] = [];
+    const fetch = vi.fn((_url: string, _init?: RequestInit) => new Promise<Response>((r) => answers.push(r)));
+    return { fetch, answer: (r: Response) => answers.shift()!(r) };
+  }
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('shares one fetch between checks that overlap', async () => {
+    const g = held();
+    const c = updateChecker(memory(), g.fetch);
+    const a = c.check('1.0.0', NOW, ON_OPEN);
+    const b = c.check('1.0.0', NOW, ON_OPEN);
+    await vi.waitFor(() => expect(g.fetch).toHaveBeenCalledTimes(1));
+    g.answer(v('v1.0.1'));
     expect(await a).toBe('1.0.1');
     expect(await b).toBe('1.0.1');
-    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(g.fetch).toHaveBeenCalledTimes(1);
   });
+
+  // The app comes to the front with Settings open: Home's listener (the hour's rhythm) runs first. Its "not due" must
+  // not stand for Settings, whose minute has passed.
+  it("an hourly caller doesn't shut out a minute caller", async () => {
+    const fetch = github({ tag_name: 'v1.0.1' });
+    const c = updateChecker(memory({ checkedAt: NOW - 120_000, latest: '1.0.0' }), fetch);
+    const [home, settings] = await Promise.all([c.check('1.0.0', NOW), c.check('1.0.0', NOW, ON_OPEN)]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(settings).toBe('1.0.1');
+    expect(home).toBeNull();
+    expect(newerOfStatus(c)).toBe('1.0.1');
+  });
+
+  it('a caller that comes while a fetch runs judges by its own rhythm after it', async () => {
+    const g = held();
+    const c = updateChecker(memory(), g.fetch);
+    const first = c.check('1.0.0', NOW);
+    await vi.waitFor(() => expect(g.fetch).toHaveBeenCalledTimes(1));
+    const second = c.check('1.0.0', NOW, ON_OPEN);
+    g.answer(v('v1.0.1'));
+    expect(await first).toBe('1.0.1');
+    expect(await second).toBe('1.0.1');
+    expect(g.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('the minute rhythm asks at most once a minute', async () => {
+    const fetch = github({ tag_name: 'v1.0.1' });
+    const c = updateChecker(memory(), fetch);
+    await c.check('1.0.0', NOW, ON_OPEN);
+    await c.check('1.0.0', NOW + 59_999, ON_OPEN);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await c.check('1.0.0', NOW + 60_000, ON_OPEN);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("a refusal holds every rhythm until GitHub's retry-after", async () => {
+    const refused = github({ message: 'API rate limit exceeded' }, 429, { 'retry-after': '120' });
+    const c = updateChecker(memory({ checkedAt: NOW - 2 * CHECK_EVERY_MS, latest: '1.0.0' }), refused);
+    await c.check('1.0.0', NOW, ON_OPEN);
+    expect(c.status().notBefore).toBe(NOW + 120_000);
+    expect(c.status().failedAt).toBe(NOW);
+    await c.check('1.0.0', NOW + 119_999, ON_OPEN);
+    await c.check('1.0.0', NOW + 119_999, BACKGROUND);
+    expect(refused).toHaveBeenCalledTimes(1);
+    await c.check('1.0.0', NOW + 120_000, ON_OPEN);
+    expect(refused).toHaveBeenCalledTimes(2);
+  });
+
+  it('a refusal without retry-after waits for x-ratelimit-reset by GitHub\'s clock, else an hour', async () => {
+    const githubNow = NOW + 10 * 60_000; // this phone is 10 minutes slow
+    const reset = github({}, 403, { 'x-ratelimit-reset': String((githubNow + 300_000) / 1000), date: new Date(githubNow).toUTCString() });
+    const a = updateChecker(memory(), reset);
+    await a.check('1.0.0', NOW, ON_OPEN);
+    expect(a.status().notBefore).toBe(NOW + 300_000);
+    const noDate = updateChecker(memory(), github({}, 403, { 'x-ratelimit-reset': String((NOW + 300_000) / 1000) }));
+    await noDate.check('1.0.0', NOW, ON_OPEN);
+    expect(noDate.status().notBefore).toBe(NOW + 300_000);
+    const bare = updateChecker(memory(), github({}, 403));
+    await bare.check('1.0.0', NOW, ON_OPEN);
+    expect(bare.status().notBefore).toBe(NOW + RETRY_AFTER_MS);
+    const odd = updateChecker(memory(), github({}, 429, { 'retry-after': 'soon', 'x-ratelimit-reset': '' }));
+    await odd.check('1.0.0', NOW, ON_OPEN);
+    expect(odd.status().notBefore).toBe(NOW + RETRY_AFTER_MS);
+  });
+
+  it('keeps a refusal\'s wait between a minute and an hour', async () => {
+    const short = updateChecker(memory(), github({}, 429, { 'retry-after': '1' }));
+    await short.check('1.0.0', NOW, ON_OPEN);
+    expect(short.status().notBefore).toBe(NOW + 60_000);
+    const long = updateChecker(memory(), github({}, 429, { 'retry-after': '86400' }));
+    await long.check('1.0.0', NOW, ON_OPEN);
+    expect(long.status().notBefore).toBe(NOW + 60 * 60_000);
+  });
+
+  it('a fetch with no answer is asked again after a minute on the minute rhythm, an hour on the hour\'s', async () => {
+    const down = unreachable();
+    const c = updateChecker(memory(), down);
+    await c.check('1.0.0', NOW, ON_OPEN);
+    expect(c.status().notBefore).toBeNull();
+    await c.check('1.0.0', NOW + 60_000, BACKGROUND);
+    expect(down).toHaveBeenCalledTimes(1);
+    await c.check('1.0.0', NOW + 60_000, ON_OPEN);
+    expect(down).toHaveBeenCalledTimes(2);
+  });
+
+  it('reads the store once, even for two first checks at the same time', async () => {
+    const kv = memory({ checkedAt: NOW - 1000, latest: '1.0.1' });
+    const read = vi.spyOn(kv, 'getItemAsync');
+    const c = updateChecker(kv, github({ tag_name: 'v1.0.2' }));
+    await Promise.all([c.check('1.0.0', NOW), c.check('1.0.0', NOW)]);
+    kv.saved.set(SAVED_KEY, JSON.stringify({ checkedAt: NOW, latest: '9.0.0' }));
+    expect(await c.check('1.0.0', NOW + 1000)).toBe('1.0.1');
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  // After a restart: the banner shows the stored answer at once, without waiting for the next fetch.
+  it('tells its listeners what the store held, with no fetch', async () => {
+    const fetch = github({ tag_name: 'v1.0.3' });
+    const c = updateChecker(memory({ checkedAt: NOW - 1000, latest: '1.0.2' }), fetch);
+    const heard = vi.fn();
+    c.subscribe(heard);
+    await c.check('1.0.0', NOW);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(c.status().saved).toEqual({ checkedAt: NOW - 1000, latest: '1.0.2' });
+  });
+
+  it('tells its listeners when a fetch starts and ends, and keeps one status between changes', async () => {
+    const g = held();
+    const c = updateChecker(memory(), g.fetch);
+    expect(c.status()).toBe(c.status());
+    const heard = vi.fn();
+    const stop = c.subscribe(heard);
+    const run = c.check('1.0.0', NOW, ON_OPEN);
+    await vi.waitFor(() => expect(c.status().asking).toBe(true));
+    expect(c.status()).toBe(c.status());
+    g.answer(v('v1.0.1'));
+    await run;
+    expect(c.status()).toMatchObject({ asking: false, saved: { checkedAt: NOW, latest: '1.0.1' }, failedAt: null });
+    expect(heard).toHaveBeenCalledTimes(2);
+    stop();
+    const again = c.check('1.0.0', NOW + 60_000, ON_OPEN);
+    await vi.waitFor(() => expect(g.fetch).toHaveBeenCalledTimes(2));
+    g.answer(v('v1.0.2'));
+    await again;
+    await settle();
+    expect(heard).toHaveBeenCalledTimes(2);
+  });
+
   it('remembers a failure between checks', async () => {
     const fetch = unreachable();
-    const check = updateChecker(memory(), fetch);
-    expect(await check('1.0.0', NOW)).toBeNull();
-    expect(await check('1.0.0', NOW + 1000)).toBeNull();
+    const c = updateChecker(memory(), fetch);
+    expect(await c.check('1.0.0', NOW)).toBeNull();
+    expect(await c.check('1.0.0', NOW + 1000)).toBeNull();
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it('throws a Refused carrying its status on 403 and 429', async () => {
+    const e = await latestRelease(github({}, 429, { 'retry-after': '120' }), NOW).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(Refused);
+    expect((e as Refused).notBefore).toBe(NOW + 120_000);
+  });
 });
+
+const newerOfStatus = (c: ReturnType<typeof updateChecker>) => c.status().saved?.latest ?? null;
