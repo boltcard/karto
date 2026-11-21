@@ -2,10 +2,13 @@
 // opens a sheet that saves a new one, keeps the sheet open with the reason on a refusal, and on a server before
 // names says it needs an update. The watch's snapshot and cardd are the test's.
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setUpdateCheckerForTests } from '../../appUpdate/useAppUpdate';
 import Settings from '../../app/settings';
 import { CarddError } from '../../cardd/error';
 import { WalletNameSheet } from '../../ui/WalletNameSheet';
+
+vi.mock('expo-constants', () => ({ default: { expoConfig: { version: '1.0.1' } } }));
 
 const snap: { wallet: { name?: string } | null } = { wallet: { name: '' } };
 const setWalletName = vi.fn(async (name: string) => name.trim());
@@ -75,5 +78,18 @@ describe('WalletNameSheet', () => {
     expect(save.getAttribute('aria-disabled') === 'true' || (save as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'a\u200bb' } });
     expect(screen.getByText("A name can't hold hidden characters.")).toBeTruthy();
+  });
+});
+
+// Settings / This PoS in a GitHub build: the update line is drawn under the build label.
+describe('the update line', () => {
+  afterEach(() => setUpdateCheckerForTests({ os: 'web', release: undefined, store: undefined }, { getItemAsync: async () => null, setItemAsync: async () => {} }, vi.fn()));
+
+  it('is drawn on the page, naming Karto Wallet', async () => {
+    const github = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ tag_name: 'v9.0.0' }) }) as Response);
+    setUpdateCheckerForTests({ os: 'android', release: '1', store: '' }, { getItemAsync: async () => null, setItemAsync: async () => {} }, github);
+    render(<Settings />);
+    expect(await screen.findByRole('link', { name: 'Karto Wallet 9.0.0 is out on GitHub' })).toBeTruthy();
+    expect(github).toHaveBeenCalledTimes(1);
   });
 });

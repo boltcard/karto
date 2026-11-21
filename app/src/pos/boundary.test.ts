@@ -19,9 +19,9 @@ const UI = ['ui.tsx', 'theme.ts', 'useTheme.ts', 'icons.tsx', 'look.ts', 'useBac
 // money/fiat.ts, the currency module, imports words.ts alone.
 // money/view.ts, the wallet's view of an amount, imports fiat.ts and words.ts alone: the till may draw a figure with it.
 // cardd/names.ts, the rule for a name cardd keeps, imports nothing.
-// appUpdate/appUpdate.ts and useAppUpdate.ts, a GitHub build's notice of a newer release: they import lightning/ and
-// money/words.ts alone.
-const FILES = [...UI, 'src/appUpdate/appUpdate.ts', 'src/appUpdate/useAppUpdate.ts', 'src/boltcard/sun.ts', 'src/money/words.ts', 'src/money/fiat.ts', 'src/money/view.ts', 'src/cards/nfcSlot.ts', 'src/cardd/deviceauth.ts', 'src/cardd/error.ts', 'src/cardd/signed.ts', 'src/cardd/names.ts'];
+// appUpdate/appUpdate.ts, useAppUpdate.ts and UpdateLine.tsx, a GitHub build's notice of a newer release: they
+// import lightning/, money/words.ts and ui/ui.tsx alone.
+const FILES = [...UI, 'src/appUpdate/appUpdate.ts', 'src/appUpdate/useAppUpdate.ts', 'src/appUpdate/UpdateLine.tsx', 'src/boltcard/sun.ts', 'src/money/words.ts', 'src/money/fiat.ts', 'src/money/view.ts', 'src/cards/nfcSlot.ts', 'src/cardd/deviceauth.ts', 'src/cardd/error.ts', 'src/cardd/signed.ts', 'src/cardd/names.ts'];
 const allowed = (path: string) =>
   path.startsWith('src/pos/') || path.startsWith('src/pos-app/') || FILES.includes(path) ||
   (path.startsWith('src/native/') && path !== 'src/native/ssh.ts') || path.startsWith('src/ntag424/') || path.startsWith('src/lightning/') ||
