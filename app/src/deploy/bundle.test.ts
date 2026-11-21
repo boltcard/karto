@@ -47,7 +47,7 @@ describe('loadManifest', () => {
   });
 });
 
-// How to tell the latest app is installed: every build calls itself 1.0.0.
+// How to tell the latest app is installed: every build of a version has the same number.
 describe('the build label', () => {
   const native = (files: Record<string, string>) => ({
     readAssetText: async (path: string) => (path in files ? files[path] : Promise.reject(new Error(`no asset ${path}`))),
