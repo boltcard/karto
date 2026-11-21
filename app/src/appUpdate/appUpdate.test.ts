@@ -275,6 +275,17 @@ describe('updateChecker', () => {
     expect(heard).toHaveBeenCalledTimes(2);
   });
 
+  // A Keystore write that never returns must not hold the line, the banner, or any later check.
+  it("tells its listeners GitHub's answer without waiting for the store to keep it", async () => {
+    const kv: KeyValue = { getItemAsync: async () => null, setItemAsync: () => new Promise<void>(() => {}) };
+    const fetch = github({ tag_name: 'v1.0.1' });
+    const c = updateChecker(kv, fetch);
+    expect(await c.check('1.0.0', NOW, ON_OPEN)).toBe('1.0.1');
+    expect(c.status()).toMatchObject({ asking: false, saved: { checkedAt: NOW, latest: '1.0.1' } });
+    expect(await c.check('1.0.0', NOW + 60_000, ON_OPEN)).toBe('1.0.1');
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('remembers a failure between checks', async () => {
     const fetch = unreachable();
     const c = updateChecker(memory(), fetch);

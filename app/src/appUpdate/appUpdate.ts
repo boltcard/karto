@@ -146,8 +146,11 @@ async function fetchLatest(kv: KeyValue, fetch: FetchFn, nowMs: number, memory: 
     memory.saved = { checkedAt: nowMs, latest };
     memory.failedAt = null;
     memory.notBefore = null;
-    // A store that can't keep it is no failed ask: the answer stands in memory.
-    await kv.setItemAsync(SAVED_KEY, JSON.stringify(memory.saved)).catch(() => {});
+    // Kept for the next start, not waited for: a store that can't keep it (or never answers) is no failed ask and
+    // holds no page or later check; the answer stands in memory.
+    void Promise.resolve()
+      .then(() => kv.setItemAsync(SAVED_KEY, JSON.stringify({ checkedAt: nowMs, latest })))
+      .catch(() => {});
   } catch (e) {
     // No answer or a refusal: the last answer stands, and the caller's rhythm (or the refusal) says when to ask again.
     memory.failedAt = nowMs;
