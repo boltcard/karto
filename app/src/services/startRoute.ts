@@ -62,7 +62,7 @@ export function routeAllowed(screen: Screen, o: RouteContext): boolean {
     case '/restore':
       return !o.hasPhrase;
     case '/country':
-      // Until LNVPS has taken a country, it can still be changed (e.g. after a VAT refusal).
+      // Until LNVPS has taken a country, it can still be changed (e.g. after a refusal).
       return o.hasPhrase && (!o.state || o.state.step === 'country');
     case '/onboarding':
       return o.hasPhrase && !!o.state?.country && o.state.step !== 'done' && !fromServerPage(o.state);

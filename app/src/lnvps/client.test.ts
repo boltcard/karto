@@ -49,10 +49,14 @@ describe('LnvpsClient', () => {
     const { fake, client } = setup();
     fake.serverNow = () => 1_790_000_000_000; // the invoice carries the server's time
     fake.account.email_verified = true;
+    fake.account.country_code = 'GBR'; // no VAT
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await client.orderVm(7, 6, key.id);
     expect(vm.expires).toBeNull();
     expect(await client.satPerDay(vm.id)).toBeCloseTo(6863 / 31, 6);
+    // The price of a day is the quote's whole: VAT included (here Ireland's 23%).
+    fake.account.country_code = 'IRL';
+    expect(await client.satPerDay(vm.id)).toBeCloseTo((6863 * 1.23) / 31, 6);
     expect(await client.vmInvoice(vm.id, 6863)).toBe(fakeInvoice(6_863_000n));
   });
 
@@ -224,12 +228,39 @@ describe('LnvpsClient', () => {
   });
 });
 
+// LNVPS's place of supply (lnvps_api_common/src/pricing.rs, place_of_supply): the declared country outranks the IP
+// country, so VAT for the declared country is the country the person chose.
 describe('vatGuard', () => {
-  const acct = (rate: number, treatment: string) => ({ tax: [{ company_id: 1, company_name: 'LNVPS', rate, treatment, country_code: 'IRL' }] });
-  it('passes only at 0% out_of_scope', () => {
-    expect(vatGuard(acct(0, 'out_of_scope'))).toEqual({ ok: true });
-    expect(vatGuard(acct(23, 'domestic'))).toEqual({ ok: false, message: 'LNVPS would charge 23% VAT (domestic, IRL)' });
-    expect(vatGuard(acct(0, 'undetermined_default')).ok).toBe(false);
-    expect(vatGuard({}).ok).toBe(false);
+  const entry = (rate: number, treatment: string, country_code?: string) => ({ company_id: 1, company_name: 'LNVPS', rate, treatment, country_code });
+  const acct = (declared: string | null, ...tax: ReturnType<typeof entry>[]) => ({ country_code: declared, tax });
+
+  it('passes when LNVPS charges no VAT', () => {
+    expect(vatGuard(acct('GBR', entry(0, 'out_of_scope', 'GBR')))).toEqual({ ok: true });
+    expect(vatGuard(acct('USA', entry(0, 'out_of_scope')))).toEqual({ ok: true }); // a seller outside the EU
+    expect(vatGuard(acct('DEU', entry(0, 'reverse_charge', 'DEU')))).toEqual({ ok: true }); // a VAT number
+  });
+
+  it("passes VAT for the country the person declared, at LNVPS's rate", () => {
+    expect(vatGuard(acct('IRL', entry(23, 'domestic', 'IRL')))).toEqual({ ok: true });
+    expect(vatGuard(acct('DEU', entry(19, 'oss_b2c', 'DEU')))).toEqual({ ok: true });
+    expect(vatGuard(acct('FIN', entry(25.5, 'oss_b2c', 'fin')))).toEqual({ ok: true }); // the rate isn't the app's table's business
+    expect(vatGuard(acct('DEU', entry(19, 'oss_b2c', 'DEU'), entry(0, 'out_of_scope')))).toEqual({ ok: true });
+  });
+
+  it('refuses VAT that the declared country did not choose', () => {
+    expect(vatGuard(acct('DEU', entry(20, 'oss_b2c', 'FRA')))).toEqual({
+      ok: false, message: "LNVPS would charge 20% VAT for FRA (oss_b2c), not for your country, DEU. Check your account on LNVPS.",
+    });
+    expect(vatGuard(acct(null, entry(23, 'domestic', 'IRL')))).toEqual({ ok: false, message: "LNVPS would charge 23% VAT (domestic, IRL) without knowing your country" });
+    expect(vatGuard(acct('IRL', entry(23, 'undetermined_default', 'IRL')))).toEqual({ ok: false, message: "LNVPS would charge 23% VAT (undetermined_default, IRL) without knowing your country" });
+    expect(vatGuard(acct(null, entry(0, 'undetermined_default'))).ok).toBe(false);
+    expect(vatGuard(acct('IRL', entry(23, 'domestic')))).toMatchObject({ ok: false }); // taxed for no country
+    expect(vatGuard(acct('IRL', entry(23, 'something_new', 'IRL')))).toMatchObject({ ok: false });
+    expect(vatGuard(acct('DEU', entry(19, 'oss_b2c', 'DEU'), entry(20, 'oss_b2c', 'FRA'))).ok).toBe(false);
+  });
+
+  it('refuses without tax information', () => {
+    expect(vatGuard({})).toEqual({ ok: false, message: 'LNVPS returned no tax information for this account' });
+    expect(vatGuard(acct('GBR'))).toMatchObject({ ok: false });
   });
 });

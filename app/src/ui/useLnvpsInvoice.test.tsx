@@ -13,6 +13,7 @@ const path = (url: string) => new URL(url).pathname;
 
 function setup() {
   const fake = new FakeLnvps();
+  fake.account.country_code = 'GBR'; // no VAT: the price of a day is the quote's 6,863 sat for 31 days
   fake.vms.set(VM, {
     id: VM, created: '2026-10-01T12:00:00Z', expires: '2026-11-02T12:00:00Z', status: { state: 'running' },
     ip_assignments: [], host_ssh_keys: [], image: {}, ssh_key: { id: 1 },

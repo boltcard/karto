@@ -45,6 +45,11 @@ export class FakeLnvps {
    * further ahead, it refuses (the Lightning-address route doesn't). Set to refuse.
    */
   quoteRefused = false;
+  /**
+   * The country of a VAT number on the account (set on LNVPS's website, never by the app): it decides the place of
+   * supply over the declared country, as LNVPS's place_of_supply. Ireland's is taxed (domestic), the rest not.
+   */
+  vatNumberCountry?: string;
   /** Ids of VMs LNVPS deleted; asking for one again gives 409, as the API docs say. */
   deleted = new Set<number>();
   /** Ids of VMs re-installed (PATCH /re-install), in order. */
@@ -144,8 +149,9 @@ export class FakeLnvps {
     h.on('GET', /^https:\/\/api\.lnvps\.net\/api\/v1\/vm\/\d+\/renew\/quote$/, signed('GET', ({ url }) => {
       this.vm(url);
       if (this.quoteRefused) throw new HttpError(400, 'Cannot renew more than 365 days in advance');
-      // 6,863 sat for 31 days, the real price observed on 2026-10-02.
-      return { amount: 6_863_000, tax: 0, processing_fee: 0, currency: 'BTC', time: 31 * 86400 };
+      // 6,863 sat for 31 days, the real price observed on 2026-10-02, plus the account's VAT.
+      const amount = 6_863_000;
+      return { amount, tax: Math.round((amount * this.tax()[0].rate) / 100), processing_fee: 0, currency: 'BTC', time: 31 * 86400 };
     }));
     h.on('GET', /^https:\/\/api\.lnvps\.net\/api\/v1\/vm\/\d+\/renew$/, signed('GET', ({ url }) => {
       const vmId = this.vm(url).id;
@@ -191,6 +197,8 @@ export class FakeLnvps {
   }
 
   private tax() {
+    const v = this.vatNumberCountry;
+    if (v) return [{ company_id: 1, company_name: 'LNVPS', rate: v === 'IRL' ? 23 : 0, treatment: v === 'IRL' ? 'domestic' : 'reverse_charge', country_code: v }];
     const [rate, treatment] = VAT[this.account.country_code ?? ''] ?? [23, 'undetermined_default'];
     return [{ company_id: 1, company_name: 'LNVPS', rate, treatment, country_code: this.account.country_code ?? 'IRL' }];
   }

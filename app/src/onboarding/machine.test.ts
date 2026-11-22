@@ -105,11 +105,17 @@ describe('onboarding', () => {
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/cardd-ctl device revoke-others -keep '${vectors.deviceAuth.keyId}'`)).toBe(true);
   });
 
-  it('stops for good when LNVPS would charge VAT', async () => {
+  // VAT for the country chosen is fine; VAT the choice didn't decide (a VAT number on the account) is not.
+  it('goes on when LNVPS charges VAT for the country chosen, and stops for good on any other VAT', async () => {
     const t = world();
-    const s = await advance(initialState('IRL'), t.deps);
+    expect((await advance(initialState('IRL'), t.deps)).step).toBe('email');
+    const other = world();
+    other.lnvps.vatNumberCountry = 'IRL';
+    const s = await advance(initialState('DEU'), other.deps);
     expect(s.step).toBe('country');
-    expect(s.error).toEqual({ kind: 'fatal', message: 'LNVPS would charge 23% VAT (domestic, IRL)' });
+    expect(s.error).toEqual({
+      kind: 'fatal', message: 'LNVPS would charge 23% VAT for IRL (domestic), not for your country, DEU. Check your account on LNVPS.',
+    });
   });
 
   it('stops when LNVPS does not know the country', async () => {

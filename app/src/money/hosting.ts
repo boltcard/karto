@@ -29,7 +29,7 @@ async function priceOfADay(lnvps: Pick<LnvpsClient, 'satPerDay'>, vmId: number, 
   }
 }
 
-/** The VM's expiry, a day's price and the VAT guard, as LNVPS says now (the price may be cardd's: see priceOfADay). */
+/** The VM's expiry, a day's price (VAT included) and the VAT guard, as LNVPS says now (the price may be cardd's: see priceOfADay). */
 export async function readLnvps(
   lnvps: Pick<LnvpsClient, 'getVm' | 'satPerDay' | 'getAccount'>,
   vmId: number,
@@ -184,7 +184,7 @@ const RENEW_TO_DAYS = 7;
 /**
  * The server page's warnings: under 14 days of runway, Hosting's days plus the days paid beyond 7 (on the Hosting
  * row);
- * LNVPS charging VAT; and the wallet's banner, under 7 days of VM time when
+ * LNVPS charging VAT for a country other than the person's (vatGuard); and the wallet's banner, under 7 days of VM time when
  * cardd says it won't renew it, or, without cardd's status, under 3 days (the
  * VM is kept at about 7 days, so a blip mustn't warn). When Hosting being low is why it won't renew (funding under 14 days
  * and no VAT stop), the banner says what to do about both in one sentence.
@@ -199,7 +199,7 @@ export function hostingWarnings(status: HostingStatus | null, lnvpsExpires: numb
       : null;
   const vat =
     synced && !synced.vatOk
-      ? 'Automatic renewal is stopped: LNVPS now charges you VAT. Renew by hand (you will pay the VAT), or check your LNVPS account.'
+      ? 'Automatic renewal is stopped: LNVPS charges VAT for a country other than yours. Check your account on LNVPS, or pay LNVPS from any wallet.'
       : null;
   const fundingTone = runway !== null && runway < FUNDING_RED_DAYS ? 'red' : 'amber';
   // The VM is kept at about 7 days: without cardd's status (a blip, an update) only a close date says so.

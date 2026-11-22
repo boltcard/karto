@@ -1,8 +1,9 @@
 // The VAT the country picker shows next to each country. LNVPS has no public
 // rate table: an account's VAT comes from its declared (and IP-derived)
-// country once set, and the country step checks that figure (vatGuard). This
-// table only tells the person beforehand: LNVPS charges EU buyers their own
-// country's standard rate (OSS) and no VAT outside the EU.
+// country once set, and the country step checks that it is the chosen
+// country's, or none (vatGuard). This table only tells the person beforehand:
+// LNVPS charges EU buyers their own country's standard rate (OSS) and no VAT
+// outside the EU; the rate charged is LNVPS's own.
 // EU standard rates as of 2026 (European Commission figures).
 import { countryByAlpha3 } from './countries';
 

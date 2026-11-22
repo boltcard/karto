@@ -94,10 +94,10 @@ describe('OnboardingRunner', () => {
     }
   });
 
-  // "Choose another country" after a VAT refusal: the runner already in memory holds the
+  // "Choose another country" after a refusal (here a code LNVPS doesn't take): the runner already in memory holds the
   // refused country, so the new one must reach it, not just the store.
   it('carries on with the country chosen after a refusal', async () => {
-    const { t, runner } = setup(initialState('IRL'));
+    const { t, runner } = setup(initialState('ESP'));
     const slot = new RunnerSlot();
     slot.get(() => runner);
     await runner.start();
@@ -110,6 +110,17 @@ describe('OnboardingRunner', () => {
     }).start();
     expect(runner.state).toMatchObject({ country: 'GBR', step: 'done' });
     expect(t.lnvps.vms.size).toBe(1);
+  });
+
+  // LNVPS charges VAT for the country chosen: set-up goes on, and the first payment is sized by the price of a day
+  // with the VAT in it (LNVPS takes a Lightning-address payment as gross: pricing.rs, get_cost_by_amount).
+  it('sets up a server where LNVPS charges VAT for the country chosen', async () => {
+    const { t, runner } = setup(initialState('IRL'));
+    await runner.start();
+    expect(runner.state).toMatchObject({ country: 'IRL', step: 'done' });
+    expect(runner.state.error).toBeUndefined();
+    // (6,863,000 + 23% = 8,441,490 msat) for 31 days is 272.306 sat a day; 7 days is 1,907 sat.
+    expect(t.lnvps.invoices.map((i) => i.msat).at(-1)).toBe(1_907_000n);
   });
 
   // A wallet removed, and a new one set up, in one run of the app.
@@ -259,7 +270,8 @@ describe('OnboardingRunner', () => {
     await runner.resume();
     expect(runner.state.step).toBe('done');
 
-    const vat = setup(initialState('IRL')); // LNVPS charges Irish VAT
+    const vat = setup(initialState('DEU'));
+    vat.t.lnvps.vatNumberCountry = 'IRL'; // an Irish VAT number on the account: VAT that isn't Germany's
     await vat.runner.start();
     expect(vat.runner.state.error?.kind).toBe('fatal');
     await vat.runner.resume();
