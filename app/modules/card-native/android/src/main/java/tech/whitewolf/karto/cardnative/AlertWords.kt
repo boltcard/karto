@@ -79,8 +79,9 @@ internal object AlertWords {
       "refused" -> refused(p.str("reason"), p.optInt("count"), sat, p.optLong("msat"))
       // Hosting's daily alert while it covers under 7 days: count is its whole days.
       "hosting" -> p.optInt("count").let { "Covers about $it ${if (it == 1) "day" else "days"}: top it up or move from Pool" }
-      // cardd's cap on unpaid invoices turned payers away (top-ups, refund links), at most once an hour.
-      "capped" -> "Some payments in were turned away: too many unpaid invoices this hour"
+      // cardd's cap on unpaid invoices turned payers away (top-ups, refund links): the whole cap, or one address
+      // whose payers have paid before. cardd says when, not this.
+      "capped" -> "Some payments in were turned away: too many unpaid invoices just now"
       else -> "Alerts work"
     }
     // The app's pages name an account as its API does: pool, hosting, shop, or a card's bare id (cardd's payload

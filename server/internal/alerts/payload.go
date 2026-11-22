@@ -236,8 +236,9 @@ func HostingLow(availableMsat int64, days int, now time.Time) Payload {
 }
 
 // InvoicesCapped is the alert when cardd's cap on unpaid invoices turned
-// payers away (top-ups and refund links), at most once an hour. Its tag
-// makes a later one replace the last on the phone.
+// payers away (top-ups and refund links): the whole cap, or a client that
+// has paid before over its own share (lnurl.Server.Capped says how often).
+// Its tag makes a later one replace the last on the phone.
 func InvoicesCapped(now time.Time) Payload {
 	return Payload{V: 1, Kind: "capped", At: now.Unix(), Tag: "invoices-capped"}
 }
