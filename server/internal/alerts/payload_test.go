@@ -339,7 +339,7 @@ var vectors = []vector{
 	{name: "hosting-low-5", hosting: &hostingCase{1_100_000, 5}, title: "Hosting", text: "Covers about 5 days: top it up or move from Pool"},
 	{name: "hosting-low-1", hosting: &hostingCase{300_000, 1}, title: "Hosting", text: "Covers about 1 day: top it up or move from Pool"},
 	{name: "hosting-low-0", hosting: &hostingCase{50_000, 0}, title: "Hosting", text: "Covers about 0 days: top it up or move from Pool"},
-	{name: "invoices-capped", capped: true, title: "Karto", text: "Some payments in were turned away: too many unpaid invoices this hour"},
+	{name: "invoices-capped", capped: true, title: "Karto", text: "Some payments in were turned away: too many unpaid invoices just now"},
 }
 
 func (v vector) payload(t *testing.T) map[string]any {
