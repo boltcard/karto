@@ -113,7 +113,7 @@ func (r *Renewer) renewDue(ctx context.Context) {
 
 // RenewNow pays for days of the VM now (1 to MaxDays), once per ref (the
 // request id), with the job's checks, all before LNVPS is asked: a sync has
-// happened, no VAT, spending not paused, and the amount (days × the price of
+// happened, VAT ok (vat_ok), spending not paused, and the amount (days × the price of
 // a day, rounded up) with its fee budget fits what hosting has available.
 // The channel receives the outcome once.
 func (r *Renewer) RenewNow(ctx context.Context, ref string, days int) (store.Hold, <-chan ledger.Outcome, error) {

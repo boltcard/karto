@@ -60,16 +60,28 @@ export class LnvpsError extends Error {
 
 export type VatCheck = { ok: true } | { ok: false; message: string };
 
-/** The VAT guard from renewal-topup.md: refuse unless LNVPS would charge 0% (out_of_scope). */
+/**
+ * Whether LNVPS's VAT (the account's `tax`, one entry per selling company) is what the person chose: no VAT, or the
+ * VAT of the country they declared. What it guards against is VAT by accident: LNVPS taxes by the declared country,
+ * else the IP country (rewritten on every account change and order), else Ireland's rate as `undetermined_default`
+ * (lnvps_api_common/src/pricing.rs, place_of_supply and determine_tax). The rate itself is LNVPS's: its quote, and so
+ * the price of a day every payment is sized by (satPerDay), already includes it, and a Lightning-address payment is
+ * taken as gross (get_cost_by_amount).
+ */
 export function vatGuard(account: Account): VatCheck {
   const entries = account.tax ?? [];
   if (entries.length === 0) return { ok: false, message: 'LNVPS returned no tax information for this account' };
-  const bad = entries.find((t) => t.rate !== 0 || t.treatment !== 'out_of_scope');
-  if (bad) {
-    return {
-      ok: false,
-      message: `LNVPS would charge ${bad.rate}% VAT (${bad.treatment}${bad.country_code ? `, ${bad.country_code}` : ''})`,
-    };
+  const declared = account.country_code?.toUpperCase();
+  for (const t of entries) {
+    if (t.rate === 0 && t.treatment !== 'undetermined_default') continue;
+    const where = t.country_code?.toUpperCase();
+    const taxed = `LNVPS would charge ${t.rate}% VAT`;
+    if (!declared || t.treatment === 'undetermined_default') {
+      return { ok: false, message: `${taxed} (${t.treatment}${where ? `, ${where}` : ''}) without knowing your country` };
+    }
+    if ((t.treatment !== 'domestic' && t.treatment !== 'oss_b2c') || where !== declared) {
+      return { ok: false, message: `${taxed} for ${where ?? 'no country'} (${t.treatment}), not for your country, ${declared}. Check your account on LNVPS.` };
+    }
   }
   return { ok: true };
 }

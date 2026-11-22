@@ -26,7 +26,7 @@ import (
 var (
 	ErrBadSync   = errors.New("renew: the sync's values are out of range")
 	ErrNotSynced = errors.New("renew: the app hasn't synced the VM's expiry from LNVPS yet")
-	ErrVAT       = errors.New("renew: LNVPS now charges this account VAT")
+	ErrVAT       = errors.New("renew: LNVPS charges VAT for a country other than this account's")
 	ErrBadDays   = errors.New("renew: days must be a whole number from 1 to 365")
 	ErrNotLNVPS  = errors.New("renew: LNVPS's answer isn't for this VM")
 )
@@ -77,7 +77,8 @@ type Renewer struct {
 }
 
 // Sync is what the app read from LNVPS: the VM's expiry (unix seconds), the
-// price of a day from the renewal quote, and whether the account pays no VAT;
+// price of a day from the renewal quote (VAT included), and whether LNVPS's
+// VAT is the declared country's or none (the app's vatGuard);
 // and the phone's offset from UTC in minutes, for hosting's alert (nil from an
 // older app: the last one stays).
 type Sync struct {
@@ -96,7 +97,7 @@ type Status struct {
 	MsatPerDay  int64   `json:"msatPerDay"`
 	FundingDays float64 `json:"fundingDays"` // the days hosting's available balance pays for
 	VatOK       bool    `json:"vatOk"`
-	// WillRenew: cardd will renew the VM when it is due: synced, no VAT,
+	// WillRenew: cardd will renew the VM when it is due: synced, VAT ok,
 	// spending not paused, no renewal problem, and hosting can pay at least
 	// MinSat with its fee budget. A problem of hosting having too little is
 	// over (and not reported) once hosting can pay.

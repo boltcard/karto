@@ -154,7 +154,7 @@ describe('hostingCard', () => {
     expect([problem.tone, problem.problems]).toEqual(['error', ['Last renewal problem (today at 13:23): LNVPS refused the payment']]);
     const vat = hostingCard(status({ vatOk: false, willRenew: false }), null, NOW, 0);
     expect(vat.tone).toBe('error');
-    expect(vat.problems).toEqual(['Automatic renewal is stopped: LNVPS now charges you VAT. Renew by hand (you will pay the VAT), or check your LNVPS account.']);
+    expect(vat.problems).toEqual(['Automatic renewal is stopped: LNVPS charges VAT for a country other than yours. Check your account on LNVPS, or pay LNVPS from any wallet.']);
     // The no-money problem with Hosting funded (the money came since): it is still said, as any problem.
     const stale = hostingCard(status({ willRenew: false, problem: NO_MONEY, problemAt: NOW - 3000 }), null, NOW, 0);
     expect(stale.problems).toEqual([`Last renewal problem (today at 13:23): ${NO_MONEY}`]);

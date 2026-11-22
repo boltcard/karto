@@ -154,14 +154,14 @@ export type SaleDay = { day: number; count: number; totalMsat: number };
  * The VM's paid-until estimate (server/internal/renew Status).
  * Times are unix seconds (0 before the first sync); fundingDays is what
  * hosting's available balance pays for; willRenew: cardd will renew the VM
- * when it is due (synced, no VAT, not paused, no problem, hosting can pay;
+ * when it is due (synced, VAT as chosen, not paused, no problem, hosting can pay;
  * too little to renew is over, and not reported, once hosting can pay).
  */
 export type HostingStatus = {
   synced: boolean; expires: number; syncedAt: number; daysLeft: number; msatPerDay: number; fundingDays: number;
   vatOk: boolean; willRenew: boolean; problem: string; problemAt: number;
 };
-/** What the app read from LNVPS: the VM's expiry (unix seconds), a day's price, and no VAT; the phone's offset from UTC in minutes. */
+/** What the app read from LNVPS: the VM's expiry (unix seconds), a day's price (VAT included), and whether its VAT is the person's country's or none (vatGuard); the phone's offset from UTC in minutes. */
 export type HostingSync = { expires: number; satPerDay: number; vatOk: boolean; utcOffsetMin?: number };
 /** Renew now: days of the VM paid from hosting, once per request id. */
 export type RenewRequest = { id: string; days: number };
