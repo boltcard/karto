@@ -255,6 +255,9 @@ describe('vatGuard', () => {
     expect(vatGuard(acct(null, entry(23, 'undetermined_default', 'IRL')))).toEqual({
       ok: false, message: "LNVPS would charge 23% VAT because it doesn't know your country (undetermined_default)",
     });
+    expect(vatGuard(acct('IRL', entry(23, 'undetermined_default', 'IRL')))).toEqual({
+      ok: false, message: "LNVPS would charge 23% VAT because it doesn't know your country (undetermined_default)",
+    });
     expect(vatGuard(acct(null, entry(0, 'undetermined_default'))).ok).toBe(false);
     expect(vatGuard(acct('IRL', entry(23, 'domestic')))).toMatchObject({ ok: false }); // taxed for no country
     expect(vatGuard(acct('IRL', entry(23, 'something_new', 'IRL')))).toEqual({
