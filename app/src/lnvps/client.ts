@@ -73,15 +73,16 @@ export function vatGuard(account: Account): VatCheck {
   if (entries.length === 0) return { ok: false, message: 'LNVPS returned no tax information for this account' };
   const declared = account.country_code?.toUpperCase();
   for (const t of entries) {
+    if (typeof t.rate !== 'number' || !Number.isFinite(t.rate)) return { ok: false, message: `LNVPS returned a VAT rate the app can't read (${t.treatment})` };
     if (t.rate === 0 && t.treatment !== 'undetermined_default') continue;
     const where = t.country_code?.toUpperCase();
     const taxed = `LNVPS would charge ${t.rate}% VAT`;
-    if (!declared || t.treatment === 'undetermined_default') {
-      return { ok: false, message: `${taxed} (${t.treatment}${where ? `, ${where}` : ''}) without knowing your country` };
+    if (t.treatment === 'undetermined_default') return { ok: false, message: `${taxed} because it doesn't know your country (${t.treatment})` };
+    if (!declared) return { ok: false, message: `${taxed} for ${where ?? 'no country'} (${t.treatment}) without your country declared` };
+    if (where !== declared) {
+      return { ok: false, message: `${taxed} for ${where ?? 'no country'} (${t.treatment}), not for your country, ${declared}: check your account on LNVPS` };
     }
-    if ((t.treatment !== 'domestic' && t.treatment !== 'oss_b2c') || where !== declared) {
-      return { ok: false, message: `${taxed} for ${where ?? 'no country'} (${t.treatment}), not for your country, ${declared}. Check your account on LNVPS.` };
-    }
+    if (t.treatment !== 'domestic' && t.treatment !== 'oss_b2c') return { ok: false, message: `${taxed} for ${where} on terms the app doesn't know (${t.treatment})` };
   }
   return { ok: true };
 }

@@ -159,7 +159,7 @@ export function moneyError(e: unknown): string {
     case 'not_synced':
       return "The server doesn't have the VM's expiry from LNVPS yet: open the wallet, then try again.";
     case 'vat':
-      return 'LNVPS charges VAT for a country other than yours, so the server doesn’t renew: use Pay LNVPS from any wallet.';
+      return 'LNVPS’s VAT doesn’t match your country, so the server doesn’t renew: use Pay LNVPS from any wallet.';
     case 'bad_days':
       return 'Renew for 1 to 365 days.';
     case 'bad_note':
