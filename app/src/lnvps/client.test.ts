@@ -249,13 +249,20 @@ describe('vatGuard', () => {
 
   it('refuses VAT that the declared country did not choose', () => {
     expect(vatGuard(acct('DEU', entry(20, 'oss_b2c', 'FRA')))).toEqual({
-      ok: false, message: "LNVPS would charge 20% VAT for FRA (oss_b2c), not for your country, DEU. Check your account on LNVPS.",
+      ok: false, message: "LNVPS would charge 20% VAT for FRA (oss_b2c), not for your country, DEU: check your account on LNVPS",
     });
-    expect(vatGuard(acct(null, entry(23, 'domestic', 'IRL')))).toEqual({ ok: false, message: "LNVPS would charge 23% VAT (domestic, IRL) without knowing your country" });
-    expect(vatGuard(acct('IRL', entry(23, 'undetermined_default', 'IRL')))).toEqual({ ok: false, message: "LNVPS would charge 23% VAT (undetermined_default, IRL) without knowing your country" });
+    expect(vatGuard(acct(null, entry(23, 'domestic', 'IRL')))).toEqual({ ok: false, message: 'LNVPS would charge 23% VAT for IRL (domestic) without your country declared' });
+    expect(vatGuard(acct(null, entry(23, 'undetermined_default', 'IRL')))).toEqual({
+      ok: false, message: "LNVPS would charge 23% VAT because it doesn't know your country (undetermined_default)",
+    });
     expect(vatGuard(acct(null, entry(0, 'undetermined_default'))).ok).toBe(false);
     expect(vatGuard(acct('IRL', entry(23, 'domestic')))).toMatchObject({ ok: false }); // taxed for no country
-    expect(vatGuard(acct('IRL', entry(23, 'something_new', 'IRL')))).toMatchObject({ ok: false });
+    expect(vatGuard(acct('IRL', entry(23, 'something_new', 'IRL')))).toEqual({
+      ok: false, message: "LNVPS would charge 23% VAT for IRL on terms the app doesn't know (something_new)",
+    });
+    expect(vatGuard({ country_code: 'IRL', tax: [{ company_id: 1, company_name: 'LNVPS', treatment: 'domestic', country_code: 'IRL' } as never] })).toEqual({
+      ok: false, message: "LNVPS returned a VAT rate the app can't read (domestic)",
+    });
     expect(vatGuard(acct('DEU', entry(19, 'oss_b2c', 'DEU'), entry(20, 'oss_b2c', 'FRA'))).ok).toBe(false);
   });
 

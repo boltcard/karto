@@ -168,8 +168,8 @@ describe('moneyError', () => {
     expect(moneyError(new CarddError(409, 'not_synced', "renew: the app hasn't synced the VM's expiry from LNVPS yet"))).toBe(
       "The server doesn't have the VM's expiry from LNVPS yet: open the wallet, then try again.",
     );
-    expect(moneyError(new CarddError(409, 'vat', 'renew: LNVPS charges VAT for a country other than this account\'s'))).toBe(
-      'LNVPS charges VAT for a country other than yours, so the server doesn’t renew: use Pay LNVPS from any wallet.',
+    expect(moneyError(new CarddError(409, 'vat', "renew: LNVPS's VAT doesn't match this account's country"))).toBe(
+      'LNVPS’s VAT doesn’t match your country, so the server doesn’t renew: use Pay LNVPS from any wallet.',
     );
     expect(moneyError(new CarddError(400, 'bad_days', 'renew: days must be a whole number from 1 to 365'))).toBe('Renew for 1 to 365 days.');
     expect(moneyError(new CarddError(502, 'not_lnvps', "renew: LNVPS's answer isn't for this VM: its invoice is not for VM 1009"))).toBe(

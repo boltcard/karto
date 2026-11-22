@@ -208,7 +208,7 @@ describe('hostingWarnings', () => {
     expect(hostingWarnings(status({ fundingDays: 36.6 }), null, NOW, 0).funding).toBeNull();
     expect(hostingWarnings(status({ fundingDays: 14 }), null, NOW, 0).funding).toBeNull();
     expect(hostingWarnings(status({ vatOk: false, willRenew: false }), null, NOW, 0).vat).toBe(
-      'Automatic renewal is stopped: LNVPS charges VAT for a country other than yours. Check your account on LNVPS, or pay LNVPS from any wallet.',
+      'Automatic renewal is stopped: LNVPS’s VAT doesn’t match your country. Check your account on LNVPS, or pay LNVPS from any wallet.',
     );
     const soon = NOW + 6 * 86400;
     expect(hostingWarnings(status({ expires: soon }), null, NOW, 0).banner).toBeNull();

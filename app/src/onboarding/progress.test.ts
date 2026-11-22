@@ -88,7 +88,7 @@ describe('progress', () => {
     expect(line('install', { error: { kind: 'retry', message: 'boom' } })).toBe('boom');
   });
 
-  // "Choose another country" only when the country is the problem (VAT), not on a network error.
+  // "Choose another country" only when the country step refused (a code LNVPS doesn't take, VAT not the country's), not on a network error.
   it('offers the buttons that can fix the error', () => {
     const s = initialState('GBR');
     expect(errorActions(s)).toEqual({ retry: false, chooseCountry: false, final: false });

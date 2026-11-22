@@ -571,7 +571,7 @@ export class FakeCardd {
         if (!Number.isInteger(days) || days < 1 || days > 365) throw new Refusal(400, 'bad_days', 'renew: days must be a whole number from 1 to 365');
         const h = this.hostingSync;
         if (!h) throw new Refusal(409, 'not_synced', "renew: the app hasn't synced the VM's expiry from LNVPS yet");
-        if (!h.vatOk) throw new Refusal(409, 'vat', 'renew: LNVPS charges VAT for a country other than this account\'s');
+        if (!h.vatOk) throw new Refusal(409, 'vat', "renew: LNVPS's VAT doesn't match this account's country");
         const amountMsat = Math.ceil((days * h.msatPerDay) / 1000) * 1000;
         const paymentHash = bytesToHex(sha256(utf8ToBytes(`renew:${b.id}`)));
         const { status, feeMsat = 0 } = this.renewOutcome;

@@ -114,7 +114,7 @@ describe('onboarding', () => {
     const s = await advance(initialState('DEU'), other.deps);
     expect(s.step).toBe('country');
     expect(s.error).toEqual({
-      kind: 'fatal', message: 'LNVPS would charge 23% VAT for IRL (domestic), not for your country, DEU. Check your account on LNVPS.',
+      kind: 'fatal', message: 'LNVPS would charge 23% VAT for IRL (domestic), not for your country, DEU: check your account on LNVPS',
     });
   });
 

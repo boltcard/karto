@@ -23,7 +23,7 @@ const banners = (o: Partial<BannerInput>) => walletBanners({ ...WELL, ...o });
 
 const PAID = { text: 'Your server is paid only until 12 Oct', tone: 'red' as const, forFunding: false };
 const FUNDING = 'Hosting covers about 12 days: top it up or move from Pool';
-const VAT = 'Automatic renewal is stopped: LNVPS charges VAT for a country other than yours. Check your account on LNVPS, or pay LNVPS from any wallet.';
+const VAT = 'Automatic renewal is stopped: LNVPS’s VAT doesn’t match your country. Check your account on LNVPS, or pay LNVPS from any wallet.';
 const BACKUP = "The phone hasn't fetched a backup for 3 days.";
 const RESTORE = 'The server holds less than the backup said: 4,000 sat short';
 const GONE = 'LNVPS no longer lists VM 1001: your server is gone. Rebuild it from a backup.';

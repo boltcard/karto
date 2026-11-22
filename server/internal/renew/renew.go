@@ -26,7 +26,7 @@ import (
 var (
 	ErrBadSync   = errors.New("renew: the sync's values are out of range")
 	ErrNotSynced = errors.New("renew: the app hasn't synced the VM's expiry from LNVPS yet")
-	ErrVAT       = errors.New("renew: LNVPS charges VAT for a country other than this account's")
+	ErrVAT       = errors.New("renew: LNVPS's VAT doesn't match this account's country")
 	ErrBadDays   = errors.New("renew: days must be a whole number from 1 to 365")
 	ErrNotLNVPS  = errors.New("renew: LNVPS's answer isn't for this VM")
 )
