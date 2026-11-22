@@ -64,7 +64,7 @@ type unpaid struct {
 	client string
 }
 
-// payer is what a client has brought: sum since since, and known until knownUntil.
+// payer is what a client has brought since since (towards the next KnownSat), and when its status ends.
 type payer struct {
 	since      time.Time
 	sum        int64
@@ -209,10 +209,12 @@ func (c *UnpaidCap) Paid(paymentHash string, sat int64) {
 	if now.Sub(p.since) >= c.l.KnownFor {
 		p.since, p.sum = now, 0
 	}
-	before := p.sum
-	p.sum += sat
-	if before < c.l.KnownSat && p.sum >= c.l.KnownSat {
+	// Each KnownSat brought makes it known for KnownFor from then, and the
+	// count starts again: a payer who keeps paying stays known, a sat more
+	// renews nothing.
+	if p.sum += sat; p.sum >= c.l.KnownSat {
 		p.knownUntil = now.Add(c.l.KnownFor)
+		p.since, p.sum = now, 0
 	}
 }
 

@@ -293,3 +293,21 @@ func TestCarddsUnpaidCap(t *testing.T) {
 		short(r)
 	}
 }
+
+// A payer who keeps paying stays known: each further 1,000 sat renews the day.
+func TestARegularPayerStaysKnown(t *testing.T) {
+	at := time.Unix(1_790_000_000, 0)
+	c := capAt(&at)
+	t0 := at
+	pay(t, c, "a", 2000)
+	at = t0.Add(23 * time.Hour)
+	pay(t, c, "a", 2000)
+	at = t0.Add(24*time.Hour + time.Second)
+	if !known(c, "a") {
+		t.Fatal("2,000 sat a day after 2,000 sat: a stranger")
+	}
+	at = t0.Add(47*time.Hour + time.Second)
+	if known(c, "a") {
+		t.Fatal("still known a day after its last 1,000")
+	}
+}
