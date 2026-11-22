@@ -77,7 +77,7 @@ describe('syncHosting', () => {
     expect(carddFake.hostingSync).toMatchObject({ msatPerDay: 272_306, vatOk: true });
   });
 
-  it('says so when LNVPS would charge VAT for another country', async () => {
+  it('says so when LNVPS would charge VAT that does not match the country', async () => {
     const { lnvps, lnvpsFake, cardd, carddFake } = setup('DEU');
     lnvpsFake.vatNumberCountry = 'IRL';
     await syncHosting({ lnvps, cardd }, VM);
@@ -199,7 +199,7 @@ describe('paidUntil', () => {
 });
 
 describe('hostingWarnings', () => {
-  it('warns under 14 days of funding, when LNVPS charges VAT for another country, and under 7 days when cardd will not renew', () => {
+  it('warns under 14 days of funding, when the VAT LNVPS charges does not match the country, and under 7 days when cardd will not renew', () => {
     expect(hostingWarnings(status(), null, NOW, 0)).toEqual({ funding: null, fundingTone: 'amber', vat: null, banner: null });
     expect(hostingWarnings(status({ expires: NOW + 7 * 86400, fundingDays: 13.9 }), null, NOW, 0).funding).toBe(
       'Hosting covers about 13 more days after 28 Sep: top it up or move from Pool',
@@ -244,7 +244,7 @@ describe('hostingWarnings', () => {
     expect(hostingWarnings(status({ expires: NOW + 2 * 86400, willRenew: false, fundingDays: 12 }), null, NOW, 0).banner).toEqual({
       text: 'Your server is paid only until 23 Sep. Top up Hosting, or pay LNVPS from any wallet.', tone: 'red', forFunding: true,
     });
-    // LNVPS charging VAT for another country stops renewals whatever Hosting holds: topping up wouldn't renew it, so the two stay apart.
+    // LNVPS's VAT not matching the country stops renewals whatever Hosting holds: topping up wouldn't renew it, so the two stay apart.
     expect(hostingWarnings(status({ expires: NOW + 6 * 86400, willRenew: false, fundingDays: 0, vatOk: false }), null, NOW, 0).banner).toEqual({
       text: 'Your server is paid only until 27 Sep', tone: 'amber', forFunding: false,
     });
