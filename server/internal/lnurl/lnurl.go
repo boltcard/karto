@@ -238,9 +238,9 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 		return bolt11, hash, true, err
 	}
 	client := ratelimit.ClientKey(r)
-	if free, overall, retry := s.Unpaid.Reserve(client); !free {
-		s.sayCapped(overall)
-		w.Header().Set("Retry-After", strconv.FormatInt(int64((retry+time.Second-1)/time.Second), 10))
+	if free, r := s.Unpaid.Reserve(client); !free {
+		s.sayCapped(r.Overall)
+		w.Header().Set("Retry-After", strconv.FormatInt(int64((r.Retry+time.Second-1)/time.Second), 10))
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 			"reason": "This server has too many unpaid invoices just now. Try again later."})
 		return "", "", false, nil
@@ -486,7 +486,7 @@ func (s *Server) credit(ctx context.Context, p phoenixd.Incoming) error {
 		return nil // not one of cardd's invoices
 	}
 	if s.Unpaid != nil {
-		s.Unpaid.Paid(p.PaymentHash)
+		s.Unpaid.Paid(p.PaymentHash, p.ReceivedSat)
 	}
 	s.crediting.Lock()
 	defer s.crediting.Unlock()

@@ -127,7 +127,7 @@ func TestCarddsInvoiceLimit(t *testing.T) {
 
 // capped gives w's server a cap of 3 unpaid invoices an hour, 2 per client, on a clock the test moves.
 func (w *world) capped(at *time.Time) {
-	w.s.Unpaid = lnurl.NewUnpaidCap(3, 2, time.Hour, func() time.Time { return *at })
+	w.s.Unpaid = lnurl.NewUnpaidCap(lnurl.CapLimits{Window: time.Hour, Keep: time.Hour, Stranger: lnurl.Share{Overall: 3, PerClient: 2}, Known: lnurl.Share{Overall: 3, PerClient: 2}, KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 16}, func() time.Time { return *at })
 }
 
 // The invoices the public callbacks make and nobody pays stay in phoenixd's database for ever (it never
@@ -203,7 +203,7 @@ func TestOneClientHasAShareOfTheCap(t *testing.T) {
 func TestAClientHangingUpKeepsItsPlace(t *testing.T) {
 	w := setup(t)
 	at := time.Now()
-	w.s.Unpaid = lnurl.NewUnpaidCap(3, 1, time.Hour, func() time.Time { return at })
+	w.s.Unpaid = lnurl.NewUnpaidCap(lnurl.CapLimits{Window: time.Hour, Keep: time.Hour, Stranger: lnurl.Share{Overall: 3, PerClient: 1}, Known: lnurl.Share{Overall: 3, PerClient: 1}, KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 16}, func() time.Time { return at })
 	w.f.InvoiceDelay = 300 * time.Millisecond
 	req, _ := http.NewRequest("GET", w.pub.URL+"/lnurlp/pool/cb?amount=1000", nil)
 	req.Header.Set("X-Forwarded-For", "203.0.113.1")
@@ -253,28 +253,28 @@ func TestAFailedInvoiceTakesNoPlace(t *testing.T) {
 // only those holding the places, a place should be free within a second.
 func TestUnpaidCapCountsInvoicesBeingMade(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
-	c := lnurl.NewUnpaidCap(2, 2, time.Hour, func() time.Time { return at })
-	if ok, _, _ := c.Reserve("a"); !ok {
+	c := lnurl.NewUnpaidCap(lnurl.CapLimits{Window: time.Hour, Keep: time.Hour, Stranger: lnurl.Share{Overall: 2, PerClient: 2}, Known: lnurl.Share{Overall: 2, PerClient: 2}, KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 16}, func() time.Time { return at })
+	if ok, _ := c.Reserve("a"); !ok {
 		t.Fatal("first")
 	}
-	if ok, _, _ := c.Reserve("b"); !ok {
+	if ok, _ := c.Reserve("b"); !ok {
 		t.Fatal("second")
 	}
-	if ok, overall, retry := c.Reserve("c"); ok || !overall || retry != time.Second {
-		t.Fatalf("third while two are being made: %v %v", ok, retry)
+	if ok, r := c.Reserve("c"); ok || !r.Overall || r.Retry != time.Second {
+		t.Fatalf("third while two are being made: %v %+v", ok, r)
 	}
 	c.Release("a")
 	c.Made("b", "bb")
 	at = at.Add(10 * time.Minute)
-	if ok, _, _ := c.Reserve("a"); !ok {
+	if ok, _ := c.Reserve("a"); !ok {
 		t.Fatal("after a release")
 	}
 	c.Made("a", "aa")
-	if ok, _, retry := c.Reserve("c"); ok || retry != 50*time.Minute {
-		t.Fatalf("full: %v %v", ok, retry)
+	if ok, r := c.Reserve("c"); ok || r.Retry != 50*time.Minute {
+		t.Fatalf("full: %v %+v", ok, r)
 	}
-	c.Paid("bb")
-	if ok, _, _ := c.Reserve("c"); !ok {
+	c.Paid("bb", 0)
+	if ok, _ := c.Reserve("c"); !ok {
 		t.Fatal("after a payment")
 	}
 }
