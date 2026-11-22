@@ -3,6 +3,7 @@ package lnurl_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -279,40 +280,153 @@ func TestUnpaidCapCountsInvoicesBeingMade(t *testing.T) {
 	}
 }
 
-// The owner is told when the whole cap turns payers away, at most once an hour; never for one client over its share.
+// alerted gives w's server a cap on a clock the test moves, and records each alert: own=true for a known
+// client over its own share, false for the whole cap. answer is what Capped returns (true: queued).
+func (w *world) alerted(at *time.Time, window time.Duration, stranger, known lnurl.Share, answer func() bool) *[]bool {
+	w.s.Unpaid = lnurl.NewUnpaidCap(lnurl.CapLimits{Window: window, Keep: 2 * window, Stranger: stranger, Known: known,
+		KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 16}, func() time.Time { return *at })
+	w.s.Now = func() time.Time { return *at }
+	told := &[]bool{}
+	w.s.Capped = func(own bool) bool {
+		*told = append(*told, own)
+		return answer()
+	}
+	return told
+}
+
+func yes() bool { return true }
+
+// knownClient has addr bring 1,000 sat through an invoice of its own.
+func (w *world) knownClient(t *testing.T, addr string) {
+	t.Helper()
+	code, _, out := w.from(addr, "/lnurlp/pool/cb?amount=1000000")
+	if code != http.StatusOK || out["pr"] == nil {
+		t.Fatalf("%s: %d %v", addr, code, out)
+	}
+	w.f.Receive(out["pr"].(string), 1000, 0)
+}
+
+// The owner is told when the whole cap turns payers away: at once, then after an hour, six hours, and then once a
+// day while it goes on; a refusal more than an hour after the last starts afresh. A stranger refused at the
+// strangers' limit while known clients still have room is the whole cap's refusal.
 func TestTheOwnerIsToldWhenTheCapTurnsPayersAway(t *testing.T) {
 	w := setup(t)
-	at := time.Now()
-	w.capped(&at)
-	w.s.Now = func() time.Time { return at }
-	told := 0
-	w.s.Capped = func() { told++ }
-	for _, addr := range []string{"203.0.113.1", "203.0.113.1", "203.0.113.1"} {
-		w.from(addr, "/lnurlp/pool/cb?amount=1000")
-	}
-	if told != 0 {
-		t.Fatalf("told for a client over its share: %d", told)
-	}
-	w.from("203.0.113.2", "/lnurlp/pool/cb?amount=1000") // the cap's 3rd: full now
-	for _, addr := range []string{"203.0.113.3", "203.0.113.4"} {
-		if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests {
+	at := time.Unix(1_790_000_000, 0)
+	t0 := at
+	told := w.alerted(&at, 100*time.Hour, lnurl.Share{Overall: 3, PerClient: 1}, lnurl.Share{Overall: 4, PerClient: 1}, yes)
+	for _, addr := range []string{"203.0.113.1", "203.0.113.2", "203.0.113.3"} {
+		if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusOK {
 			t.Fatalf("%s: %d", addr, code)
 		}
 	}
-	if told != 1 {
-		t.Fatalf("told %d times", told)
+	var when []time.Duration
+	refuse := func() {
+		t.Helper()
+		n := len(*told)
+		if code, _, _ := w.from("198.51.100.9", "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests {
+			t.Fatalf("at %v: %d", at.Sub(t0), code)
+		}
+		if len(*told) > n {
+			if (*told)[n] {
+				t.Fatalf("at %v: told as one client's", at.Sub(t0))
+			}
+			when = append(when, at.Sub(t0))
+		}
 	}
-	at = at.Add(59 * time.Minute)
-	w.from("203.0.113.5", "/lnurlp/pool/cb?amount=1000")
-	if told != 1 {
-		t.Fatalf("told again within the hour: %d", told)
+	for at = t0; !at.After(t0.Add(56 * time.Hour)); at = at.Add(30 * time.Minute) {
+		refuse()
 	}
-	// An hour on, the first ones have left the count: new ones fill it again, and it is said again.
-	at = at.Add(time.Minute)
-	for _, addr := range []string{"203.0.113.6", "203.0.113.7", "203.0.113.8", "203.0.113.9"} {
-		w.from(addr, "/lnurlp/pool/cb?amount=1000")
+	want := []time.Duration{0, time.Hour, 7 * time.Hour, 31 * time.Hour, 55 * time.Hour}
+	if fmt.Sprint(when) != fmt.Sprint(want) {
+		t.Fatalf("told at %v, want %v", when, want)
 	}
-	if told != 2 {
-		t.Fatalf("an hour on: told %d times", told)
+	at = t0.Add(57*time.Hour + 30*time.Minute) // 90 minutes after the last refusal
+	refuse()
+	if when[len(when)-1] != 57*time.Hour+30*time.Minute {
+		t.Fatalf("a new flood wasn't told at once: %v", when)
+	}
+}
+
+// A stranger over its own share is refused without a word to the owner: it may be the flood itself.
+func TestAStrangerOverItsShareIsNotTold(t *testing.T) {
+	w := setup(t)
+	at := time.Unix(1_790_000_000, 0)
+	told := w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 10, PerClient: 1}, lnurl.Share{Overall: 10, PerClient: 2}, yes)
+	for i := 0; i < 4; i++ {
+		w.from("203.0.113.1", "/lnurlp/pool/cb?amount=1000")
+	}
+	if len(*told) != 0 {
+		t.Fatalf("told %v", *told)
+	}
+}
+
+// A known client over its own share (a wallet's servers that many payers share) is told, at most once a day.
+func TestAKnownClientOverItsShareIsToldOnceADay(t *testing.T) {
+	w := setup(t)
+	at := time.Unix(1_790_000_000, 0)
+	t0 := at
+	told := w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 10, PerClient: 1}, lnurl.Share{Overall: 10, PerClient: 2}, yes)
+	over := func(addr string) {
+		t.Helper()
+		w.knownClient(t, addr)
+		for i := 0; i < 2; i++ {
+			if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusOK {
+				t.Fatalf("%s %d: %d", addr, i+1, code)
+			}
+		}
+		if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests {
+			t.Fatalf("%s over its share: %d", addr, code)
+		}
+	}
+	over("203.0.113.1")
+	if fmt.Sprint(*told) != "[true]" {
+		t.Fatalf("first: %v", *told)
+	}
+	at = t0.Add(time.Hour)
+	over("203.0.113.2")
+	if len(*told) != 1 {
+		t.Fatalf("within the day: %v", *told)
+	}
+	at = t0.Add(24 * time.Hour)
+	over("203.0.113.3")
+	if fmt.Sprint(*told) != "[true true]" {
+		t.Fatalf("a day on: %v", *told)
+	}
+}
+
+// An alert the sender couldn't queue doesn't count as told: the next refusal tries again.
+func TestADroppedAlertIsToldAgain(t *testing.T) {
+	w := setup(t)
+	at := time.Unix(1_790_000_000, 0)
+	answers := []bool{false, true}
+	told := w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 1, PerClient: 1}, lnurl.Share{Overall: 1, PerClient: 1}, func() bool {
+		a := answers[0]
+		answers = answers[1:]
+		return a
+	})
+	w.from("203.0.113.1", "/lnurlp/pool/cb?amount=1000")
+	for i := 0; i < 3; i++ {
+		at = at.Add(time.Minute)
+		w.from("203.0.113.2", "/lnurlp/pool/cb?amount=1000")
+	}
+	if len(*told) != 2 {
+		t.Fatalf("told %d times", len(*told))
+	}
+}
+
+// Retry-After is the wait until a place is free for the client asking: here the second oldest must leave.
+func TestRetryAfterIsTheWaitForEnoughPlaces(t *testing.T) {
+	w := setup(t)
+	at := time.Unix(1_790_000_000, 0)
+	t0 := at
+	w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 4, PerClient: 4}, yes)
+	w.knownClient(t, "203.0.113.1")
+	for i := 0; i < 3; i++ {
+		at = t0.Add(time.Duration(i) * time.Minute)
+		w.from("203.0.113.1", "/lnurlp/pool/cb?amount=1000")
+	}
+	at = t0.Add(2*time.Minute + 500*time.Millisecond)
+	if code, h, _ := w.from("198.51.100.9", "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests || h.Get("Retry-After") != "540" {
+		t.Fatalf("%d %v", code, h.Get("Retry-After"))
 	}
 }

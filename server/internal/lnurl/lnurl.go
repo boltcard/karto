@@ -149,10 +149,14 @@ type Server struct {
 	// Unpaid caps the invoices those callbacks make that nobody pays, one
 	// cap for both (nil: no cap). See InvoiceUnpaidCap.
 	Unpaid *UnpaidCap
-	// Capped is told when the whole unpaid cap turns a payer away, at most
-	// once an hour, for the owner's alert (nil: no one is told). A client
-	// over only its own share isn't told of.
-	Capped func()
+	// Capped is told, for the owner's alert, when the unpaid cap turns a
+	// payer away: own false for the whole cap (at once, then after an hour,
+	// six hours, and once a day while it goes on), own true for a known
+	// client over its own share (a wallet's servers many payers share; at
+	// most once a day). A stranger over its own share isn't told of: it may
+	// be the flood itself. It answers whether the alert was queued; one that
+	// wasn't is tried again at the next refusal (nil: no one is told).
+	Capped func(own bool) bool
 
 	crediting sync.Mutex // one credit at a time: see credit
 
@@ -161,8 +165,15 @@ type Server struct {
 	limitSince  int       // invoices refused since then
 	cappedSaid  time.Time // the same for the unpaid cap
 	cappedSince int
-	cappedTold  time.Time // when Capped was last told
+	wholeTold   time.Time // when Capped was last told of the whole cap
+	wholeLast   time.Time // the whole cap's last refusal
+	wholeStep   int       // the gap (cappedGaps) before the whole cap is told again
+	ownTold     time.Time // when Capped was last told of a known client's share
 }
+
+// cappedGaps are the waits between the whole cap's alerts while a flood goes
+// on: an hour, six, then a day.
+var cappedGaps = [...]time.Duration{time.Hour, 6 * time.Hour, 24 * time.Hour}
 
 // InvoiceLimit is cardd's limit on the invoices the public callbacks make,
 // per client and overall. The overall bucket is what bounds phoenixd: 60 at
@@ -239,7 +250,7 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 	}
 	client := ratelimit.ClientKey(r)
 	if free, r := s.Unpaid.Reserve(client); !free {
-		s.sayCapped(r.Overall)
+		s.sayCapped(r)
 		w.Header().Set("Retry-After", strconv.FormatInt(int64((r.Retry+time.Second-1)/time.Second), 10))
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 			"reason": "This server has too many unpaid invoices just now. Try again later."})
@@ -259,8 +270,10 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 }
 
 // sayCapped logs that the unpaid cap refused an invoice, as sayLimited does,
-// and for the whole cap (overall) tells Capped, at most once an hour.
-func (s *Server) sayCapped(overall bool) {
+// and tells Capped as its doc says. The gates are decided and closed under
+// the lock, so a flood's refusals at once tell it once, and opened again if
+// the alert wasn't queued.
+func (s *Server) sayCapped(r CapRefusal) {
 	s.limitLog.Lock()
 	s.cappedSince++
 	now := s.Now()
@@ -268,13 +281,35 @@ func (s *Server) sayCapped(overall bool) {
 		s.Log.Printf("lnurl: invoices refused by the unpaid cap: %d since the last such line", s.cappedSince)
 		s.cappedSaid, s.cappedSince = now, 0
 	}
-	tell := overall && s.Capped != nil && (s.cappedTold.IsZero() || now.Sub(s.cappedTold) >= time.Hour)
-	if tell {
-		s.cappedTold = now
+	var tell, own bool
+	var undo func()
+	switch {
+	case r.Overall:
+		fresh := s.wholeLast.IsZero() || now.Sub(s.wholeLast) > time.Hour
+		if fresh {
+			s.wholeStep = 0
+		}
+		s.wholeLast = now
+		if s.Capped != nil && (fresh || s.wholeTold.IsZero() || now.Sub(s.wholeTold) >= cappedGaps[s.wholeStep]) {
+			told, step := s.wholeTold, s.wholeStep
+			undo = func() { s.wholeTold, s.wholeStep = told, step }
+			if !fresh && !s.wholeTold.IsZero() {
+				s.wholeStep = min(s.wholeStep+1, len(cappedGaps)-1)
+			}
+			s.wholeTold, tell = now, true
+		}
+	case r.Known:
+		if s.Capped != nil && (s.ownTold.IsZero() || now.Sub(s.ownTold) >= 24*time.Hour) {
+			told := s.ownTold
+			undo = func() { s.ownTold = told }
+			s.ownTold, tell, own = now, true, true
+		}
 	}
 	s.limitLog.Unlock()
-	if tell {
-		s.Capped()
+	if tell && !s.Capped(own) {
+		s.limitLog.Lock()
+		undo()
+		s.limitLog.Unlock()
 	}
 }
 
