@@ -64,8 +64,8 @@ func FeeBudgetMsat(amountMsat int64) int64 { return (amountMsat*5+999)/1000 + 5_
 // MinFeeBudgetMsat is the least a Send out of Pool sets aside when the full
 // budget doesn't fit: phoenixd v0.9.2's one trampoline fee, 4 sat + 0.4%
 // rounded down to the msat (conf/Lsp.kt TrampolineFees(4.sat, 4_000);
-// lightning-kmp 1.13.2's nodeFee), and 1 sat. Recheck at each phoenixd
-// upgrade.
+// lightning-kmp 1.13.2's nodeFee), and 1 sat. Real payments' fees have
+// matched that formula to the msat. Recheck at each phoenixd upgrade.
 func MinFeeBudgetMsat(amountMsat int64) int64 { return 4_000 + amountMsat*4/1000 + 1_000 }
 
 // SendableMsat is the most whole sats (in msat) a Send out of Pool can take
