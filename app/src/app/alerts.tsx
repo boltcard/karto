@@ -1,26 +1,30 @@
-// Settings → Alerts: how alerts stand in one line;
-// Turn on alerts, through the server's own ntfy (after its server step) or the Play build's own push; ntfy's steps
-// where they are needed; Send a test alert and Turn off once on. A link with start=1 (the offer's Turn on alerts)
-// starts turning them on at once. With setup=1 it is the step at the end of setup, over the wallet: the
-// offer's question with Turn on alerts and Not now, and Open the wallet once on. The words are
-// alerts/alertsView.ts's; the work is alerts/register.ts's.
+// Settings → Alerts: how alerts stand in one line, Send a
+// test alert and Turn off once on; while they are off on the way through ntfy, the checklist that turns them on
+// (install ntfy, point it at the server, let it off battery saving, turn on), one step open at a time, each ticking
+// itself where the phone can see it done. The Play build with Google's push, and another distributor, turn on with
+// one press. With setup=1 it is the step at the end of setup, over the wallet: the question first (Turn on alerts,
+// Later), Finish later's "not on yet", and Open the wallet once on. A link with start=1 (Home's offer) goes straight
+// to the checklist, or turns alerts on at once on the one-press way. The words are alerts/alertsView.ts's; the work
+// is alerts/register.ts's.
 import * as Clipboard from 'expo-clipboard';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
-import { NOT_ON_YET, NTFY, noPushApi, ntfySteps, registerError, type Step } from '../alerts/alertsView';
-import { OFFER } from '../alerts/offer';
+import { AppState, Linking, Platform, View, StyleSheet } from 'react-native';
+import {
+  ASK, alertsChecklist, batteryHow, CHECKLIST, isOn, noPushApi, notYet, NTFY, ON_WORDS, onChecklistPath, PERMISSION_AHEAD, registerError,
+  type Checklist, type ChecklistKey,
+} from '../alerts/alertsView';
 import { alertsSupported, register, routeOf, turnOff, type RegisterDeps } from '../alerts/register';
 import { isPlayBuild } from '../alerts/store';
-import { CarddError } from '../cardd/client';
 import { useAlerts } from '../alerts/useAlerts';
+import { CarddError } from '../cardd/client';
 import { useCardDeps } from '../services/server';
 import { alertsClient, useRouteGuard, useServices, walletStore } from '../services/services';
-import { NumberLead } from '../ui/setup';
-import { Body, Button, ErrorText, ListGroup, ListRow, Screen } from '../ui/ui';
+import type { NtfyPasted } from '../store/store';
+import { Body, Button, Callout, ErrorText, ListGroup, ListRow, Screen, Step, Title, WarnText } from '../ui/ui';
 
-/** The server step on its way: done once the person has set ntfy's server; stop when the page goes. */
-type OpenStep = { address: string; done(): void; stop(): void };
+/** What a press just said, beside its button. */
+type Said = { error: boolean; text: string } | null;
 
 export default function Alerts() {
   const allowed = useRouteGuard('/alerts');
@@ -33,67 +37,100 @@ export default function Alerts() {
   const host = deps?.host;
   const cardd = useMemo(() => (host ? alertsClient(sv, host) : null), [sv, host]);
   const alerts = useAlerts(sv.native, cardd);
-  const [step, setStep] = useState<OpenStep | null>(null);
-  const [busy, setBusy] = useState<'on' | 'test' | 'off' | null>(null);
-  const [said, setSaid] = useState<{ error: boolean; text: string } | null>(null);
-  const started = useRef(false);
-  const stepRef = useRef<OpenStep | null>(null);
-  stepRef.current = step;
-  // A server step left open when the page goes ends its registration, so the check on open isn't held up.
-  useEffect(() => () => stepRef.current?.stop(), []);
-
   const native = sv.native;
-  const reg: RegisterDeps | null = cardd && alertsSupported(native) ? { native, cardd, store: walletStore(sv), play: isPlayBuild } : null;
+  // One for the page: walletStore binds a new one each call, and the read of "I've pasted it" runs once per store.
+  const store = useMemo(() => walletStore(sv), [sv]);
+  /** Set-up's question, the checklist, or Finish later's "not on yet". */
+  const [mode, setMode] = useState<'ask' | 'steps' | 'later'>(setup && start !== '1' ? 'ask' : 'steps');
+  const [busy, setBusy] = useState<'on' | 'test' | 'off' | null>(null);
+  const [said, setSaid] = useState<Said>(null);
+  /** Android's question was refused: it won't ask again, so the next press opens Android's settings. */
+  const [refused, setRefused] = useState(false);
+  /** The person's "I've pasted it", kept; undefined until read. */
+  const [pasted, setPasted] = useState<NtfyPasted | null | undefined>(undefined);
+  /** The battery setting was opened from here (batteryOpened), and the app has been back since (batteryBack). */
+  const batteryOpened = useRef(false);
+  const [batteryBack, setBatteryBack] = useState(false);
+  /** "My phone doesn't have this setting": on this page only. */
+  const [batteryPassed, setBatteryPassed] = useState(false);
+  const started = useRef(false);
 
-  /**
-   * withStep: show ntfy's server step first (from Off); the steps already on the page need it no more. blocked: the
-   * page says notifications are blocked, so a refusal opens Android's settings, the only place they can be allowed.
-   */
-  const turnOn = async (withStep: boolean, blocked = false) => {
+  useEffect(() => {
+    let live = true;
+    void store.ntfyPasted().then((p) => live && setPasted(p), () => live && setPasted(null));
+    return () => {
+      live = false;
+    };
+  }, [store]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active' && batteryOpened.current) setBatteryBack(true);
+    });
+    return () => sub.remove();
+  }, []);
+
+  const reg: RegisterDeps | null = cardd && alertsSupported(native) ? { native, cardd, store, play: isPlayBuild } : null;
+  const phone = alerts.phone;
+  const v = alerts.view;
+  const ntfy = alerts.server?.ntfy ?? '';
+  const checklistWay = !!phone && onChecklistPath(phone);
+  // The phone's endpoint now: read on each render, as alerts are read again on focus and on coming back.
+  const endpoint = alerts.supported && alerts.server ? (native.pushEndpoint?.()?.endpoint ?? null) : null;
+  const list: Checklist | null =
+    phone && alerts.server && pasted !== undefined ? alertsChecklist({ ...phone, server: alerts.server }, { endpoint, pasted, batteryPassed }) : null;
+
+  const savePasted = (p: NtfyPasted) => {
+    setPasted(p);
+    void store.saveNtfyPasted(p).catch(() => {});
+  };
+
+  /** blocked: the page says notifications are blocked, so a refusal opens Android's settings. */
+  const turnOn = async (blocked = false) => {
     if (!reg) return;
+    // Refused once already: Android asks no more, and its settings are the only place they can be allowed.
+    if (refused && !reg.native.notificationsAllowed()) {
+      void Linking.openSettings().catch(() => {});
+      return;
+    }
+    const serverDone = list?.items.find((i) => i.key === 'server')?.done ?? false;
+    const way = routeOf(reg.native, reg.play);
     setBusy('on');
     setSaid(null);
     try {
-      const ntfyStep = (address: string) => new Promise<void>((done, stop) => setStep({ address, done, stop: () => stop(new Error('left')) }));
-      const r = await register(reg, withStep ? { ntfyStep } : {});
-      if (!r.ok && r.why === 'permission' && blocked) void Linking.openSettings().catch(() => {});
-      const text = !r.ok && r.why === 'permission' ? "Allow notifications in Android's settings" : registerError(r, routeOf(reg.native, reg.play)?.transport === 'fcm' ? 'fcm' : 'ntfy');
+      const r = await register(reg);
+      if (!r.ok && r.why === 'permission') {
+        setRefused(true);
+        if (blocked) void Linking.openSettings().catch(() => {});
+      }
+      const text = !r.ok && r.why === 'permission' ? "Allow notifications in Android's settings" : registerError(r, way?.transport === 'fcm' ? 'fcm' : 'ntfy');
       setSaid(text ? { error: true, text } : null);
-    } catch {
-      // The page went in the middle of the server step.
+      // Step 2 stays as the result says: done once alerts came through the server's ntfy (and after a Turn off), and
+      // still done after a press that got no answer (a fresh registration drops the endpoint the person's "I've pasted
+      // it" was said with). After ntfy-sh it is to do again: the endpoint ntfy gave says so.
+      if (way?.ntfy && ntfy !== '') {
+        if (r.ok) savePasted({ address: ntfy, endpoint: null });
+        else if (serverDone && r.why !== 'ntfy-sh') savePasted({ address: ntfy, endpoint: reg.native.pushEndpoint()?.endpoint ?? null });
+      }
     } finally {
-      setStep(null);
+      // Read again before the page is let go: the checklist's last step doesn't come back for a moment as On loads.
+      await alerts.reload();
       setBusy(null);
-      void alerts.reload();
     }
   };
 
-  // The offer's Turn on alerts: once, as soon as the page knows alerts are off.
-  const status = alerts.server ? alerts.view?.status : undefined;
+  // Home's offer's Turn on alerts: on the one-press way, turn on once the page knows alerts are off.
+  const status = alerts.server ? v?.status : undefined;
   useEffect(() => {
     if (start !== '1' || started.current || status === undefined) return;
     started.current = true;
-    if (status === 'off') void turnOn(true);
+    if (status === 'off' && !checklistWay) void turnOn();
   }, [start, status]);
 
   if (!allowed || !cardd) return <Screen busy back />;
-  if (!alerts.supported || !alerts.view) {
+  if (!alerts.supported || !v || !phone) {
     return (
       <Screen title="Alerts" back>
         <Body>Alerts aren&apos;t on the iPhone yet.</Body>
-      </Screen>
-    );
-  }
-  const v = alerts.view;
-  const ntfyInstalled = !!alerts.phone?.distributors.includes(NTFY);
-  const openNtfy = () => native.openNtfySettings?.();
-
-  if (step) {
-    return (
-      <Screen title="Alerts" back>
-        <Steps steps={ntfySteps(step.address, alerts.phone?.ntfyExempt ?? null)} />
-        {ntfyInstalled && <Button title="Open ntfy" kind="secondary" onPress={openNtfy} />}
-        <Button title="Done, turn on" onPress={() => step.done()} />
       </Screen>
     );
   }
@@ -119,6 +156,10 @@ export default function Alerts() {
     setSaid(null);
     try {
       await turnOff(reg);
+      // The checklist starts afresh: what the battery button did on the On page is not its step's.
+      batteryOpened.current = false;
+      setBatteryBack(false);
+      setBatteryPassed(false);
     } catch (e) {
       setSaid({ error: true, text: `Couldn't turn off alerts: ${e instanceof Error ? e.message : String(e)}` });
     } finally {
@@ -126,21 +167,63 @@ export default function Alerts() {
       void alerts.reload();
     }
   };
+  const openBattery = () => {
+    batteryOpened.current = true;
+    setBatteryBack(false);
+    try {
+      native.openBatterySettings?.(NTFY);
+    } catch {
+      // Nothing opened it: the way past shows at once, as there is no setting to come back from.
+      setBatteryBack(true);
+    }
+  };
+  /** ntfy, or its store page; said beside the button when nothing on the phone opens either. */
+  const openNtfy = () => {
+    try {
+      native.openNtfySettings?.();
+    } catch (e) {
+      setSaid({ error: true, text: `Couldn't open ntfy: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  };
+  /** Android's question, said before it comes: not once it was refused, as Android won't ask again. */
+  const ahead = !phone.allowed && !refused && <Body>{PERMISSION_AHEAD}</Body>;
+  const saidText = said && (said.error ? <ErrorText>{said.text}</ErrorText> : <Body>{said.text}</Body>);
+  const on = isOn(v.status);
+
+  // Finish later, at the end of set-up: how far the person got, and where to carry on.
+  if (setup && mode === 'later' && !on) {
+    const n = notYet(list?.done ?? 0, list?.items.length ?? 4);
+    return (
+      <Screen title="Alerts" back>
+        <Title>{n.title}</Title>
+        <Body>{n.text}</Body>
+        <Button title="Open the wallet" onPress={toWallet} />
+        <Button title={CHECKLIST.back} kind="secondary" onPress={() => setMode('steps')} />
+      </Screen>
+    );
+  }
+
+  // The question at the end of set-up, until the person answers it.
+  if (setup && mode === 'ask' && !on) {
+    const yes = () => (checklistWay ? setMode('steps') : void turnOn());
+    return (
+      <Screen title="Alerts" back>
+        <Title>{ASK.title}</Title>
+        <Body>{ASK.what}</Body>
+        {checklistWay ? <Body>{ASK.ntfy}</Body> : v.note && <Body>{v.note}</Body>}
+        {!checklistWay && ahead}
+        <Button title={ASK.yes} onPress={yes} disabled={busy !== null} />
+        {saidText}
+        <Button title={ASK.later} kind="secondary" onPress={toWallet} disabled={busy !== null} />
+        <Body muted>{ASK.where}</Body>
+      </Screen>
+    );
+  }
 
   const loading = !alerts.server;
-  const on = v.status === 'on-ntfy' || v.status === 'on-play' || v.status === 'late-battery' || v.status === 'failing' || v.status === 'needs-permission';
-  return (
-    <Screen title="Alerts" back>
-      {/* At the end of setup, the question until alerts are on, unless a turn on went to another ntfy server (the why
-          says what happened); an "Off" line before they ever were says nothing. */}
-      {setup && !on && v.status !== 'needs-ntfy-server' && <Body>{OFFER.text}</Body>}
-      {!(setup && (loading || v.status === 'off')) && (
-        <ListGroup>
-          <ListRow icon="bell" name="Alerts" line={loading && !alerts.error ? 'Checking…' : v.line} tone={loading ? 'none' : v.tone} />
-        </ListGroup>
-      )}
-      {v.why && <Body>{v.why}</Body>}
-      {v.note && <Body muted>{v.note}</Body>}
+  const checking = (
+    <>
+      {alerts.error === null && <ListGroup><ListRow icon="bell" name="Alerts" line="Checking…" /></ListGroup>}
       {alerts.error !== null && (
         noPushApi(alerts.error) ? (
           <Body>Your server needs Update server before it can send alerts.</Body>
@@ -148,49 +231,109 @@ export default function Alerts() {
           <ErrorText>{`Couldn't check alerts: ${alerts.error instanceof Error ? alerts.error.message : String(alerts.error)}`}</ErrorText>
         )
       )}
-      {v.steps.length > 0 && <Steps steps={v.steps} />}
-      {v.steps.some((s) => s.n > 1) && ntfyInstalled && <Button title="Open ntfy" kind="secondary" onPress={openNtfy} />}
-      {v.status === 'off' && <Button title="Turn on alerts" onPress={() => void turnOn(true)} disabled={loading || busy !== null} />}
-      {(v.status === 'needs-distributor' || v.status === 'needs-ntfy-server') && (
-        <Button title="Done, turn on" onPress={() => void turnOn(false)} disabled={loading || busy !== null} />
-      )}
-      {v.status === 'needs-permission' && <Button title="Turn on alerts" onPress={() => void turnOn(false, true)} disabled={busy !== null} />}
-      {v.canTest && <Button title={busy === 'test' ? 'Sending…' : 'Send a test alert'} onPress={() => void test()} disabled={busy !== null} />}
-      {/* What a press just did, beside its button: a test alert's, or why alerts didn't turn on or off. */}
-      {said && (said.error ? <ErrorText>{said.text}</ErrorText> : <Body>{said.text}</Body>)}
-      {on && !setup && <Button title="Turn off" kind="secondary" onPress={() => void off()} disabled={busy !== null} />}
-      {setup && v.status === 'needs-ntfy-server' && <Body muted>{NOT_ON_YET}</Body>}
-      {setup && (on ? <Button title="Open the wallet" onPress={toWallet} /> : <Button title={OFFER.no} kind="secondary" onPress={toWallet} disabled={busy !== null} />)}
-    </Screen>
+    </>
   );
-}
 
-/** ntfy's numbered steps: its store links, the server's address with Copy, its battery setting. Numbered as shown,
- * from 1: with ntfy installed the install step is left out, and the rest close up. */
-function Steps({ steps }: { steps: Step[] }) {
-  return (
-    <View style={layout.steps}>
-      {steps.map((s, i) => (
-        <View key={s.n} style={layout.step}>
-          <NumberLead n={i + 1} />
-          <View style={layout.stepBody}>
-            <Body>{s.text}</Body>
-            {s.links?.map((l) => <Button key={l.url} title={l.label} kind="secondary" onPress={() => void Linking.openURL(l.url).catch(() => {})} />)}
-            {s.address && (
-              <>
-                <Body selectable>{s.address}</Body>
-                <Button title="Copy" kind="secondary" onPress={() => void Clipboard.setStringAsync(s.address!)} />
-              </>
-            )}
-          </View>
+  // Off, on the way through ntfy: the checklist, once the server has said its ntfy's address, and while it answers
+  // (a read that failed after a good one leaves the last answer, which may no longer hold).
+  if (!on && checklistWay) {
+    if (loading || !list || alerts.error !== null) return <Screen title="Alerts" back>{checking}</Screen>;
+    const of = list.items.length;
+    const n = list.items.findIndex((i) => i.key === list.current) + 1;
+    const body = (key: ChecklistKey) => {
+      const item = list.items.find((i) => i.key === key)!;
+      switch (key) {
+        case 'install':
+          return (
+            <>
+              <Body>{CHECKLIST.install.text}</Body>
+              <Button title={CHECKLIST.install.button} onPress={openNtfy} />
+              {saidText}
+            </>
+          );
+        case 'server':
+          return (
+            <>
+              {item.warn && (
+                <Callout>
+                  <WarnText>{item.warn.title}</WarnText>
+                  <Body>{item.warn.text}</Body>
+                </Callout>
+              )}
+              <Body>{CHECKLIST.server.text}</Body>
+              <Body selectable>{ntfy}</Body>
+              <Button
+                title={CHECKLIST.server.button}
+                onPress={() => void Clipboard.setStringAsync(ntfy).finally(openNtfy)}
+              />
+              <Button title={CHECKLIST.server.pasted} kind="secondary" onPress={() => savePasted({ address: ntfy, endpoint })} />
+              {saidText}
+            </>
+          );
+        case 'battery':
+          return (
+            <>
+              <Body>{`${CHECKLIST.battery.why} ${batteryHow(Number(Platform.Version))}`}</Body>
+              <Button title={CHECKLIST.battery.button} onPress={openBattery} />
+              {batteryBack && <Button title={CHECKLIST.battery.passed} kind="secondary" onPress={() => setBatteryPassed(true)} />}
+            </>
+          );
+        case 'on':
+          return (
+            <>
+              {ahead}
+              <Button title={CHECKLIST.on.button} onPress={() => void turnOn()} disabled={busy !== null} />
+              {saidText}
+            </>
+          );
+      }
+    };
+    return (
+      <Screen title="Alerts" back>
+        <Title>{CHECKLIST.title}</Title>
+        <Body muted>{list.done === 0 ? CHECKLIST.intro(of) : CHECKLIST.stepOf(n, of)}</Body>
+        <View style={layout.steps}>
+          {list.items.map((i) => (
+            <Step key={i.key} label={i.title} status={i.done ? 'done' : i.key === list.current ? 'current' : 'todo'} time={i.done ? i.doneLine : null}>
+              {i.key === list.current && <View style={layout.body}>{body(i.key)}</View>}
+            </Step>
+          ))}
         </View>
-      ))}
-    </View>
+        {setup && <Button title={CHECKLIST.later} kind="secondary" onPress={() => setMode('later')} />}
+      </Screen>
+    );
+  }
+
+  // On (or off on the one-press way): the status line and what can be done about it.
+  return (
+    <Screen title="Alerts" back>
+      {setup && on && (
+        <>
+          <Title>{ON_WORDS.title}</Title>
+          <Body>{ON_WORDS.text}</Body>
+        </>
+      )}
+      {loading ? checking : <ListGroup><ListRow icon="bell" name="Alerts" line={v.line} tone={v.tone} /></ListGroup>}
+      {v.note && <Body muted>{v.note}</Body>}
+      {!loading && alerts.error !== null && checking}
+      {v.status === 'late-battery' && (
+        <>
+          <Body>{`${CHECKLIST.battery.why} ${batteryHow(Number(Platform.Version))}`}</Body>
+          <Button title={CHECKLIST.battery.button} kind="secondary" onPress={openBattery} />
+        </>
+      )}
+      {v.status === 'off' && ahead}
+      {v.status === 'off' && <Button title={ASK.yes} onPress={() => void turnOn()} disabled={loading || busy !== null} />}
+      {v.status === 'needs-permission' && <Button title={ASK.yes} onPress={() => void turnOn(true)} disabled={busy !== null} />}
+      {v.canTest && <Button title={busy === 'test' ? 'Sending…' : 'Send a test alert'} onPress={() => void test()} disabled={busy !== null} />}
+      {saidText}
+      {on && !setup && <Button title="Turn off" kind="secondary" onPress={() => void off()} disabled={busy !== null} />}
+      {setup && (on ? <Button title="Open the wallet" onPress={toWallet} /> : <Button title={ASK.later} kind="secondary" onPress={toWallet} disabled={busy !== null} />)}
+    </Screen>
   );
 }
 
 const layout = StyleSheet.create({
   steps: { gap: 16 },
-  step: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
-  stepBody: { flex: 1, gap: 8 },
+  body: { gap: 8, marginTop: 8 },
 });

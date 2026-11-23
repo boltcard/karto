@@ -77,23 +77,14 @@ async function setup(native = fakeNative(), play = false) {
 
 afterEach(() => vi.useRealTimers());
 
-// Permission, the distributor, the ntfy step, a fresh registration, the origin check, then cardd.
+// Permission, the distributor, a fresh registration, the origin check, then cardd.
 describe('register', () => {
-  it("turns alerts on through the server's ntfy on a Google-free phone, after the server step, with a fresh registration", async () => {
+  it("turns alerts on through the server's ntfy on a Google-free phone, with a fresh registration", async () => {
     const { deps, sent, n, store, cardd } = await setup();
-    const step = vi.fn(async () => {});
-    expect(await register(deps, { ntfyStep: step })).toEqual({ ok: true });
-    expect(step).toHaveBeenCalledWith(NTFY_URL);
+    expect(await register(deps)).toEqual({ ok: true });
     expect(n.registered).toEqual([{ vapid: cardd.pushVapid, distributor: NTFY, fresh: true }]);
     expect(sent()).toMatchObject({ endpoint: `${NTFY_URL}/up1?up=1`, transport: 'unifiedpush', ...KEYS });
     expect(await store.alertsSent()).toEqual({ endpoint: `${NTFY_URL}/up1?up=1`, createdAt: 1_790_000_000, vapid: cardd.pushVapid });
-  });
-
-  it('shows the ntfy step before it registers', async () => {
-    const { deps, n } = await setup();
-    let registeredAtStep = -1;
-    await register(deps, { ntfyStep: async () => void (registeredAtStep = n.registered.length) });
-    expect(registeredAtStep).toBe(0);
   });
 
   it('says there is no distributor on a Google-free phone without ntfy, asking nothing of cardd', async () => {
@@ -106,14 +97,14 @@ describe('register', () => {
   // ntfy handed back an endpoint on ntfy.sh (its default server is not the person's): never sent to cardd.
   it('refuses an endpoint off the server\'s ntfy, and sends cardd nothing', async () => {
     const { deps, sent, store, cardd } = await setup(fakeNative({ answer: () => ntfyEndpoint('upZz', 'https://ntfy.sh') }));
-    expect(await register(deps, { ntfyStep: async () => {} })).toEqual({ ok: false, why: 'ntfy-sh' });
+    expect(await register(deps)).toEqual({ ok: false, why: 'ntfy-sh' });
     expect(cardd.http.requests.map((r) => r.method)).toEqual(['GET']);
     expect(sent()).toBeNull();
     expect(await store.alertsSent()).toBeNull();
   });
 
   it("takes cardd's own ntfy_sh refusal as the same, on a path the phone doesn't check", async () => {
-    // Another distributor that hands out ntfy.sh endpoints: no ntfy step and no origin check on the phone, but cardd's.
+    // Another distributor that hands out ntfy.sh endpoints: no origin check on the phone, but cardd's.
     const other = 'org.example.distributor';
     const { deps, sent } = await setup(fakeNative({ distributors: [other], answer: () => ntfyEndpoint('upZz', 'https://ntfy.sh') }));
     expect(await register(deps)).toEqual({ ok: false, why: 'ntfy-sh' });
@@ -166,12 +157,10 @@ describe('register', () => {
     expect(asked.n.asked).toBe(1);
   });
 
-  it("uses the Play build's embedded distributor when no other is installed, with no ntfy step", async () => {
+  it("uses the Play build's embedded distributor when no other is installed", async () => {
     const native = fakeNative({ distributors: [OWN], embedded: OWN });
     const { deps, sent, n } = await setup(native, true);
-    const step = vi.fn(async () => {});
-    expect(await register(deps, { ntfyStep: step })).toEqual({ ok: true });
-    expect(step).not.toHaveBeenCalled();
+    expect(await register(deps)).toEqual({ ok: true });
     expect(n.registered[0]).toMatchObject({ distributor: OWN });
     expect(sent()).toMatchObject({ endpoint: FCM.endpoint, transport: 'fcm' });
   });
@@ -179,9 +168,7 @@ describe('register', () => {
   it('uses ntfy on a Play build that has it installed (the user\'s distributor first)', async () => {
     const native = fakeNative({ distributors: [OWN, NTFY], embedded: OWN });
     const { deps, sent, n } = await setup(native, true);
-    const step = vi.fn(async () => {});
-    expect(await register(deps, { ntfyStep: step })).toEqual({ ok: true });
-    expect(step).toHaveBeenCalledWith(NTFY_URL);
+    expect(await register(deps)).toEqual({ ok: true });
     expect(n.registered[0]).toMatchObject({ distributor: NTFY });
     expect(sent()).toMatchObject({ transport: 'unifiedpush' });
   });
@@ -322,7 +309,7 @@ describe('checkOnOpen', () => {
 describe("the phone's side", () => {
   it("reads the distributors other than the app's own, ntfy's battery exemption and the endpoint's origin", () => {
     const { api, n } = fakeNative({ distributors: [OWN, NTFY], embedded: OWN });
-    const phone = { ...api, ignoringBatteryOptimizations: (p: string) => p === NTFY, openNtfySettings: () => {} };
+    const phone = { ...api, ignoringBatteryOptimizations: (p: string) => p === NTFY, openNtfySettings: () => {}, openBatterySettings: () => {} };
     expect(readPhone(phone, true)).toEqual({ distributors: [NTFY], distributor: null, allowed: true, ntfyExempt: true, play: true, endpointOrigin: null });
     n.kept = ntfyEndpoint();
     n.saved = NTFY;

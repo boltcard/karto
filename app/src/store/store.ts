@@ -57,6 +57,8 @@ const TYPING_UNIT = 'view.typing_unit';
 const ALERTS_OFFERED = 'alerts.offered';
 /** What the phone last handed the server for its alerts (AlertsSent); none while alerts are off. */
 const ALERTS_SENT = 'alerts.sent';
+/** The person said ntfy's Default server is set, in alerts' checklist (NtfyPasted). */
+const ALERTS_NTFY_PASTED = 'alerts.ntfy_pasted';
 
 /** A card removed because it was another phone's: its name and what moved to Pool (null: the server wouldn't say). */
 export type RemovedPhoneCard = { name: string; amountMsat: number | null };
@@ -67,6 +69,13 @@ export type RemovedPhoneCard = { name: string; amountMsat: number | null };
  * endpoint, a server that lost or replaced it, and a server with a new key.
  */
 export type AlertsSent = { endpoint: string; createdAt: number; vapid: string };
+
+/**
+ * "I've pasted it" in alerts' checklist (alerts/alertsView.ts alertsChecklist): the server's ntfy address it was said
+ * for, and the endpoint the phone had then (null for none). Every registration is fresh, so a new endpoint makes it
+ * stale by itself.
+ */
+export type NtfyPasted = { address: string; endpoint: string | null };
 
 /** A card's photo as the phone keeps it: cardd's tag for it, and the JPEG in base64. */
 export type CachedPhoto = { tag: string; jpeg: string };
@@ -79,7 +88,7 @@ export type CachedPhoto = { tag: string; jpeg: string };
 export const STORE_WRITES = [
   'saveOnboarding', 'saveCard', 'savePending', 'dropPending', 'saveBackupRecipient', 'setRevoked', 'saveServerLatest', 'noteCarddAnswered',
   'savePosRestoreChecked', 'savePhoto', 'dropPhoto', 'noteRemovedPhoneCard', 'dismissRemovedPhoneCards',
-  'setAmountUnit', 'setAmountsHidden', 'setTypingUnit', 'setAlertsOffered', 'saveAlertsSent',
+  'setAmountUnit', 'setAmountsHidden', 'setTypingUnit', 'setAlertsOffered', 'saveAlertsSent', 'saveNtfyPasted',
 ] as const satisfies readonly (keyof AppStore)[];
 
 /** A connection and the end of the queue of the store's calls on it. */
@@ -393,6 +402,16 @@ export class AppStore {
 
   saveAlertsSent(sent: AlertsSent | null): Promise<void> {
     return this.put(ALERTS_SENT, sent);
+  }
+
+  /** The person's "I've pasted it"; null for none, and for anything kept that isn't one. */
+  async ntfyPasted(): Promise<NtfyPasted | null> {
+    const v = await this.get<Partial<NtfyPasted>>(ALERTS_NTFY_PASTED).catch(() => null);
+    return typeof v?.address === 'string' && (typeof v.endpoint === 'string' || v.endpoint === null) ? { address: v.address, endpoint: v.endpoint } : null;
+  }
+
+  saveNtfyPasted(pasted: NtfyPasted | null): Promise<void> {
+    return this.put(ALERTS_NTFY_PASTED, pasted);
   }
 
   dropPending(id: string): Promise<void> {

@@ -80,6 +80,11 @@ export type AlertsNativeApi = {
   ignoringBatteryOptimizations(packageName: string): boolean;
   /** Opens ntfy, or its store page when it isn't installed. */
   openNtfySettings(): void;
+  /**
+   * Opens where an app is let off battery saving: its App info from Android 12 (App battery usage), the Battery
+   * optimisation list before it, App info where a phone lacks that list. Throws when nothing opens.
+   */
+  openBatterySettings(packageName: string): void;
   addListener(event: 'onPushEndpoint', listener: (e: PushEndpoint) => void): { remove(): void };
   addListener(event: 'onPushFailed', listener: (e: PushFailedEvent) => void): { remove(): void };
 };
