@@ -171,7 +171,7 @@ export default function Server() {
             {stepRows(UPDATE_STEPS, update!.done, update!, now, update!.running).map((r) => {
               const live = r.status === 'current' && update!.running;
               return (
-                <Step key={r.step} label={r.label} status={r.status} time={r.time} spoken={r.spoken}>
+                <Step key={r.step} label={r.label} status={r.status} time={r.time} spoken={r.spoken} oneLine>
                   {live && r.step === 'upload' && <Body muted>{update!.upload ? uploadLine(update!.upload) : 'Connecting to the server…'}</Body>}
                 </Step>
               );

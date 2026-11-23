@@ -336,11 +336,20 @@ export function Field({ style, ...props }: TextInputProps) {
 
 export const Row = ({ children }: { children: ReactNode }) => <View style={layout.row}>{children}</View>;
 
+/** A line that shrinks to fit rather than wrap, down to 70% of its size (Step's oneLine). */
+const ONE_LINE = { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.7 } as const;
+
 /**
  * One row of a vertical step list: a mark, the label and its time, and what the current step is doing.
  * spoken: the row's words for a screen reader, which don't change as the time ticks; the row is then one element.
+ * oneLine: the name and its time always share one line (an install's steps, whose names are kept short for it:
+ * progress.test.ts): on a large font or a narrow phone the line shrinks, down to 70%, rather than wrap. Held with or
+ * without a time, so a row keeps its height as its time comes and goes. Without it the line wraps (the alerts
+ * checklist, whose words after a name are a sentence, not a time).
  */
-export function Step({ label, status, time, spoken, children }: { label: string; status: 'done' | 'current' | 'todo'; time?: string | null; spoken?: string; children?: ReactNode }) {
+export function Step({ label, status, time, spoken, oneLine, children }: {
+  label: string; status: 'done' | 'current' | 'todo'; time?: string | null; spoken?: string; oneLine?: boolean; children?: ReactNode;
+}) {
   const s = useStyles(makeStyles);
   return (
     <View style={layout.step} accessible={!!spoken} accessibilityLabel={spoken}>
@@ -348,7 +357,7 @@ export function Step({ label, status, time, spoken, children }: { label: string;
         {status === 'done' ? '✓' : status === 'current' ? '●' : '○'}
       </Text>
       <View style={layout.stepBody}>
-        <Text style={[s.stepLabel, status === 'todo' && s.stepTodo]}>
+        <Text style={[s.stepLabel, status === 'todo' && s.stepTodo]} {...(oneLine ? ONE_LINE : {})}>
           {label}
           {time ? <Text style={s.stepTime}>{` · ${time}`}</Text> : null}
         </Text>

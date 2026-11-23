@@ -63,7 +63,7 @@ function InstallList({ s, upload, now }: { s: OnboardingState; upload: UploadPro
     <>
       <Panel>
         {installRows(s, now).map((r) => (
-          <Step key={r.step} label={r.label} status={r.status} time={r.time} spoken={r.spoken}>
+          <Step key={r.step} label={r.label} status={r.status} time={r.time} spoken={r.spoken} oneLine>
             {r.step === 'upload' && r.status === 'current' && !s.error && <Body muted>{upload ? uploadLine(upload) : 'Connecting to the server…'}</Body>}
           </Step>
         ))}

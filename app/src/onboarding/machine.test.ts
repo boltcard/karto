@@ -493,7 +493,7 @@ describe('onboarding', () => {
       expect(s.error).toBeUndefined();
       noSecretSent(t);
       // The person sees the wait as a step of its own, and why.
-      expect(installRows(s).find((r) => r.status === 'current')).toMatchObject({ step: 'host-key', label: 'Wait for LNVPS to confirm your server' });
+      expect(installRows(s).find((r) => r.status === 'current')).toMatchObject({ step: 'host-key', label: 'Confirm with LNVPS' });
       // Asked again a minute later: LNVPS is asked, the server not even logged in to.
       const connects = t.ssh.connects.length;
       t.w.nowMs += 25 * MINUTE;
