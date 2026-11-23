@@ -240,7 +240,7 @@ func TestAPoolSendAboveItsBudgetIsPaidAndLogged(t *testing.T) {
 	if available(t, s, Fees) != 12_500 || available(t, s, World) != -50_000+40_000 {
 		t.Fatalf("fees %d world %d", available(t, s, Fees), available(t, s, World))
 	}
-	if !strings.Contains(buf.String(), "Pool is 2500 msat below zero") {
+	if !strings.Contains(buf.String(), "above its 10000 msat budget; Pool is 2500 msat short") {
 		t.Fatalf("log: %q", buf.String())
 	}
 	// Within the budget: nothing said.
@@ -250,6 +250,32 @@ func TestAPoolSendAboveItsBudgetIsPaidAndLogged(t *testing.T) {
 	s.SettleHold(ctx, h.ID, 6_000)
 	if buf.Len() != 0 || available(t, s, Pool) != 4_000 {
 		t.Fatalf("pool %d log %q", available(t, s, Pool), buf.String())
+	}
+}
+
+// A Pool send within its budget can still leave Pool short when Pool was
+// drawn on while it was in flight (a card's fee above its budget): the log
+// doesn't blame the send's fee.
+func TestAPoolSendWithinItsBudgetSaysPoolWasDrawnOn(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	var buf bytes.Buffer
+	s.Log = log.New(&buf, "", 0)
+	card := activeCard(t, s, id)
+	s.Credit(ctx, card, 10_000, "c", "")
+	s.Credit(ctx, Pool, 50_000, "p", "")
+	all, err := s.OpenHold(ctx, HoldRequest{Account: Pool, Kind: KindSend, AmountMsat: 40_000, FeeBudgetMsat: 20_000, MinFeeBudgetMsat: 6_000, PaymentHash: "all", Invoice: "lnbc"})
+	if err != nil || all.FeeBudgetMsat != 10_000 {
+		t.Fatalf("hold: %+v %v", all, err)
+	}
+	spend, _ := s.OpenHold(ctx, HoldRequest{Account: card, Kind: KindSpend, AmountMsat: 7_000, FeeBudgetMsat: 1_000, PaymentHash: "spend", Invoice: "lnbc"})
+	s.SettleHold(ctx, spend.ID, 5_000) // 2,000 msat above what the card has, taken from Pool
+	s.SettleHold(ctx, all.ID, 9_000)   // within its 10,000 budget
+	if got := available(t, s, Pool); got != -1_000 {
+		t.Fatalf("pool %d, want -1000", got)
+	}
+	if !strings.Contains(buf.String(), "within its 10000 msat budget) left Pool 1000 msat short") || strings.Contains(buf.String(), "above its") {
+		t.Fatalf("log: %q", buf.String())
 	}
 }
 

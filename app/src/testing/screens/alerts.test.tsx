@@ -248,6 +248,9 @@ describe('Settings → Alerts, turning on through the checklist', () => {
     await checklist('Step 2 of 4');
     const said = screen.getAllByLabelText(/, (done|now|to do)$/).map((e) => e.getAttribute('aria-label')!.split(', ').pop());
     expect(said).toEqual(['done', 'now', 'done', 'to do']);
+    for (const mark of ['✓', '●', '○']) {
+      for (const e of screen.getAllByText(mark)) expect(e.getAttribute('aria-hidden')).toBe('true');
+    }
   });
 
   it("says so when nothing on the phone opens ntfy or its store page", async () => {
