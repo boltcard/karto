@@ -2,7 +2,7 @@
   "expo": {
     "name": "Karto",
     "slug": "card-app",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "scheme": "karto",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
