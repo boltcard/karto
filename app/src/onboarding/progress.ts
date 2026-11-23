@@ -60,10 +60,13 @@ function reconnectLine(s: OnboardingState): string {
   return dropLine(s.drops.during, s.step === 'install' ? installRows(s).find((r) => r.status === 'current')?.step : undefined);
 }
 
-/** The line for a dropped connection to the person's server: during what it dropped, and the install step it carries on from, if one. */
-export function dropLine(during: 'connect' | 'command' | 'upload', step?: InstallStep): string {
+/**
+ * The line for a dropped connection to the person's server: during what it dropped, and the install step it carries on
+ * from, if one, by its label in labels (Update server's are UPDATE_STEP_LABELS).
+ */
+export function dropLine(during: 'connect' | 'command' | 'upload', step?: InstallStep, labels: Record<InstallStep, string> = INSTALL_STEP_LABELS): string {
   if (during === 'connect') return WAITING_TEXT.reconnect;
-  return `The connection to your server dropped. Carrying on${step ? ` from “${INSTALL_STEP_LABELS[step]}”` : ''}.`;
+  return `The connection to your server dropped. Carrying on${step ? ` from “${labels[step]}”` : ''}.`;
 }
 
 /** What a step is doing while it waits for nothing (the install's own steps say it themselves). */
@@ -282,9 +285,10 @@ export function stepRows(
   t: { stepMs?: Partial<Record<InstallStep, number>>; stepStartedAt?: { step: InstallStep; at: number } },
   nowMs: number | null,
   live: boolean,
+  labels: Record<InstallStep, string> = INSTALL_STEP_LABELS,
 ): StepRow[] {
   return steps.map((step) => {
-    const label = INSTALL_STEP_LABELS[step];
+    const label = labels[step];
     const status = installStepStatus(done, step, steps);
     const ms = t.stepMs?.[step];
     const running = status === 'current' && live && nowMs !== null && t.stepStartedAt?.step === step;
@@ -363,6 +367,9 @@ export const INSTALL_STEP_LABELS: Record<InstallStep, string> = {
   up: 'Start the services',
   meta: 'Record the version',
 };
+
+/** Update server's step names: a server that is running booted long ago, so its first-boot step only checks that it is up. */
+export const UPDATE_STEP_LABELS: Record<InstallStep, string> = { ...INSTALL_STEP_LABELS, 'first-boot': 'Check the server is up' };
 
 const mb = (bytes: number) => (bytes / 1_000_000).toFixed(1);
 

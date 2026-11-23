@@ -2,7 +2,7 @@
 // the order of the wallet's banners, the update, a restore's lines, then the builder's details. The page draws each
 // with today's buttons; this says which show and with what words.
 import { installStepsFor } from '../onboarding/install';
-import { dropLine } from '../onboarding/progress';
+import { dropLine, UPDATE_STEP_LABELS } from '../onboarding/progress';
 import type { RestoreView } from '../onboarding/serverPage';
 import type { WatchSnapshot } from '../services/serverWatch';
 import { dnsWords } from './dnsWords';
@@ -50,7 +50,7 @@ export function serverCards(snap: ServerCardsSnap, view: ServerView, o: { outliv
   if (snap.update) {
     const { dropped, done, error } = snap.update;
     // Update server lists every step (it wipes and restores nothing): the first not done is the one it carries on from.
-    const waiting = dropped && { waiting: dropLine(dropped, installStepsFor({}).find((step) => !done.includes(step))) };
+    const waiting = dropped && { waiting: dropLine(dropped, installStepsFor({}).find((step) => !done.includes(step)), UPDATE_STEP_LABELS) };
     cards.push({ kind: 'update-run', error: error ?? null, ...waiting });
   }
   if (view.restore) cards.push({ kind: 'restore', restore: view.restore, booksOff: view.moneyOff || !!view.restore.notUp });

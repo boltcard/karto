@@ -91,7 +91,7 @@ describe('serverCards', () => {
       .toEqual({ kind: 'update-run', error: 'The update stopped: x' });
     // While it waits to connect again after a drop, the card says so.
     const run = (o: object) => cards({ update: { done: ['upload'], upload: null, startedAt: 1, running: true, ...o } }).find((c) => c.kind === 'update-run');
-    expect(run({ dropped: 'command' })).toEqual({ kind: 'update-run', error: null, waiting: 'The connection to your server dropped. Carrying on from “Wait for the first boot”.' });
+    expect(run({ dropped: 'command' })).toEqual({ kind: 'update-run', error: null, waiting: 'The connection to your server dropped. Carrying on from “Check the server is up”.' });
     expect(run({ dropped: 'upload', done: [] })).toEqual({ kind: 'update-run', error: null, waiting: 'The connection to your server dropped. Carrying on from “Upload the server files”.' });
     expect(run({ dropped: 'connect' })).toEqual({ kind: 'update-run', error: null, waiting: 'Your server isn’t answering yet. Trying again…' });
     expect(run({})).toEqual({ kind: 'update-run', error: null });

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { installStepsFor } from './install';
 import { initialState, startRebuild, STEPS, type OnboardingState, type Rebuild, type ServerHost, type Waiting } from './machine';
 import {
-  countdown, doneLine, doneSteps, doneSummary, elapsed, errorActions, hostKeyNotice, INSTALL_STEP_LABELS, installFoot, installLogLine, installRows, installStepStatus, newInstallLogLines, payFoot, payWithin, readyView,
-  setupInstallSteps, setupProgress, STEP_LABELS, statusLine, stepHeading, stepRows, stepsFor, stepStatus, stepTimeText, uploadLine, working,
+  countdown, doneLine, doneSteps, doneSummary, dropLine, elapsed, errorActions, hostKeyNotice, INSTALL_STEP_LABELS, installFoot, installLogLine, installRows, installStepStatus, newInstallLogLines, payFoot, payWithin, readyView,
+  setupInstallSteps, setupProgress, STEP_LABELS, statusLine, stepHeading, stepRows, stepsFor, stepStatus, stepTimeText, UPDATE_STEP_LABELS, uploadLine, working,
 } from './progress';
 import { chosenLine } from './rebuild';
 
@@ -513,6 +513,18 @@ describe('a connection that dropped', () => {
 
 describe('stepRows', () => {
   const steps = ['upload', 'first-boot', 'swap', 'docker'] as const;
+  // On Update server the server booted long ago: the step only checks that it is up.
+  it('names the first-boot step for Update server by what it does there, and keeps the setup words', () => {
+    expect(UPDATE_STEP_LABELS['first-boot']).toBe('Check the server is up');
+    expect({ ...UPDATE_STEP_LABELS, 'first-boot': INSTALL_STEP_LABELS['first-boot'] }).toEqual(INSTALL_STEP_LABELS);
+    expect(stepRows(steps, ['upload', 'first-boot'], {}, null, false, UPDATE_STEP_LABELS)[1]).toMatchObject({
+      label: 'Check the server is up',
+      spoken: 'Check the server is up, done',
+    });
+    expect(stepRows(steps, [], {}, null, false)[1].label).toBe('Wait for the first boot');
+    expect(dropLine('command', 'first-boot', UPDATE_STEP_LABELS)).toBe('The connection to your server dropped. Carrying on from “Check the server is up”.');
+    expect(dropLine('command', 'first-boot')).toBe('The connection to your server dropped. Carrying on from “Wait for the first boot”.');
+  });
   it("shows the running step's time counting up, a finished step's time kept, and none for a step done before this run", () => {
     const rows = stepRows(steps, ['upload', 'first-boot', 'swap'], { stepMs: { 'first-boot': 72_400, swap: 900 }, stepStartedAt: { step: 'docker', at: 1_000 } }, 43_500, true);
     expect(rows.map((r) => [r.step, r.status, r.time])).toEqual([
