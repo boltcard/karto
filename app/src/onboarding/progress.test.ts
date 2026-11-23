@@ -3,7 +3,7 @@ import { installStepsFor } from './install';
 import { initialState, startRebuild, STEPS, type OnboardingState, type Rebuild, type ServerHost, type Waiting } from './machine';
 import {
   countdown, doneLine, doneSteps, doneSummary, elapsed, errorActions, hostKeyNotice, INSTALL_STEP_LABELS, installFoot, installLogLine, installRows, installStepStatus, newInstallLogLines, payFoot, payWithin, readyView,
-  setupInstallSteps, setupProgress, STEP_LABELS, statusLine, stepHeading, stepRows, stepsFor, stepStatus, uploadLine, working,
+  setupInstallSteps, setupProgress, STEP_LABELS, statusLine, stepHeading, stepRows, stepsFor, stepStatus, stepTimeText, uploadLine, working,
 } from './progress';
 import { chosenLine } from './rebuild';
 
@@ -186,7 +186,20 @@ describe('progress', () => {
     expect(setupInstallSteps(at({ keySource: 'first_use', trustedAt: 1 }))).toContain('host-key');
     expect(setupInstallSteps(at({ keySource: 'first_use' }))).toContain('host-key');
     expect(setupInstallSteps(at({ keySource: 'lnvps', trustedAt: 1 }))).toContain('host-key');
-    expect(INSTALL_STEP_LABELS['host-key']).toBe('Wait for LNVPS to confirm your server');
+    expect(INSTALL_STEP_LABELS['host-key']).toBe('Confirm with LNVPS');
+  });
+
+  // A step's name and its time share one line: name + " · " + the longest time stepTimeText makes within the hour
+  // ("59 min 59.9 s") must fit on a phone about 412 dp wide at font scale 1.0, beside the step's mark, in a panel.
+  // About 40 characters of the step's type fit there; past that the line wrapped ("...confirm your / server · 0.2 s").
+  // Step's one-line rule shrinks a line that still won't fit (a large font), but a name kept short never needs it.
+  it('keeps every install step name short enough for its time to fit on the same line', () => {
+    const longestTime = stepTimeText(59 * 60_000 + 59_900, true);
+    expect(longestTime).toBe('59 min 59.9 s');
+    for (const [step, label] of Object.entries(INSTALL_STEP_LABELS)) {
+      expect(label.length, `${step}: "${label}"`).toBeLessThanOrEqual(24);
+      expect(`${label} · ${longestTime}`.length, step).toBeLessThanOrEqual(40);
+    }
   });
 
   it('lists only the install steps this install runs, and never marks a hidden one as the current', () => {

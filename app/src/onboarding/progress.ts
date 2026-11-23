@@ -344,7 +344,10 @@ export function readyView(s: OnboardingState, lnvpsExpires: number | null, nowS:
   return view('Your server is ready', [paid ? `${paid}, and this phone is paired with it.` : 'This phone is paired with it.', 'Next, add your first card.']);
 }
 
-/** The install steps as the person sees them (onboarding's Install step, and Update server). */
+/**
+ * The install steps as the person sees them (onboarding's Install step, and Update server). Each name is at most 24
+ * characters, so it and its time fit on one line (progress.test.ts).
+ */
 export const INSTALL_STEP_LABELS: Record<InstallStep, string> = {
   upload: 'Upload the server files',
   'first-boot': 'Wait for the first boot',
@@ -353,7 +356,7 @@ export const INSTALL_STEP_LABELS: Record<InstallStep, string> = {
   'docker-setup': 'Set up Docker',
   prepare: 'Build the card server',
   wipe: 'Wipe the old server data',
-  'host-key': 'Wait for LNVPS to confirm your server',
+  'host-key': 'Confirm with LNVPS',
   seed: 'Set the wallet seed',
   'issuer-key': 'Set the card key',
   restore: 'Restore the backup',
