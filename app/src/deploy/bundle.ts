@@ -58,6 +58,11 @@ export async function loadBuildInfo(native: { readAssetText(path: string): Promi
   }
 }
 
-/** Settings' last line: the app's commit and build time, in the phone's time zone (minutes east of UTC). */
-export const buildLabel = (b: BuildInfo | null, nowS = Date.now() / 1000, offsetMin = -new Date(nowS * 1000).getTimezoneOffset()) =>
-  b ? `Karto Wallet ${b.commit}, built ${whenText(b.builtAt, nowS, offsetMin)}` : 'Karto Wallet build unknown';
+/**
+ * Settings' last line: the app's version (app.json's, when the config has one), its commit and build time, in the
+ * phone's time zone (minutes east of UTC).
+ */
+export function buildLabel(b: BuildInfo | null, version: string | null | undefined, nowS = Date.now() / 1000, offsetMin = -new Date(nowS * 1000).getTimezoneOffset()): string {
+  if (!b) return version ? `Karto Wallet ${version}, build unknown` : 'Karto Wallet build unknown';
+  return `Karto Wallet ${version ? `${version} (${b.commit})` : b.commit}, built ${whenText(b.builtAt, nowS, offsetMin)}`;
+}

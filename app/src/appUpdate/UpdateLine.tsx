@@ -1,5 +1,5 @@
 // Settings' and This PoS's line under the build label: what GitHub last said about a newer release (appUpdate.ts's
-// updateLine), a link to the releases page when it names one. Nothing in a build that doesn't ask GitHub.
+// updateLine), a link to the releases page when it names one. Nothing in a Play or App Store build (showsLatest).
 import { Linking, Pressable, StyleSheet } from 'react-native';
 import { Small } from '../ui/ui';
 import { RELEASES_PAGE, updateLine } from './appUpdate';
