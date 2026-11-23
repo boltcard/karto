@@ -10,6 +10,7 @@ import (
 	"github.com/boltcard/karto/server/internal/backup"
 	"github.com/boltcard/karto/server/internal/cards"
 	"github.com/boltcard/karto/server/internal/deviceauth"
+	"github.com/boltcard/karto/server/internal/disk"
 	"github.com/boltcard/karto/server/internal/ledger"
 	"github.com/boltcard/karto/server/internal/lnaddr"
 	"github.com/boltcard/karto/server/internal/phoenixd"
@@ -131,7 +132,26 @@ func (a *api) server(w http.ResponseWriter, r *http.Request) {
 			out["dns"] = dns
 		}
 	}
+	// How full the server's disk is: the wallet says so, and offers Rebuild server when it would free enough.
+	if a.money != nil && a.money.Disk != nil {
+		if d, ok := a.money.Disk.Reading(); ok {
+			out["disk"] = diskJSON(d)
+		}
+	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// diskJSON is a disk reading as the answer carries it: level only when the
+// disk is low, what a rebuild frees (and whether it helps) only when known.
+func diskJSON(d disk.Reading) map[string]any {
+	out := map[string]any{"freeBytes": d.FreeBytes, "totalBytes": d.TotalBytes}
+	if d.Level != disk.None {
+		out["level"] = string(d.Level)
+	}
+	if d.FreeableKnown {
+		out["freeableBytes"], out["rebuildHelps"] = d.FreeableBytes, d.RebuildHelps
+	}
+	return out
 }
 
 func (a *api) reserve(w http.ResponseWriter, r *http.Request) {
