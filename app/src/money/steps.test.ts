@@ -5,7 +5,7 @@ import type { Destination } from './destination';
 import type { Rated } from './fiat';
 import {
   afterMove, afterSend, afterWatch, destinationPanel, moveAvailable, moveBack, moveLock, moveReadBack, moveStart, moveTargets, noteWho, ownTarget, resultView, sendAt, sendBack, sendNext,
-  sendReadBack, sendToProblem, barLabel, STEP_NAMES, stepAt, stepLabel, fixedAmount, linkAmountProblem, lookupText, needsLookup, oldServerProblem, payableFrom,
+  sendAllFor, sendReadBack, sendToProblem, barLabel, STEP_NAMES, stepAt, stepLabel, fixedAmount, linkAmountProblem, lookupText, needsLookup, oldServerProblem, payableFrom,
   type LinkPayable, type OfferPayable, type Ran,
 } from './steps';
 
@@ -411,6 +411,14 @@ describe('offers and names', () => {
     expect(linkAmountProblem({ ...sam, kind: 'payurl', to: 'https://x' }, 500)).toBe('Between 1 and 2,000,000 sat for this link.');
     expect(linkAmountProblem(sam, 5_000_000)).toBe(null);
     expect(linkAmountProblem(phoenix, 5_000_000)).toBe(null);
+  });
+
+  it("stops All at what an address or link takes", () => {
+    const sam: LinkPayable = { kind: 'payurl', to: 'https://x', minMsat: 1_000, maxMsat: 50_000_999 };
+    expect(sendAllFor(sam, 100_000_000)).toEqual({ msat: 50_000_000, capped: true });
+    expect(sendAllFor({ ...sam, maxMsat: 2_000_000_000 }, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
+    expect(sendAllFor(phoenix, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
+    expect(sendAllFor({ kind: 'address', to: 'alex@pay.example.com' }, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
   });
 
   it("says where an offer's money went, and why one was not sent", () => {

@@ -26,6 +26,16 @@ export function sendProblem(poolAvailableMsat: number, amountMsat: number, o: { 
   return `Pool has ${has}; this needs up to ${needs} with routing fees.`;
 }
 
+/**
+ * The most Pool can send out: the largest whole-sat amount (msat) whose fee budget fits beside it in
+ * poolAvailableMsat, as cardd holds a send (renew.affordableSat's rule); 0 when none fits. Exact msat, as cardd checks.
+ */
+export function sendAllMsat(poolAvailableMsat: number): number {
+  let sat = Math.floor((poolAvailableMsat - 5_000) / 1005); // 1000 msat + its 0.5% budget, plus 5 sat
+  while (sat > 0 && sat * 1000 + feeBudgetMsat(sat * 1000) > poolAvailableMsat) sat--;
+  return Math.max(sat, 0) * 1000;
+}
+
 /** How a send watched ended; a failure's reason is phoenixd's, in the person's words, when cardd gave one. */
 export type SendOutcome = { kind: 'sent'; feeMsat: number } | { kind: 'failed'; reason?: string } | { kind: 'unconfirmed' };
 

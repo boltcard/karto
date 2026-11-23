@@ -1,13 +1,35 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SendAnswer, Tx, Wallet } from '../cardd/client';
 import { CarddError } from '../cardd/error';
-import { feeBudgetMsat, feeEstimateSat, followSend, sendProblem, watchSend } from './send';
+import { feeBudgetMsat, feeEstimateSat, followSend, sendAllMsat, sendProblem, watchSend } from './send';
 
 describe('feeBudgetMsat', () => {
   it("is cardd's: 0.5% rounded up, plus 5 sat", () => {
     expect(feeBudgetMsat(1_000_000)).toBe(10_000);
     expect(feeBudgetMsat(1)).toBe(5_001);
     expect(feeBudgetMsat(228_000)).toBe(6_140);
+  });
+});
+
+describe('sendAllMsat', () => {
+  it('is the most whole sats Pool can send with its fee budget, as cardd counts it', () => {
+    expect(sendAllMsat(0)).toBe(0);
+    expect(sendAllMsat(6_004)).toBe(0);
+    expect(sendAllMsat(6_005)).toBe(1_000); // 1,000 msat + its 5,005 msat budget
+    expect(sendAllMsat(100_000_000)).toBe(99_497_000);
+    expect(sendAllMsat(50_000_000)).toBe(49_746_000);
+    // cardd checks the msat as they are: a part of a sat in Pool counts.
+    expect(sendAllMsat(100_000_490)).toBe(99_498_000);
+    expect(sendAllMsat(100_000_489)).toBe(99_497_000);
+  });
+
+  it('agrees with sendProblem: All fits, a sat more does not', () => {
+    for (let i = 0; i < 2000; i++) {
+      const a = i * 49_999_999 + i * i;
+      const s = sendAllMsat(a);
+      if (s > 0) expect(sendProblem(a, s)).toBeNull();
+      expect(sendProblem(a, s + 1000)).not.toBeNull();
+    }
   });
 });
 
