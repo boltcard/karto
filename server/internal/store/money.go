@@ -814,12 +814,18 @@ func (s *Store) SettleHoldWithProofAt(ctx context.Context, id, feeMsat int64, pr
 				return err
 			}
 		} else if short > 0 && s.Log != nil {
-			// Pool has nowhere to take the rest from: the fee is paid and Pool
-			// goes below zero. A Send out All's least budget is phoenixd's
-			// fee and 1 sat (ledger.MinFeeBudgetMsat), so this means phoenixd
-			// charged more than that formula.
-			s.Log.Printf("store: Pool's send %s paid a routing fee of %d msat, above its %d msat budget; Pool is %d msat below zero (check ledger.MinFeeBudgetMsat against phoenixd)",
-				h.PaymentHash, feeMsat, h.FeeBudgetMsat, short)
+			// Pool has nowhere to take the rest from: the send is booked and
+			// Pool ends short of it. A Send out All's least budget is phoenixd's
+			// fee and 1 sat (ledger.MinFeeBudgetMsat), so a fee above it means
+			// phoenixd charged more than that formula; within it, Pool was
+			// drawn on meanwhile (another hold's fee-adjust).
+			if feeMsat > h.FeeBudgetMsat {
+				s.Log.Printf("store: Pool's send %s paid a routing fee of %d msat, above its %d msat budget; Pool is %d msat short (check ledger.MinFeeBudgetMsat against phoenixd)",
+					h.PaymentHash, feeMsat, h.FeeBudgetMsat, short)
+			} else {
+				s.Log.Printf("store: Pool's send %s (routing fee %d msat, within its %d msat budget) left Pool %d msat short: Pool was drawn on while it was in flight",
+					h.PaymentHash, feeMsat, h.FeeBudgetMsat, short)
+			}
 		}
 		note := fmt.Sprintf("paid %s", h.PaymentHash)
 		if h.About.SaleID != "" {

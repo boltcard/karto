@@ -356,19 +356,15 @@ export function Step({ label, status, time, spoken, oneLine, children }: {
   const s = useStyles(makeStyles);
   return (
     <View style={layout.step} accessible={!!spoken} accessibilityLabel={spoken}>
-      {/* The mark is drawn, not read: the label says it in words. */}
-      <Text
-        style={[s.mark, status === 'done' && s.markDone, status === 'current' && s.markCurrent]}
-        importantForAccessibility="no"
-        accessibilityElementsHidden
-      >
+      {/* The mark is drawn, not read: the label (or spoken) says it in words. */}
+      <Text style={[s.mark, status === 'done' && s.markDone, status === 'current' && s.markCurrent]} aria-hidden>
         {status === 'done' ? '✓' : status === 'current' ? '●' : '○'}
       </Text>
       <View style={layout.stepBody}>
         <Text
           style={[s.stepLabel, status === 'todo' && s.stepTodo]}
           {...(oneLine ? ONE_LINE : {})}
-          accessibilityLabel={`${label}${time ? `, ${time}` : ''}, ${STEP_SAID[status]}`}
+          accessibilityLabel={spoken ? undefined : `${label}${time ? `, ${time}` : ''}, ${STEP_SAID[status]}`}
         >
           {label}
           {time ? <Text style={s.stepTime}>{` · ${time}`}</Text> : null}
