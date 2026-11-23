@@ -411,6 +411,24 @@ class CardNativeModule : Module() {
       }
       if (!opened) throw IllegalStateException("nothing on this phone opens ntfy or its store page")
     }
+    // Where an app is let off battery saving (alerts' checklist; the words are alertsView.ts batteryHow's): from
+    // Android 12 the app's own App info, whose App battery usage has Unrestricted; before it, the list of apps
+    // Battery optimisation keeps, as App info has no switch of its own there. Some makers' builds lack that list:
+    // App info then.
+    Function("openBatterySettings") { packageName: String ->
+      val context = context()
+      val appInfo = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+      val intents = if (Build.VERSION.SDK_INT >= 31) listOf(appInfo) else listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), appInfo)
+      val opened = intents.any { intent ->
+        try {
+          context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+          true
+        } catch (e: ActivityNotFoundException) {
+          false
+        }
+      }
+      if (!opened) throw IllegalStateException("nothing on this phone opens its battery settings")
+    }
 
     OnActivityEntersForeground { keeper.front() }
     // The activity's pause: the preference is the activity's while it is in front, so the phone stops being a

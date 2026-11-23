@@ -254,7 +254,7 @@ describe('STORE_WRITES', () => {
   it('names every method of the store that writes: a new method is listed as a write here, or as a read in this test', () => {
     const READS = [
       'onboarding', 'cards', 'pendingRequests', 'backupRecipient', 'revoked', 'serverLatest', 'carddUnreachableSince', 'posRestoreChecked', 'photos', 'removedPhoneCards',
-      'amountUnit', 'amountsHidden', 'typingUnit', 'alertsOffered', 'alertsSent',
+      'amountUnit', 'amountsHidden', 'typingUnit', 'alertsOffered', 'alertsSent', 'ntfyPasted',
     ];
     // clear is the removal's own, reconnect Try again's; get, put, update and step are the store's private four.
     const OWN = ['constructor', 'clear', 'reconnect', 'get', 'put', 'update', 'step'];
@@ -467,6 +467,24 @@ describe('alerts', () => {
     const store = await AppStore.open(db);
     await db.runAsync("INSERT INTO kv (key, value) VALUES ('alerts.sent', '{\"endpoint\":3}')");
     expect(await store.alertsSent()).toBeNull();
+  });
+
+  it("keeps the person's I've pasted it across a reopen, and reads anything else kept as none", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'store-')), 'app.db');
+    const store = await AppStore.open(nodeSqlite(path));
+    expect(await store.ntfyPasted()).toBeNull();
+    const pasted = { address: 'https://vm-1.lnvps.cloud:8443', endpoint: 'https://ntfy.sh/upAbC?up=1' };
+    await store.saveNtfyPasted(pasted);
+    const again = await AppStore.open(nodeSqlite(path));
+    expect(await again.ntfyPasted()).toEqual(pasted);
+    await again.saveNtfyPasted({ ...pasted, endpoint: null });
+    expect(await again.ntfyPasted()).toEqual({ ...pasted, endpoint: null });
+    await again.saveNtfyPasted(null);
+    expect(await again.ntfyPasted()).toBeNull();
+    const db = nodeSqlite();
+    const other = await AppStore.open(db);
+    await db.runAsync("INSERT INTO kv (key, value) VALUES ('alerts.ntfy_pasted', '{\"address\":\"x\"}')");
+    expect(await other.ntfyPasted()).toBeNull();
   });
 });
 

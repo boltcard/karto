@@ -1,5 +1,5 @@
 // Turning alerts on: the permission, the distributor
-// (an installed one such as ntfy first, else the Play build's own), for ntfy the server step, a fresh registration,
+// (an installed one such as ntfy first, else the Play build's own), a fresh registration,
 // the endpoint it gives (never one off the server's own ntfy), then cardd. And on each open, the check that the
 // server still has the endpoint the phone has. The words are alertsView.ts's; the page is app/alerts.tsx.
 import { CarddError, type CarddClient, type PushState } from '../cardd/client';
@@ -90,18 +90,17 @@ export function routeOf(native: Pick<AlertsNative, 'pushDistributors' | 'pushDis
 }
 
 /**
- * Turns alerts on. ntfyStep: on the ntfy path, shows the server step with the server's ntfy address and resolves
- * once the person has done it (Done, turn on); without it no step is shown. ask: false asks no permission (the check
- * on open, which shows nothing).
+ * Turns alerts on, once ntfy's default server is set where it is the way (the page's checklist). ask: false asks no
+ * permission (the check on open, which shows nothing).
  */
-export async function register(deps: RegisterDeps, o: { ntfyStep?: (address: string) => Promise<void>; ask?: boolean } = {}): Promise<RegisterResult> {
+export async function register(deps: RegisterDeps, o: { ask?: boolean } = {}): Promise<RegisterResult> {
   await cancel();
   // Cancelled only by Turn off (or another Turn on) while it runs: it then says it got no endpoint.
   const r = await track((live) => registerNow(deps, o, live));
   return r === 'cancelled' ? fail('timeout', 'cancelled') : r;
 }
 
-async function registerNow(deps: RegisterDeps, o: { ntfyStep?: (address: string) => Promise<void>; ask?: boolean }, live: Live): Promise<RegisterResult | Cancelled> {
+async function registerNow(deps: RegisterDeps, o: { ask?: boolean }, live: Live): Promise<RegisterResult | Cancelled> {
   const { native } = deps;
   if (o.ask !== false && !native.notificationsAllowed() && !(await native.requestNotifications())) return fail('permission');
   const route = routeOf(native, deps.play);
@@ -112,7 +111,6 @@ async function registerNow(deps: RegisterDeps, o: { ntfyStep?: (address: string)
   } catch (e) {
     return fail('server', message(e));
   }
-  if (route.ntfy && state.ntfy && o.ntfyStep) await o.ntfyStep(state.ntfy);
   if (!live()) return 'cancelled';
   // Always a fresh registration: a new token and keys, so ntfy hands it to the default server it has now.
   const got = await endpointFrom(native, () => native.pushRegister(state.vapidPublicKey, route.distributor, true), deps.waitMs ?? 20_000);
