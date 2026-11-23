@@ -470,7 +470,7 @@ describe('Send out: All', () => {
     toAmount();
     press('All');
     // cardd's figure: all but phoenixd's fee and 1 sat.
-    expect(await screen.findByPlaceholderText('All: 99,596 sat')).toBeTruthy();
+    expect(await screen.findByText('All: 99,596 sat')).toBeTruthy();
     expect(screen.getByText("Up to 404 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
     press('Next');
     press('Send 99,596 sat');
@@ -485,7 +485,7 @@ describe('Send out: All', () => {
     act(refocus);
     toAmount();
     press('All');
-    expect(await screen.findByPlaceholderText('All: 99,497 sat')).toBeTruthy();
+    expect(await screen.findByText('All: 99,497 sat')).toBeTruthy();
     expect(screen.getByText("Up to 503 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
     press('Next');
     expect(screen.getByRole('button', { name: 'Send 99,497 sat' })).toBeTruthy();
@@ -502,7 +502,8 @@ describe('Send out: All', () => {
     await open();
     toAmount();
     press('All');
-    fireEvent.change(await screen.findByPlaceholderText('All: 99,596 sat'), { target: { value: '5000' } });
+    expect(await screen.findByText('All: 99,596 sat')).toBeTruthy();
+    fireEvent.change(await screen.findByPlaceholderText('All'), { target: { value: '5000' } });
     expect(screen.getByPlaceholderText('Amount in sat')).toBeTruthy();
     expect(screen.queryByText(/kept for routing fees/)).toBeNull();
     press('Next');
@@ -516,7 +517,7 @@ describe('Send out: All', () => {
     toAmount('sam@getalby.com');
     await screen.findByPlaceholderText('Amount in sat');
     press('All');
-    expect(await screen.findByPlaceholderText('Most this address takes: 50,000 sat')).toBeTruthy();
+    expect(await screen.findByText('Most this address takes: 50,000 sat')).toBeTruthy();
     // What cardd sets aside beside 50,000 sat: the full budget, which fits.
     expect(screen.getByText("Up to 255 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
   });
@@ -529,7 +530,7 @@ describe('Send out: All', () => {
     toAmount(link);
     await screen.findByPlaceholderText('Amount in sat');
     press('All');
-    expect(await screen.findByPlaceholderText('Most this link takes: 20,000 sat')).toBeTruthy();
+    expect(await screen.findByText('Most this link takes: 20,000 sat')).toBeTruthy();
   });
 
   it('All reads Pool afresh', async () => {
@@ -537,7 +538,7 @@ describe('Send out: All', () => {
     toAmount();
     world.cardd.balances.set('pool', 50_000_000);
     press('All');
-    expect(await screen.findByPlaceholderText('All: 49,795 sat')).toBeTruthy();
+    expect(await screen.findByText('All: 49,795 sat')).toBeTruthy();
   });
 
   it('after cardd refuses, Back finds All following Pool', async () => {
@@ -550,7 +551,7 @@ describe('Send out: All', () => {
     press('Send 99,596 sat');
     expect(await screen.findByText('There isn’t enough money available.')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
-    expect(await screen.findByPlaceholderText('All: 49,795 sat')).toBeTruthy();
+    expect(await screen.findByText('All: 49,795 sat')).toBeTruthy();
   });
 
   it('no All to press for a Pool too small to send from', async () => {

@@ -287,7 +287,7 @@ export default function Send() {
             <View style={layout.grow}>
               <AmountField
                 value={all ? '' : amount}
-                placeholder={all && most ? allText(most, payable, cv, rated) : `Amount in ${unitWord}`}
+                placeholder={all && most ? 'All' : `Amount in ${unitWord}`}
                 onChangeText={(t) => (setAll(false), setAmount(t))}
                 autoFocus
               />
@@ -307,6 +307,7 @@ export default function Send() {
             )}
           </Row>
           {available !== null && <Body muted>{`${viewText(available, cv, rated)} available in Pool.`}</Body>}
+          {all && most && <Body>{allText(most, payable, cv, rated)}</Body>}
           {all && most && most.msat > 0 && (
             <Body muted>{`Up to ${viewText(Math.ceil(keptMsat(most.msat, available, tight) / 1000) * 1000, cv, rated)} kept for routing fees; what isn't used stays in Pool.`}</Body>
           )}
@@ -345,7 +346,7 @@ export default function Send() {
   );
 }
 
-/** All's placeholder: the most Pool can send, or the most an address or link takes when that is less. */
+/** All's line under the amount: the most Pool can send, or the most an address or link takes when that is less. */
 function allText(most: { msat: number; capped: boolean }, p: Payable | null, v: Shown, r: Rated | null): string {
   const figure = viewText(most.msat, v, r);
   return most.capped ? `Most this ${p?.kind === 'address' ? 'address' : 'link'} takes: ${figure}` : `All: ${figure}`;
