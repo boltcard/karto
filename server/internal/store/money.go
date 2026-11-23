@@ -472,8 +472,12 @@ type HoldRequest struct {
 	Kind          Kind // KindSpend (a card at a terminal), KindSend (pool, send out) or KindRenew (hosting)
 	AmountMsat    int64
 	FeeBudgetMsat int64
-	PaymentHash   string
-	Invoice       string
+	// MinFeeBudgetMsat, if not 0, is the least budget the hold may take when
+	// the full one doesn't fit: it then takes all that is left (a Send out of
+	// Pool, ledger.MinFeeBudgetMsat). At most FeeBudgetMsat.
+	MinFeeBudgetMsat int64
+	PaymentHash      string
+	Invoice          string
 	// Offer, instead of PaymentHash and Invoice: a BOLT12 offer's payment,
 	// whose hash phoenixd gives only once it has fetched the invoice.
 	Offer string
@@ -495,7 +499,7 @@ const maxRoundingSpends = 10
 // available.
 func (s *Store) OpenHold(ctx context.Context, r HoldRequest) (Hold, error) {
 	// An invoice has its hash; an offer has none yet. Never both, never neither.
-	if r.AmountMsat <= 0 || r.FeeBudgetMsat < 0 || (r.PaymentHash == "") == (r.Offer == "") {
+	if r.AmountMsat <= 0 || r.FeeBudgetMsat < 0 || r.MinFeeBudgetMsat < 0 || r.MinFeeBudgetMsat > r.FeeBudgetMsat || (r.PaymentHash == "") == (r.Offer == "") {
 		return Hold{}, fmt.Errorf("%w: bad hold", ErrConflict)
 	}
 	var h Hold
@@ -591,8 +595,12 @@ func (s *Store) OpenHold(ctx context.Context, r HoldRequest) (Hold, error) {
 		if err != nil {
 			return err
 		}
-		if b.AvailableMsat() < r.AmountMsat+r.FeeBudgetMsat {
-			return ErrInsufficient
+		budget := r.FeeBudgetMsat
+		if b.AvailableMsat() < r.AmountMsat+budget {
+			if r.MinFeeBudgetMsat == 0 || b.AvailableMsat() < r.AmountMsat+r.MinFeeBudgetMsat {
+				return ErrInsufficient
+			}
+			budget = b.AvailableMsat() - r.AmountMsat
 		}
 		var ref any
 		if r.Ref != "" {
@@ -603,14 +611,14 @@ func (s *Store) OpenHold(ctx context.Context, r HoldRequest) (Hold, error) {
 			saleID = r.About.SaleID
 		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO holds (account, kind, amount_msat, fee_budget_msat, payment_hash, invoice, state, created_at, ref, destination, description, comment, offer, sale_id)
-			VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`, r.Account, r.Kind, r.AmountMsat, r.FeeBudgetMsat, r.PaymentHash, r.Invoice, now.Unix(), ref,
+			VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?)`, r.Account, r.Kind, r.AmountMsat, budget, r.PaymentHash, r.Invoice, now.Unix(), ref,
 			r.About.Destination, r.About.Description, r.About.Comment, r.Offer, saleID)
 		if err != nil {
 			return err
 		}
 		id, err := res.LastInsertId()
 		s.touch(tx, r.Account)
-		h = Hold{ID: id, Account: r.Account, Kind: r.Kind, AmountMsat: r.AmountMsat, FeeBudgetMsat: r.FeeBudgetMsat,
+		h = Hold{ID: id, Account: r.Account, Kind: r.Kind, AmountMsat: r.AmountMsat, FeeBudgetMsat: budget,
 			PaymentHash: r.PaymentHash, Invoice: r.Invoice, Offer: r.Offer, State: HoldOpen, CreatedAt: time.Unix(now.Unix(), 0), About: r.About}
 		return err
 	})

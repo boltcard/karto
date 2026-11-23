@@ -57,10 +57,30 @@ const (
 )
 
 // FeeBudgetMsat is what a hold sets aside for routing: 0.5% rounded up, plus
-// 5 sat, above phoenixd v0.9.2's trampoline fee (4 sat + 0.4%, conf/Lsp.kt,
-// with a little over that seen on real payments); payinvoice takes no cap,
-// and a fee above it is still paid (SettleHold).
+// 5 sat, above phoenixd v0.9.2's trampoline fee (MinFeeBudgetMsat);
+// payinvoice takes no cap, and a fee above it is still paid (SettleHold).
 func FeeBudgetMsat(amountMsat int64) int64 { return (amountMsat*5+999)/1000 + 5_000 }
+
+// MinFeeBudgetMsat is the least a Send out of Pool sets aside when the full
+// budget doesn't fit: phoenixd v0.9.2's one trampoline fee, 4 sat + 0.4%
+// rounded down to the msat (conf/Lsp.kt TrampolineFees(4.sat, 4_000);
+// lightning-kmp 1.13.2's nodeFee), and 1 sat. Recheck at each phoenixd
+// upgrade.
+func MinFeeBudgetMsat(amountMsat int64) int64 { return 4_000 + amountMsat*4/1000 + 1_000 }
+
+// SendableMsat is the most whole sats (in msat) a Send out of Pool can take
+// out of availableMsat: amount + MinFeeBudgetMsat(amount) fits, 1 sat more
+// doesn't (1000·S + 5000 + 4·S ≤ available).
+func SendableMsat(availableMsat int64) int64 { return max(0, (availableMsat-5_000)/1004) * 1000 }
+
+// minFeeBudget is a hold's least budget: MinFeeBudgetMsat for a Send out of
+// Pool, else none (0: the full budget or nothing).
+func minFeeBudget(acct store.Account, kind store.Kind, amountMsat int64) int64 {
+	if acct == store.Pool && kind == store.KindSend {
+		return MinFeeBudgetMsat(amountMsat)
+	}
+	return 0
+}
 
 // Outcome is a payment's result as far as it is known.
 type Outcome struct {
@@ -516,7 +536,8 @@ func (l *Ledger) PayOnce(ctx context.Context, ref string, acct store.Account, ki
 	// while its payment leaves.)
 	l.mu.Lock()
 	h, err := l.store.OpenHold(ctx, store.HoldRequest{Account: acct, Kind: kind, AmountMsat: inv.AmountMsat,
-		FeeBudgetMsat: FeeBudgetMsat(inv.AmountMsat), PaymentHash: inv.PaymentHash, Invoice: bolt11, Ref: ref, About: about})
+		FeeBudgetMsat: FeeBudgetMsat(inv.AmountMsat), MinFeeBudgetMsat: minFeeBudget(acct, kind, inv.AmountMsat),
+		PaymentHash: inv.PaymentHash, Invoice: bolt11, Ref: ref, About: about})
 	if err == nil {
 		l.inFlight[inFlightKey(h.ID)] = true
 	}
@@ -559,7 +580,7 @@ func (l *Ledger) PayOfferOnce(ctx context.Context, ref string, acct store.Accoun
 	// Marked as the hold appears, under l.mu, as PayOnce does.
 	l.mu.Lock()
 	h, err := l.store.OpenHold(ctx, store.HoldRequest{Account: acct, Kind: kind, AmountMsat: amountMsat,
-		FeeBudgetMsat: FeeBudgetMsat(amountMsat), Offer: offer, Ref: ref, About: about})
+		FeeBudgetMsat: FeeBudgetMsat(amountMsat), MinFeeBudgetMsat: minFeeBudget(acct, kind, amountMsat), Offer: offer, Ref: ref, About: about})
 	if err == nil {
 		l.inFlight[inFlightKey(h.ID)] = true
 	}

@@ -102,6 +102,57 @@ func TestFeeBudget(t *testing.T) {
 	}
 }
 
+func TestMinFeeBudget(t *testing.T) {
+	// phoenixd v0.9.2's trampoline fee, 4 sat + 0.4% rounded down to the msat, and 1 sat.
+	for amount, want := range map[int64]int64{0: 5_000, 1_000_000: 9_000, 26_000_000: 109_000, 337_000: 6_348} {
+		if got := ledger.MinFeeBudgetMsat(amount); got != want {
+			t.Fatalf("%d msat: %d, want %d", amount, got, want)
+		}
+	}
+}
+
+func TestSendable(t *testing.T) {
+	for avail, want := range map[int64]int64{0: 0, 4_000: 0, 6_003: 0, 6_004: 1_000, 100_000_000: 99_596_000, 50_000_000: 49_795_000} {
+		if got := ledger.SendableMsat(avail); got != want {
+			t.Fatalf("%d msat: %d, want %d", avail, got, want)
+		}
+	}
+	// The most whole sats that fit with the minimum budget: a sat more doesn't.
+	for i := int64(0); i < 2000; i++ {
+		a := i*49_999_999 + i*i
+		s := ledger.SendableMsat(a)
+		if s%1000 != 0 || (s > 0 && s+ledger.MinFeeBudgetMsat(s) > a) || s+1000+ledger.MinFeeBudgetMsat(s+1000) <= a {
+			t.Fatalf("%d msat: %d", a, s)
+		}
+	}
+}
+
+// A Send out of Pool may take all of it but phoenixd's fee and 1 sat; a refund out of Pool keeps the full budget.
+func TestASendOutOfPoolNeedsOnlyTheMinimumBudget(t *testing.T) {
+	ctx := context.Background()
+	w := setup(t)
+	w.st.Credit(ctx, store.Pool, 50_000_000, "pool", "")
+	amount := ledger.SendableMsat(50_000_000)
+	bolt11, hash := w.f.Invoice(amount)
+	fee := 4_000 + amount*4/1000
+	w.f.SetOutcome(hash, phoenixdtest.Outcome{FeeMsat: fee})
+	inv, _ := w.l.Decode(ctx, bolt11)
+	if _, err := w.l.PayOnce(ctx, "r1", store.Pool, store.KindRefund, bolt11, inv, store.HoldAbout{}, make(chan ledger.Outcome, 1)); !errors.Is(err, store.ErrInsufficient) {
+		t.Fatalf("a refund of all of Pool: %v", err)
+	}
+	done := make(chan ledger.Outcome, 1)
+	h, err := w.l.PayOnce(ctx, "s1", store.Pool, store.KindSend, bolt11, inv, store.HoldAbout{}, done)
+	if err != nil || h.FeeBudgetMsat != 50_000_000-amount {
+		t.Fatalf("send: %+v %v", h, err)
+	}
+	if o := wait(t, done); o.Hold.State != store.HoldSettled || o.Hold.FeeMsat != fee {
+		t.Fatalf("outcome %+v", o)
+	}
+	if got := available(t, w.st, store.Pool); got != 50_000_000-amount-fee {
+		t.Fatalf("pool %d", got)
+	}
+}
+
 func TestPaySettlesAtTheExactFee(t *testing.T) {
 	w := setup(t)
 	bolt11, hash := w.f.Invoice(10_000_000)

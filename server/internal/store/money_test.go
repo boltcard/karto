@@ -146,6 +146,39 @@ func TestHoldNeedsTheFeeBudgetToo(t *testing.T) {
 	}
 }
 
+// A hold may take less than its budget, down to its minimum, when only that fits: its budget is then all that is left.
+func TestHoldMayTakeItsMinimumBudget(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	s.Credit(ctx, Pool, 20_000, "p", "")
+	r := HoldRequest{Account: Pool, Kind: KindSend, AmountMsat: 10_000, FeeBudgetMsat: 9_000, MinFeeBudgetMsat: 6_000, PaymentHash: "a", Invoice: "lnbc"}
+	h, err := s.OpenHold(ctx, r)
+	if err != nil || h.FeeBudgetMsat != 9_000 {
+		t.Fatalf("with room for the full budget: %+v %v", h, err)
+	}
+	s.ReleaseHold(ctx, h.ID)
+	r.AmountMsat, r.PaymentHash = 12_000, "b"
+	h, err = s.OpenHold(ctx, r)
+	if err != nil || h.FeeBudgetMsat != 8_000 || available(t, s, Pool) != 0 {
+		t.Fatalf("room for the minimum: %+v %v, available %d", h, err, available(t, s, Pool))
+	}
+	if got, _ := s.GetHold(ctx, h.ID); got.FeeBudgetMsat != 8_000 {
+		t.Fatalf("kept: %+v", got)
+	}
+	s.ReleaseHold(ctx, h.ID)
+	r.AmountMsat, r.PaymentHash = 14_001, "c"
+	if _, err := s.OpenHold(ctx, r); !errors.Is(err, ErrInsufficient) {
+		t.Fatalf("no room for the minimum: %v", err)
+	}
+	r.AmountMsat = 1_000
+	for _, min := range []int64{-1, 9_001} {
+		r.MinFeeBudgetMsat = min
+		if _, err := s.OpenHold(ctx, r); !errors.Is(err, ErrConflict) {
+			t.Fatalf("minimum %d: %v", min, err)
+		}
+	}
+}
+
 func TestSettleAndRelease(t *testing.T) {
 	ctx := context.Background()
 	s := open(t)
