@@ -228,7 +228,10 @@ export default function Alerts() {
         noPushApi(alerts.error) ? (
           <Body>Your server needs Update server before it can send alerts.</Body>
         ) : (
-          <ErrorText>{`Couldn't check alerts: ${alerts.error instanceof Error ? alerts.error.message : String(alerts.error)}`}</ErrorText>
+          <>
+            <ErrorText>{`Couldn't check alerts: ${alerts.error instanceof Error ? alerts.error.message : String(alerts.error)}`}</ErrorText>
+            <Button title="Try again" kind="secondary" onPress={() => void alerts.reload()} />
+          </>
         )
       )}
     </>
@@ -237,7 +240,14 @@ export default function Alerts() {
   // Off, on the way through ntfy: the checklist, once the server has said its ntfy's address, and while it answers
   // (a read that failed after a good one leaves the last answer, which may no longer hold).
   if (!on && checklistWay) {
-    if (loading || !list || alerts.error !== null) return <Screen title="Alerts" back>{checking}</Screen>;
+    if (loading || !list || alerts.error !== null) {
+      return (
+        <Screen title="Alerts" back>
+          {checking}
+          {setup && <Button title={CHECKLIST.later} kind="secondary" onPress={() => setMode('later')} />}
+        </Screen>
+      );
+    }
     const of = list.items.length;
     const n = list.items.findIndex((i) => i.key === list.current) + 1;
     const body = (key: ChecklistKey) => {
