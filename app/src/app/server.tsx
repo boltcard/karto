@@ -5,7 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { installStepsFor } from '../onboarding/install';
-import { elapsed, stepRows, uploadLine } from '../onboarding/progress';
+import { elapsed, stepRows, UPDATE_STEP_LABELS, uploadLine } from '../onboarding/progress';
 import { useWatcher } from '../services/server';
 import { useRouteGuard, useServices } from '../services/services';
 import { screenLock } from '../ui/lock';
@@ -168,7 +168,7 @@ export default function Server() {
       case 'update-run':
         return (
           <Panel key="update-run" title={`${update!.running ? 'Updating the server' : 'Server update'} · ${elapsed(update!.startedAt, update!.endedAt ?? now)}`}>
-            {stepRows(UPDATE_STEPS, update!.done, update!, now, update!.running).map((r) => {
+            {stepRows(UPDATE_STEPS, update!.done, update!, now, update!.running, UPDATE_STEP_LABELS).map((r) => {
               const live = r.status === 'current' && update!.running;
               return (
                 <Step key={r.step} label={r.label} status={r.status} time={r.time} spoken={r.spoken} oneLine>
