@@ -449,6 +449,98 @@ describe('Send out', () => {
 
 // Typed in pounds, Next turns the pounds into whole sats on the
 // phone (minorToMsat, cardd's own rounding), and Check and the request carry those sats.
+describe('Send out: All', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    server.schema = 8;
+    server.down = null;
+  });
+  afterEach(() => {
+    deps.now = null;
+  });
+
+  /** To alice@example.com, then Amount. */
+  function toAmount(to = 'alice@example.com') {
+    fireEvent.change(field(), { target: { value: to } });
+    press('Next');
+  }
+
+  it('All fills the most Pool can send, and Check and the send carry it', async () => {
+    const world = await open();
+    toAmount();
+    press('All');
+    expect(await screen.findByPlaceholderText('All: 99,497 sat')).toBeTruthy();
+    expect(screen.getByText("Up to 503 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
+    press('Next');
+    press('Send 99,497 sat');
+    expect(await screen.findByText('Sent 99,497 sat')).toBeTruthy();
+    // The fake routes for nothing: the allowance stays in Pool.
+    expect(world.cardd.balances.get('pool')).toBe(503_000);
+  });
+
+  it('typing after All clears it', async () => {
+    await open();
+    toAmount();
+    press('All');
+    fireEvent.change(await screen.findByPlaceholderText('All: 99,497 sat'), { target: { value: '5000' } });
+    expect(screen.getByPlaceholderText('Amount in sat')).toBeTruthy();
+    expect(screen.queryByText(/kept for routing fees/)).toBeNull();
+    press('Next');
+    expect(screen.getByRole('button', { name: 'Send 5,000 sat' })).toBeTruthy();
+  });
+
+  it("All stops at the most an address takes", async () => {
+    server.schema = 10;
+    const world = await open();
+    world.cardd.lookups.set('sam@getalby.com', { kind: 'payurl', to: 'sam@getalby.com', minMsat: 1_000, maxMsat: 50_000_000, description: "Sam's tips" });
+    toAmount('sam@getalby.com');
+    await screen.findByPlaceholderText('Amount in sat');
+    press('All');
+    expect(await screen.findByPlaceholderText('Most this address takes: 50,000 sat')).toBeTruthy();
+  });
+
+  it("All stops at the most a link takes", async () => {
+    server.schema = 10;
+    const world = await open();
+    const link = 'https://shop.example.com/lnurlp/abc';
+    world.cardd.lookups.set(link, { kind: 'payurl', to: link, minMsat: 1_000, maxMsat: 20_000_000, description: 'Shop' });
+    toAmount(link);
+    await screen.findByPlaceholderText('Amount in sat');
+    press('All');
+    expect(await screen.findByPlaceholderText('Most this link takes: 20,000 sat')).toBeTruthy();
+  });
+
+  it('All reads Pool afresh', async () => {
+    const world = await open();
+    toAmount();
+    world.cardd.balances.set('pool', 50_000_000);
+    press('All');
+    expect(await screen.findByPlaceholderText('All: 49,746 sat')).toBeTruthy();
+  });
+
+  it('after cardd refuses, Back finds All following Pool', async () => {
+    const world = await open();
+    toAmount();
+    press('All');
+    press('Next');
+    world.cardd.sendRefusal = { status: 409, code: 'insufficient', message: 'store: not enough money available' };
+    world.cardd.balances.set('pool', 50_000_000);
+    press('Send 99,497 sat');
+    expect(await screen.findByText('There isn’t enough money available.')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
+    expect(await screen.findByPlaceholderText('All: 49,746 sat')).toBeTruthy();
+  });
+
+  it('no All to press for a Pool too small to send from', async () => {
+    const world = await open();
+    world.cardd.balances.set('pool', 6_004);
+    act(refocus);
+    await screen.findByText('6 sat available');
+    toAmount();
+    expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-disabled')).toBe('true');
+  });
+});
+
 describe('Send out typed in pounds', () => {
   beforeEach(() => {
     vi.clearAllMocks();

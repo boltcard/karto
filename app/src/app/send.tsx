@@ -6,21 +6,22 @@
 import * as Clipboard from 'expo-clipboard';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, View } from 'react-native';
 import type { RecentTo, Wallet } from '../cardd/client';
 import { parseDestination } from '../money/destination';
-import { symbol } from '../money/fiat';
+import { symbol, type Rated } from '../money/fiat';
 import { availableMsat, moneyError, typedMsat } from '../money/format';
 import { cutNote } from '../money/note';
 import { requestId, runRequest } from '../money/requests';
 import { scanSlot } from '../money/scanSlot';
-import { followSend, sendProblem, watchSend } from '../money/send';
+import { feeBudgetMsat, followSend, sendProblem, watchSend } from '../money/send';
 import {
-  afterSend, afterWatch, destinationPanel, fixedAmount, linkAmountProblem, lookupText, needsLookup, noteWho, oldServerProblem, ownTarget, payableFrom, resultView,
+  afterSend, afterWatch, destinationPanel, fixedAmount, linkAmountProblem, lookupText, needsLookup, noteWho, oldServerProblem, ownTarget, payableFrom, resultView, sendAllFor,
   sendAt, sendBack, sendNext, sendReadBack, sendToProblem, type Payable, type Ran, type Result, type Step, STEP_NAMES, stepAt,
 } from '../money/steps';
 import { useCardDeps, useServer } from '../services/server';
 import { useRouteGuard } from '../services/services';
-import { viewText } from '../money/view';
+import { type View as Shown, viewText } from '../money/view';
 import { useAmountView } from '../ui/amountView';
 import { screenLock } from '../ui/lock';
 import { RecentList } from '../ui/RecentList';
@@ -35,6 +36,8 @@ export default function Send() {
   const deps = useCardDeps();
   const [raw, setRaw] = useState('');
   const [amount, setAmount] = useState('');
+  // All: the amount is the most Pool can send to this destination (money/steps.ts sendAllFor), as Pool is last read.
+  const [all, setAll] = useState(false);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   // Send out's Recent list: asked for on every focus, whatever the server's status says yet (an older cardd
   // answers 404, so none); shown from schema 13.
@@ -84,6 +87,7 @@ export default function Send() {
       const scanned = scanSlot.take();
       if (scanned && scanned.trim() !== rawNow.current.trim()) {
         setRaw(scanned);
+        setAll(false);
         setNote('');
         setError(null);
       }
@@ -111,6 +115,7 @@ export default function Send() {
   // A new destination starts afresh: the last one's refusal isn't its own.
   const setDest = (text: string) => {
     setRaw(text);
+    setAll(false);
     setNote('');
     setError(null);
   };
@@ -123,12 +128,13 @@ export default function Send() {
     if (at !== 'amount') setAmount('');
   }, [typingUnit, at]);
   const fixed = payable ? fixedAmount(payable) : null;
-  const typed = typedMsat(amount, typingUnit, rated);
+  const available = wallet ? availableMsat(wallet.pool) : null;
+  const most = payable && available !== null ? sendAllFor(payable, available) : null;
+  const typed = all ? most?.msat || null : typedMsat(amount, typingUnit, rated);
   const amountMsat = fixed ?? (at === 'check' && taken !== null ? taken : typed);
   const unitWord = rated && typingUnit === 'fiat' ? symbol(rated.currency).trim() : 'sat';
   // Before the wallet answers, only the amount itself is checked: cardd checks it against pool. What the address
   // takes comes first: no amount outside it can be sent, whatever Pool holds (an empty field still says Enter an amount).
-  const available = wallet ? availableMsat(wallet.pool) : null;
   const problem = payable
     ? (amountMsat ? linkAmountProblem(payable, amountMsat) : null) ?? sendProblem(available ?? Number.MAX_SAFE_INTEGER, amountMsat ?? 0, { typed: fixed === null }, cv, rated)
     : null;
@@ -274,8 +280,33 @@ export default function Send() {
         <>
           {whereTo}
           <Label>{`How much (${unitWord})`}</Label>
-          <AmountField value={amount} onChangeText={setAmount} placeholder={`Amount in ${unitWord}`} autoFocus />
+          <Row>
+            <View style={layout.grow}>
+              <AmountField
+                value={all ? '' : amount}
+                placeholder={all && most ? allText(most, payable, cv, rated) : `Amount in ${unitWord}`}
+                onChangeText={(t) => (setAll(false), setAmount(t))}
+                autoFocus
+              />
+            </View>
+            {available !== null && (
+              <Button
+                title="All"
+                kind="secondary"
+                disabled={!most?.msat}
+                onPress={() => {
+                  setAll(true);
+                  setAmount('');
+                  // What Pool holds now, not when the screen last read it.
+                  deps?.cardd.wallet().then(setWallet, () => {});
+                }}
+              />
+            )}
+          </Row>
           {available !== null && <Body muted>{`${viewText(available, cv, rated)} available in Pool.`}</Body>}
+          {all && most && most.msat > 0 && (
+            <Body muted>{`Up to ${viewText(Math.ceil(feeBudgetMsat(most.msat) / 1000) * 1000, cv, rated)} kept for routing fees; what isn't used stays in Pool.`}</Body>
+          )}
           {problem && <Body muted>{problem}</Body>}
           <Button
             title="Next"
@@ -310,3 +341,13 @@ export default function Send() {
     </Screen>
   );
 }
+
+/** All's placeholder: the most Pool can send, or the most an address or link takes when that is less. */
+function allText(most: { msat: number; capped: boolean }, p: Payable | null, v: Shown, r: Rated | null): string {
+  const figure = viewText(most.msat, v, r);
+  return most.capped ? `Most this ${p?.kind === 'address' ? 'address' : 'link'} takes: ${figure}` : `All: ${figure}`;
+}
+
+const layout = StyleSheet.create({
+  grow: { flex: 1 },
+});
