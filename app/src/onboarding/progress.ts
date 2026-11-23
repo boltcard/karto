@@ -347,14 +347,14 @@ export function readyView(s: OnboardingState, lnvpsExpires: number | null, nowS:
 /** The install steps as the person sees them (onboarding's Install step, and Update server). */
 export const INSTALL_STEP_LABELS: Record<InstallStep, string> = {
   upload: 'Upload the server files',
-  'first-boot': "Wait for the server's first boot",
+  'first-boot': 'Wait for the first boot',
   swap: 'Add swap',
   docker: 'Install Docker',
   'docker-setup': 'Set up Docker',
   prepare: 'Build the card server',
   wipe: 'Wipe the old server data',
   'host-key': 'Wait for LNVPS to confirm your server',
-  seed: 'Set the Lightning wallet seed',
+  seed: 'Set the wallet seed',
   'issuer-key': 'Set the card key',
   restore: 'Restore the backup',
   up: 'Start the services',

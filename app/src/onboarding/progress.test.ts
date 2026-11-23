@@ -148,7 +148,7 @@ describe('progress', () => {
   // The person watches these during the install and Update server: plain words, and how far the upload is.
   it('names each install step in plain words', () => {
     expect(INSTALL_STEP_LABELS.upload).toBe('Upload the server files');
-    expect(INSTALL_STEP_LABELS['first-boot']).toBe("Wait for the server's first boot");
+    expect(INSTALL_STEP_LABELS['first-boot']).toBe('Wait for the first boot');
     expect(INSTALL_STEP_LABELS.swap).toBe('Add swap');
     expect(INSTALL_STEP_LABELS.docker).toBe('Install Docker');
     expect(INSTALL_STEP_LABELS['docker-setup']).toBe('Set up Docker');
@@ -157,12 +157,12 @@ describe('progress', () => {
     expect(INSTALL_STEP_LABELS.restore).toBe('Restore the backup');
     expect(installRows({ ...initialState('GBR'), step: 'install', installed: ['upload', 'first-boot', 'swap', 'docker', 'docker-setup'] })).toEqual([
       { step: 'upload', label: 'Upload the server files', status: 'done', time: null, spoken: 'Upload the server files, done' },
-      { step: 'first-boot', label: "Wait for the server's first boot", status: 'done', time: null, spoken: "Wait for the server's first boot, done" },
+      { step: 'first-boot', label: 'Wait for the first boot', status: 'done', time: null, spoken: 'Wait for the first boot, done' },
       { step: 'swap', label: 'Add swap', status: 'done', time: null, spoken: 'Add swap, done' },
       { step: 'docker', label: 'Install Docker', status: 'done', time: null, spoken: 'Install Docker, done' },
       { step: 'docker-setup', label: 'Set up Docker', status: 'done', time: null, spoken: 'Set up Docker, done' },
       { step: 'prepare', label: 'Build the card server', status: 'current', time: null, spoken: 'Build the card server, running' },
-      { step: 'seed', label: 'Set the Lightning wallet seed', status: 'todo', time: null, spoken: 'Set the Lightning wallet seed, to do' },
+      { step: 'seed', label: 'Set the wallet seed', status: 'todo', time: null, spoken: 'Set the wallet seed, to do' },
       { step: 'issuer-key', label: 'Set the card key', status: 'todo', time: null, spoken: 'Set the card key, to do' },
       { step: 'up', label: 'Start the services', status: 'todo', time: null, spoken: 'Start the services, to do' },
       { step: 'meta', label: 'Record the version', status: 'todo', time: null, spoken: 'Record the version, to do' },
@@ -467,7 +467,7 @@ describe('a connection that dropped', () => {
   const cut = { n: 1, during: 'command' as const, last: 'Broken pipe' };
 
   it('says the connection dropped and which step it carries on from, by the step\'s own label', () => {
-    expect(statusLine(at({ installed: ['upload'], drops: cut }))).toBe("The connection to your server dropped. Carrying on from “Wait for the server's first boot”.");
+    expect(statusLine(at({ installed: ['upload'], drops: cut }))).toBe('The connection to your server dropped. Carrying on from “Wait for the first boot”.');
     expect(statusLine(at({ installed: [], drops: { ...cut, during: 'upload' } }))).toBe('The connection to your server dropped. Carrying on from “Upload the server files”.');
     expect(statusLine(at({ installed: ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'wipe', 'seed', 'issuer-key', 'restore'], drops: { ...cut, n: 3 } })))
       .toBe('The connection to your server dropped. Carrying on from “Start the services”.');
@@ -513,7 +513,7 @@ describe('stepRows', () => {
     const rows = stepRows(steps, ['upload', 'first-boot'], { stepMs: { 'first-boot': 72_400 }, stepStartedAt: { step: 'swap', at: 0 } }, 5_000, true);
     expect(rows.map((r) => r.spoken)).toEqual([
       'Upload the server files, done',
-      "Wait for the server's first boot, done, 1 minute 12.4 seconds",
+      'Wait for the first boot, done, 1 minute 12.4 seconds',
       'Add swap, running',
       'Install Docker, to do',
     ]);
