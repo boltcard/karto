@@ -68,7 +68,7 @@ type Fiat struct {
 // updates it silently.
 type Payload struct {
 	V       int            `json:"v"`
-	Kind    string         `json:"kind"` // received, spent, refused, test or hosting
+	Kind    string         `json:"kind"` // received, spent, refused, test, hosting, capped or disk
 	Account string         `json:"account"`
 	Name    string         `json:"name"`
 	Sat     int64          `json:"sat"`
@@ -81,6 +81,10 @@ type Payload struct {
 	At      int64          `json:"at"`
 	Tag     string         `json:"tag,omitempty"`
 	Update  bool           `json:"update,omitempty"`
+	// The disk alert's: how full ("low" or "critical"), and its free and total bytes.
+	Level      string `json:"level,omitempty"`
+	FreeBytes  int64  `json:"freeBytes,omitempty"`
+	TotalBytes int64  `json:"totalBytes,omitempty"`
 }
 
 // maxName is the most runes of a card's or till's name an alert carries.
@@ -233,6 +237,13 @@ func refusalPayload(t taken, name string) Payload {
 func HostingLow(availableMsat int64, days int, now time.Time) Payload {
 	return Payload{V: 1, Kind: "hosting", Account: string(store.Hosting), Sat: satOf(availableMsat), Msat: availableMsat,
 		Count: days, At: now.Unix(), Tag: "hosting-low"}
+}
+
+// DiskLow is the alert while the server's disk is nearly full (level "low")
+// or almost full ("critical"), with its free and total bytes (package disk
+// says how often). Its tag makes each replace the last on the phone.
+func DiskLow(freeBytes, totalBytes int64, level string, now time.Time) Payload {
+	return Payload{V: 1, Kind: "disk", Level: level, FreeBytes: freeBytes, TotalBytes: totalBytes, At: now.Unix(), Tag: "disk-low"}
 }
 
 // InvoicesCapped is the alert when cardd's cap on unpaid invoices turned

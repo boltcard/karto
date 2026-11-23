@@ -255,6 +255,7 @@ type vector struct {
 	test        bool
 	hosting     *hostingCase // hosting's low-funding alert
 	capped      bool         // the unpaid cap turned payers away
+	disk        *diskCase    // the server's disk nearly full
 	card        string       // the card's name
 	currency    string       // the server's currency, "" for none
 	title, text string
@@ -268,6 +269,11 @@ var (
 )
 
 // hostingCase is hosting's available balance and the whole days it pays for.
+type diskCase struct {
+	free, total int64
+	level       string
+}
+
 type hostingCase struct {
 	availableMsat int64
 	days          int
@@ -340,6 +346,11 @@ var vectors = []vector{
 	{name: "hosting-low-1", hosting: &hostingCase{300_000, 1}, title: "Hosting", text: "Covers about 1 day: top it up or move from Pool"},
 	{name: "hosting-low-0", hosting: &hostingCase{50_000, 0}, title: "Hosting", text: "Covers about 0 days: top it up or move from Pool"},
 	{name: "invoices-capped", capped: true, title: "Karto", text: "Some payments in were turned away: too many unpaid invoices just now"},
+	{name: "disk-low", disk: &diskCase{1_400_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.4 GB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-low-rounds-up", disk: &diskCase{1_450_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.5 GB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-low-under-1gb", disk: &diskCase{900_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "900 MB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-low-at-1gb", disk: &diskCase{999_500_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.0 GB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-critical", disk: &diskCase{400_000_000, 10_700_000_000, "critical"}, title: "Server disk almost full", text: "400 MB left: open Karto now"},
 }
 
 func (v vector) payload(t *testing.T) map[string]any {
@@ -351,6 +362,8 @@ func (v vector) payload(t *testing.T) map[string]any {
 		return asMap(t, HostingLow(v.hosting.availableMsat, v.hosting.days, t0))
 	case v.capped:
 		return asMap(t, InvoicesCapped(t0))
+	case v.disk != nil:
+		return asMap(t, DiskLow(v.disk.free, v.disk.total, v.disk.level, t0))
 	case v.refusal != nil:
 		return asMap(t, refusalPayload(taken{last: *v.refusal, count: v.count, tag: v.tag, update: v.update}, v.card))
 	}
@@ -390,6 +403,9 @@ func phoneLink(p map[string]any) string {
 	kind, _ := p["kind"].(string)
 	if kind == "hosting" {
 		return "karto://account?id=hosting"
+	}
+	if kind == "disk" {
+		return "karto://server"
 	}
 	if kind == "refused" {
 		if card, ok := p["card"].(string); ok && card != "" {
