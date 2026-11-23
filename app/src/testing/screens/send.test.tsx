@@ -554,6 +554,43 @@ describe('Send out: All', () => {
     expect(await screen.findByText('All: 49,795 sat')).toBeTruthy();
   });
 
+  // Nothing turns All on but the button: it goes off rather than fill "All: 0 sat" or wait unseen for the wallet.
+  it('All goes off when Pool can no longer send anything', async () => {
+    const world = await open();
+    toAmount();
+    press('All');
+    expect(await screen.findByText('All: 99,596 sat')).toBeTruthy();
+    world.cardd.balances.set('pool', 5_000);
+    act(refocus);
+    expect(await screen.findByPlaceholderText('Amount in sat')).toBeTruthy();
+    expect(screen.queryByText(/^All: /)).toBeNull();
+    expect(screen.queryByText(/kept for routing fees/)).toBeNull();
+  });
+
+  it('All goes off when the wallet can no longer be read, and stays off when it can', async () => {
+    const world = await open();
+    toAmount();
+    press('All');
+    expect(await screen.findByText('All: 99,596 sat')).toBeTruthy();
+    vi.spyOn(world.deps.cardd, 'wallet').mockRejectedValueOnce(new Error('Network request failed'));
+    act(refocus);
+    expect(await screen.findByPlaceholderText('Amount in sat')).toBeTruthy();
+    act(refocus);
+    expect(await screen.findByText('100,000 sat available in Pool.')).toBeTruthy();
+    expect(screen.queryByText(/^All: /)).toBeNull();
+  });
+
+  it('Back to To and Next again reads Pool afresh for All', async () => {
+    const world = await open();
+    toAmount();
+    press('All');
+    expect(await screen.findByText('All: 99,596 sat')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
+    world.cardd.balances.set('pool', 50_000_000);
+    press('Next');
+    expect(await screen.findByText('All: 49,795 sat')).toBeTruthy();
+  });
+
   it('no All to press for a Pool too small to send from', async () => {
     const world = await open();
     world.cardd.balances.set('pool', 6_003);

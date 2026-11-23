@@ -134,6 +134,16 @@ export default function Send() {
   const tight = sendable !== undefined;
   const most = payable && available !== null ? sendAllFor(payable, sendable ?? sendAllMsat(available)) : null;
   const typed = all ? most?.msat || null : typedMsat(amount, typingUnit, rated);
+  // All follows Pool, and goes off once there is none to follow: a wallet that can't be read, or a Pool that can send
+  // nothing now. The field is then empty for an amount, not "All" over nothing.
+  const allGone = all && !most?.msat;
+  useEffect(() => {
+    if (allGone) setAll(false);
+  }, [allGone]);
+  // What Pool holds as Amount shows, each time it does: Back to To and Next again doesn't keep All from the last read.
+  useEffect(() => {
+    if (at === 'amount') deps?.cardd.wallet().then(setWallet, () => {});
+  }, [at, deps]);
   const amountMsat = fixed ?? (at === 'check' && taken !== null ? taken : typed);
   const unitWord = rated && typingUnit === 'fiat' ? symbol(rated.currency).trim() : 'sat';
   // Before the wallet answers, only the amount itself is checked: cardd checks it against pool. What the address
