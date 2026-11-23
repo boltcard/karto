@@ -100,11 +100,10 @@ iPhone project's settings on Linux without compiling anything.
 ## Alerts
 
 With the app closed, Karto Wallet's phone still shows a notification when money arrives (a till's sale among it), a
-card is spent, a card's tap is refused by its rules, the server's hosting is running out, payers were turned away
-because too many invoices were waiting to be paid, or the server's disk is nearly full (under 2 GB free; under
-500 MB it says so at once and again every 6 hours, and the wallet shows a banner with what to do). `cardd` always sends
-the same thing: a Web Push message, encrypted for the phone, to an address the phone gave it. Only that address
-differs:
+card is spent, a card's tap is refused by its rules, the server's hosting is running out, or the server's disk is
+nearly full (under 2 GB free; under 500 MB it says so at once and again every 6 hours, and the wallet shows a banner
+with what to do). `cardd` always sends the same thing: a Web Push message, encrypted for the phone, to an address
+the phone gave it. Only that address differs:
 
 - **Android without Google (an APK, or a build from source):** the alert goes from your server to your own ntfy,
   which `deploy/` runs beside `cardd` (see [`deploy/README.md`](deploy/README.md)), and then to the ntfy app on

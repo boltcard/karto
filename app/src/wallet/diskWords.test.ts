@@ -61,6 +61,9 @@ describe('diskCard', () => {
       rebuild: true,
     });
   });
+  it("doesn't say rebuild now when cardd can't tell whether a rebuild helps", () => {
+    expect(diskCard({ freeBytes: 400_000_000, totalBytes: 10_700_000_000, level: 'critical' })).toMatchObject({ title: 'The disk is almost full', rebuild: true });
+  });
   it('is none with room or no reading', () => {
     expect(diskCard({ ...low, level: undefined })).toBeNull();
     expect(diskCard(undefined)).toBeNull();

@@ -12,7 +12,7 @@ import (
 	"errors"
 	"io/fs"
 	"log"
-	"path/filepath"
+	"os"
 	"strconv"
 	"sync"
 	"syscall"
@@ -81,28 +81,44 @@ type Reading struct {
 func Freeable(phoenixDir, backupsDir string) (int64, error) {
 	var n int64
 	for _, dir := range []string{phoenixDir, backupsDir} {
-		err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
-			if err != nil {
-				if path == dir && errors.Is(err, fs.ErrNotExist) {
-					return filepath.SkipDir
-				}
-				return err
-			}
-			if !d.Type().IsRegular() || d.Name() == "seed.dat" {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return err
-			}
-			n += info.Size()
-			return nil
-		})
+		if _, err := os.Stat(dir); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		m, err := freeableIn(os.DirFS(dir))
 		if err != nil {
 			return 0, err
 		}
+		n += m
 	}
 	return n, nil
+}
+
+// freeableIn sums fsys's regular files but seed.dat. A file or dir gone by
+// the time it is looked at (a snapshot's temp file renamed mid-walk) is
+// skipped: only a dir that can't be read fails the walk.
+func freeableIn(fsys fs.FS) (int64, error) {
+	var n int64
+	err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if !d.Type().IsRegular() || d.Name() == "seed.dat" {
+			return nil
+		}
+		info, err := d.Info()
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		n += info.Size()
+		return nil
+	})
+	return n, err
 }
 
 // StatFS is the free bytes a non-root process can still write and the
@@ -212,7 +228,8 @@ func (m *Monitor) alert(ctx context.Context, r Reading) {
 	lowDay, criticalAt := m.kept(ctx)
 	urg := alerts.UrgencyNormal
 	if r.Level == Critical {
-		if !criticalAt.IsZero() && now.Sub(criticalAt) < CriticalEvery {
+		// Half a tick's slack: the sixth hourly look lands a little either side of 6 h.
+		if !criticalAt.IsZero() && now.Sub(criticalAt) < CriticalEvery-Every/2 {
 			return
 		}
 		urg = alerts.UrgencyHigh

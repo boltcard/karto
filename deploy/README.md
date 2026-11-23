@@ -182,8 +182,8 @@ the books add up, and refuses while a payment is in progress.
 root filesystem) when it starts and then hourly. Under 2 GB free the wallet
 shows a banner and the owner's phone an alert once a day; under 500 MB the
 alert goes at once and every 6 hours. phoenixd keeps a record of every invoice
-it has made and can't delete them, so its volume only grows: **Rebuild server**
-(in place, or on a new VM) leaves it behind, and the wallet's Server page offers
+it has made and can't delete them: **Rebuild server** (in place, or on a new
+VM) leaves them behind, and the wallet's Server page offers
 it when what a rebuild deletes would bring the disk back above 2.2 GB. Free
 space for the rebuild itself is the reason for the 500 MB stage: it starts with
 the old server's final snapshot, written into `/data`.

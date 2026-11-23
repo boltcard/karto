@@ -29,7 +29,7 @@ export function diskCard(d: DiskAnswer | undefined): { title: string; text: stri
   const left = `${bytesText(d.freeBytes)} of ${bytesText(d.totalBytes)} is left`;
   if (d.rebuildHelps === undefined) {
     return {
-      title: critical ? 'The disk is almost full: rebuild now' : 'The disk is nearly full',
+      title: critical ? 'The disk is almost full' : 'The disk is nearly full',
       text: `${left}. Rebuilding the server usually frees the most room: phoenixd, the Lightning wallet on it, keeps a record of every invoice it has made.`,
       rebuild: true,
     };

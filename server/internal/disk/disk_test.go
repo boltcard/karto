@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/boltcard/karto/server/internal/alerts"
@@ -301,5 +303,39 @@ func TestNoAlertWithRoom(t *testing.T) {
 	}
 	if r, ok := w.m.Reading(); !ok || r.Level != None {
 		t.Fatalf("Reading = %+v, %v", r, ok)
+	}
+}
+
+// The hourly tick lands a little early or late: the sixth hour's critical alert still goes.
+func TestCriticalRepeatsOnTheSixthHourlyTick(t *testing.T) {
+	w := newWorld(t)
+	w.check(day(0, 10, 0).Add(500*time.Millisecond), 400_000_000)
+	w.check(day(0, 16, 0), 400_000_000) // 6 h less half a second later
+	if len(w.sender.calls) != 2 {
+		t.Fatalf("on the sixth tick: %d alerts, want 2", len(w.sender.calls))
+	}
+}
+
+// goneFS lists a file that is gone by the time it is looked at, as a snapshot's temp file renamed mid-walk.
+type goneFS struct{ fstest.MapFS }
+
+type goneEntry struct{ fs.DirEntry }
+
+func (goneEntry) Info() (fs.FileInfo, error) { return nil, fs.ErrNotExist }
+
+func (g goneFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	es, err := g.MapFS.ReadDir(name)
+	for i, e := range es {
+		if e.Name() == "snap.tmp" {
+			es[i] = goneEntry{e}
+		}
+	}
+	return es, err
+}
+
+func TestFreeableSkipsAFileGoneMidWalk(t *testing.T) {
+	fsys := goneFS{fstest.MapFS{"a.bak": {Data: make([]byte, 100)}, "snap.tmp": {Data: make([]byte, 50)}}}
+	if got, err := freeableIn(fsys); err != nil || got != 100 {
+		t.Fatalf("freeableIn = %d, %v; want 100 (the gone file skipped)", got, err)
 	}
 }
