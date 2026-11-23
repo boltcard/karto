@@ -173,6 +173,13 @@ type accountJSON struct {
 	Address     string `json:"address"`
 }
 
+// poolJSON is Pool's account, with the most a Send out can take now
+// (ledger.SendableMsat): an older cardd has no sendableMsat.
+type poolJSON struct {
+	accountJSON
+	SendableMsat int64 `json:"sendableMsat"`
+}
+
 type walletCardJSON struct {
 	ID           string      `json:"id"`
 	Name         string      `json:"name"`
@@ -266,11 +273,12 @@ func (a *api) wallet(w http.ResponseWriter, r *http.Request) {
 			BalanceMsat: b.EntriesMsat, HeldMsat: b.HeldMsat, Spent24hMsat: spent, PerTapSat: perTap, DailySat: daily, Limits: limitsOf(c),
 			Address: lnurl.Address(m.Host, ca)})
 	}
-	pool, err := acct(store.Pool)
+	poolAcct, err := acct(store.Pool)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
+	pool := poolJSON{accountJSON: poolAcct, SendableMsat: ledger.SendableMsat(poolAcct.BalanceMsat - poolAcct.HeldMsat)}
 	hosting, err := acct(store.Hosting)
 	if err != nil {
 		writeError(w, err)

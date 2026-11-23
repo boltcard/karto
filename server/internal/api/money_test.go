@@ -199,6 +199,13 @@ func TestWallet(t *testing.T) {
 	if pool["balanceMsat"] != 50_000_000.0 || pool["address"] != "pool@vm-1.lnvps.cloud" || out["paused"] != false {
 		t.Fatalf("pool: %v", out)
 	}
+	// The most a Send out can take: all but phoenixd's fee and 1 sat (ledger.SendableMsat). Hosting has no such figure.
+	if pool["sendableMsat"] != 49_795_000.0 {
+		t.Fatalf("pool sendable: %v", pool)
+	}
+	if _, ok := out["hosting"].(map[string]any)["sendableMsat"]; ok {
+		t.Fatalf("hosting: %v", out["hosting"])
+	}
 	if liq := out["liquidity"].(map[string]any); liq["channel"] != false || liq["usable"] != false || liq["feeCreditSat"] != 0.0 || liq["firstChannelFeeSat"] != 21_411.0 {
 		t.Fatalf("liquidity: %v", liq)
 	}
