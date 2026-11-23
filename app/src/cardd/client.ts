@@ -132,6 +132,8 @@ export type SendRequest = { id: string; to: string; name?: string; amountMsat?: 
 /** POST /send's answer: pending is resolved later, like a tap's hold; an offer's hash is '' until phoenixd gives it. reason: why it wasn't sent, in the person's words, when phoenixd said. */
 export type SendAnswer = { status: 'sent' | 'failed' | 'pending'; paymentHash: string; amountMsat: number; feeMsat?: number; reason?: string };
 export type WalletAccount = { balanceMsat: number; heldMsat: number; address: string };
+/** Pool, with the most a Send out can take now (all but phoenixd's fee and 1 sat); an older cardd has no sendableMsat. */
+export type WalletPool = WalletAccount & { sendableMsat?: number };
 /** One PoS phone: times are unix seconds; lastSale only once it has made a sale that was paid. */
 export type PosPhone = { keyId: string; name: string; created: number; sales: number; lastSale?: number };
 /** The PoS phones, oldest first; restored: when the server was last restored, if it ever was. */
@@ -177,7 +179,7 @@ export type RestoreInfo = {
 };
 /** The money side of the server. liquidity is null while phoenixd can't be asked. */
 export type Wallet = {
-  cards: WalletCard[]; pool: WalletAccount; hosting: WalletAccount;
+  cards: WalletCard[]; pool: WalletPool; hosting: WalletAccount;
   paused: boolean; pausedReason: string;
   /** channel: phoenixd has one (it may be reconnecting); usable: it is up. feeCreditSat can't be spent and is on no card. */
   liquidity: { channel: boolean; usable: boolean; inboundSat: number; feeCreditSat: number; firstChannelFeeSat: number } | null;

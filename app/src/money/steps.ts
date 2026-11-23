@@ -8,7 +8,7 @@ import type { Destination } from './destination';
 import type { Rated } from './fiat';
 import { availableMsat, moneyError, thousands } from './format';
 import type { RequestOutcome } from './requests';
-import { feeEstimateSat, sendAllMsat, type SendOutcome } from './send';
+import { feeEstimateSat, type SendOutcome } from './send';
 import { aboutText, feeViewText, viewText, type View } from './view';
 
 export type Step = 'to' | 'amount' | 'check';
@@ -63,9 +63,8 @@ export function linkAmountProblem(p: Payable, amountMsat: number): string | null
   return `Between ${thousands(Math.ceil(p.minMsat / 1000))} and ${thousands(Math.floor(p.maxMsat / 1000))} sat for this ${p.kind === 'address' ? 'address' : 'link'}.`;
 }
 
-/** All for this destination: the most Pool can send, held to an address's or link's most (whole sats); capped when that is less. */
-export function sendAllFor(p: Payable, poolAvailableMsat: number): { msat: number; capped: boolean } {
-  const all = sendAllMsat(poolAvailableMsat);
+/** All for this destination: all (the most Pool can send), held to an address's or link's most (whole sats); capped when that is less. */
+export function sendAllFor(p: Payable, all: number): { msat: number; capped: boolean } {
   if ((p.kind !== 'address' && p.kind !== 'payurl') || p.maxMsat === undefined) return { msat: all, capped: false };
   const most = Math.floor(p.maxMsat / 1000) * 1000;
   return most < all ? { msat: most, capped: true } : { msat: all, capped: false };

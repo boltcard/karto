@@ -415,10 +415,10 @@ describe('offers and names', () => {
 
   it("stops All at what an address or link takes", () => {
     const sam: LinkPayable = { kind: 'payurl', to: 'https://x', minMsat: 1_000, maxMsat: 50_000_999 };
-    expect(sendAllFor(sam, 100_000_000)).toEqual({ msat: 50_000_000, capped: true });
-    expect(sendAllFor({ ...sam, maxMsat: 2_000_000_000 }, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
-    expect(sendAllFor(phoenix, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
-    expect(sendAllFor({ kind: 'address', to: 'alex@pay.example.com' }, 100_000_000)).toEqual({ msat: 99_497_000, capped: false });
+    expect(sendAllFor(sam, 99_497_000)).toEqual({ msat: 50_000_000, capped: true });
+    expect(sendAllFor({ ...sam, maxMsat: 2_000_000_000 }, 99_497_000)).toEqual({ msat: 99_497_000, capped: false });
+    expect(sendAllFor(phoenix, 99_596_000)).toEqual({ msat: 99_596_000, capped: false });
+    expect(sendAllFor({ kind: 'address', to: 'alex@pay.example.com' }, 99_497_000)).toEqual({ msat: 99_497_000, capped: false });
   });
 
   it("says where an offer's money went, and why one was not sent", () => {

@@ -144,7 +144,8 @@ describe('CarddClient wallet', () => {
     cardd.balances.set('pool', 1_000);
     const w = await client.wallet();
     expect(w.cards).toEqual([expect.objectContaining({ id: ID, name: 'Daily', state: 'active', balanceMsat: 5_012_345, address: `c${ID.slice(0, 10)}@vm-1.lnvps.cloud` })]);
-    expect(w.pool).toEqual({ balanceMsat: 1_000, heldMsat: 0, address: 'pool@vm-1.lnvps.cloud' });
+    // sendableMsat: the most a Send out can take (cardd's); 1 sat in Pool can't pay a fee.
+    expect(w.pool).toEqual({ balanceMsat: 1_000, heldMsat: 0, address: 'pool@vm-1.lnvps.cloud', sendableMsat: 0 });
     expect(w.liquidity).toEqual({ channel: false, usable: false, inboundSat: 0, feeCreditSat: 0, firstChannelFeeSat: 21_411 });
     expect(w.paused).toBe(false);
   });

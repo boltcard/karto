@@ -8,6 +8,11 @@ import { apartText, type View } from './view';
 
 /** cardd's fee budget, what a hold sets aside (server/internal/ledger FeeBudgetMsat): 0.5% rounded up, plus 5 sat. */
 export const feeBudgetMsat = (amountMsat: number) => Math.floor((amountMsat * 5 + 999) / 1000) + 5_000;
+/**
+ * cardd's least budget for a Send out of Pool, on a server that allows it (its wallet answer carries sendableMsat):
+ * phoenixd's trampoline fee, 4 sat + 0.4% rounded down to the msat, and 1 sat (ledger.MinFeeBudgetMsat).
+ */
+export const minFeeBudgetMsat = (amountMsat: number) => 4_000 + Math.floor((amountMsat * 4) / 1000) + 1_000;
 
 /** The routing fee to expect: phoenixd v0.9.2's trampoline fee, 4 sat + 0.4%, in whole sats rounded up. */
 export const feeEstimateSat = (amountMsat: number) => Math.ceil((4_000 + Math.floor((amountMsat * 4_000) / 1_000_000)) / 1000);
@@ -17,10 +22,11 @@ export const feeEstimateSat = (amountMsat: number) => Math.ceil((4_000 + Math.fl
  * and an amount the person typed must be whole sats (an invoice's own amount
  * is paid as it is).
  */
-export function sendProblem(poolAvailableMsat: number, amountMsat: number, o: { typed?: boolean } = {}, v: View = 'sat', r: Rated | null = null): string | null {
+export function sendProblem(poolAvailableMsat: number, amountMsat: number, o: { typed?: boolean; tight?: boolean } = {}, v: View = 'sat', r: Rated | null = null): string | null {
   if (!(amountMsat > 0)) return 'Enter an amount.';
   if ((o.typed ?? true) && amountMsat % 1000 !== 0) return 'Send whole sats.';
-  const need = amountMsat + feeBudgetMsat(amountMsat);
+  // tight: a server whose least budget is phoenixd's fee and 1 sat (minFeeBudgetMsat).
+  const need = amountMsat + (o.tight ? minFeeBudgetMsat : feeBudgetMsat)(amountMsat);
   if (need <= poolAvailableMsat) return null;
   const [has, needs] = apartText(poolAvailableMsat, need, v, r);
   return `Pool has ${has}; this needs up to ${needs} with routing fees.`;

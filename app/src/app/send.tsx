@@ -14,7 +14,7 @@ import { availableMsat, moneyError, typedMsat } from '../money/format';
 import { cutNote } from '../money/note';
 import { requestId, runRequest } from '../money/requests';
 import { scanSlot } from '../money/scanSlot';
-import { feeBudgetMsat, followSend, sendProblem, watchSend } from '../money/send';
+import { feeBudgetMsat, followSend, sendAllMsat, sendProblem, watchSend } from '../money/send';
 import {
   afterSend, afterWatch, destinationPanel, fixedAmount, linkAmountProblem, lookupText, needsLookup, noteWho, oldServerProblem, ownTarget, payableFrom, resultView, sendAllFor,
   sendAt, sendBack, sendNext, sendReadBack, sendToProblem, type Payable, type Ran, type Result, type Step, STEP_NAMES, stepAt,
@@ -129,14 +129,17 @@ export default function Send() {
   }, [typingUnit, at]);
   const fixed = payable ? fixedAmount(payable) : null;
   const available = wallet ? availableMsat(wallet.pool) : null;
-  const most = payable && available !== null ? sendAllFor(payable, available) : null;
+  // A server that says what a Send out can take allows all of Pool but phoenixd's fee and 1 sat; an older one, the full budget.
+  const sendable = wallet?.pool.sendableMsat;
+  const tight = sendable !== undefined;
+  const most = payable && available !== null ? sendAllFor(payable, sendable ?? sendAllMsat(available)) : null;
   const typed = all ? most?.msat || null : typedMsat(amount, typingUnit, rated);
   const amountMsat = fixed ?? (at === 'check' && taken !== null ? taken : typed);
   const unitWord = rated && typingUnit === 'fiat' ? symbol(rated.currency).trim() : 'sat';
   // Before the wallet answers, only the amount itself is checked: cardd checks it against pool. What the address
   // takes comes first: no amount outside it can be sent, whatever Pool holds (an empty field still says Enter an amount).
   const problem = payable
-    ? (amountMsat ? linkAmountProblem(payable, amountMsat) : null) ?? sendProblem(available ?? Number.MAX_SAFE_INTEGER, amountMsat ?? 0, { typed: fixed === null }, cv, rated)
+    ? (amountMsat ? linkAmountProblem(payable, amountMsat) : null) ?? sendProblem(available ?? Number.MAX_SAFE_INTEGER, amountMsat ?? 0, { typed: fixed === null, tight }, cv, rated)
     : null;
 
   // A step back; from To, and while sending or on the result, Back leaves the screen (the request goes on).
@@ -305,7 +308,7 @@ export default function Send() {
           </Row>
           {available !== null && <Body muted>{`${viewText(available, cv, rated)} available in Pool.`}</Body>}
           {all && most && most.msat > 0 && (
-            <Body muted>{`Up to ${viewText(Math.ceil(feeBudgetMsat(most.msat) / 1000) * 1000, cv, rated)} kept for routing fees; what isn't used stays in Pool.`}</Body>
+            <Body muted>{`Up to ${viewText(Math.ceil(keptMsat(most.msat, available, tight) / 1000) * 1000, cv, rated)} kept for routing fees; what isn't used stays in Pool.`}</Body>
           )}
           {problem && <Body muted>{problem}</Body>}
           <Button
@@ -351,3 +354,7 @@ function allText(most: { msat: number; capped: boolean }, p: Payable | null, v: 
 const layout = StyleSheet.create({
   grow: { flex: 1 },
 });
+
+/** What cardd sets aside beside an All of all: the full budget, or on a tight server all that is left when the full one doesn't fit. */
+const keptMsat = (all: number, available: number | null, tight: boolean) =>
+  tight && available !== null ? Math.min(feeBudgetMsat(all), available - all) : feeBudgetMsat(all);

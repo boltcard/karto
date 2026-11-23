@@ -82,7 +82,12 @@ export class FakeCardd {
   /** cardd's refusal of the next sends, before any money is held (as a send's refusals in server/internal/api). */
   sendRefusal: { status: number; code: string; message: string } | null = null;
   /** The last send answered pending, still held: endPendingSend settles or releases it. */
-  pendingSend: { id: string; paymentHash: string; amountMsat: number } | null = null;
+  pendingSend: { id: string; paymentHash: string; amountMsat: number; budgetMsat: number } | null = null;
+  /**
+   * An older cardd: its wallet answer has no pool.sendableMsat and a Send out holds the full routing budget. Else, as
+   * cardd now: a Send out that only fits with phoenixd's fee and 1 sat (minFeeBudgetMsat) holds all that is left.
+   */
+  oldFees = false;
   /** The hosting estimate, as the app last synced it (PUT /api/v1/hosting); null before the first sync. */
   hostingSync: { expires: number; msatPerDay: number; vatOk: boolean; syncedAt: number } | null = null;
   /** The phone's offset from UTC the last sync gave; null before one did. refuseOffset: be a cardd before it. */
@@ -410,7 +415,7 @@ export class FakeCardd {
           id: c.id, name: c.name, state: c.state, version: c.version, spent24hMsat: 0, ...limits(c.id),
           ...account(c.id, `c${c.id.slice(0, 10)}@${this.host}`),
         })),
-        pool: account('pool', `pool@${this.host}`),
+        pool: { ...account('pool', `pool@${this.host}`), ...(this.oldFees ? {} : { sendableMsat: Math.max(0, Math.floor((this.poolAvailable() - 5_000) / 1004)) * 1000 }) },
         hosting: account('hosting', `hosting@${this.host}`),
         paused: this.paused() !== '', pausedReason: this.paused(),
         liquidity: { channel: this.channel, usable: this.channel && this.channelUp, inboundSat: this.channel ? 1_900_000 : 0, feeCreditSat: this.feeCreditSat,
@@ -541,8 +546,11 @@ export class FakeCardd {
           });
         }
         if (status === 'pending') {
-          this.held.set('pool', (this.held.get('pool') ?? 0) + amountMsat + feeBudgetMsat(amountMsat));
-          this.pendingSend = { id: b.id, paymentHash, amountMsat };
+          // cardd's OpenHold: the full budget, or on a new cardd all that is left when only the least one fits.
+          const full = feeBudgetMsat(amountMsat);
+          const budgetMsat = this.oldFees || this.poolAvailable() >= amountMsat + full ? full : this.poolAvailable() - amountMsat;
+          this.held.set('pool', (this.held.get('pool') ?? 0) + amountMsat + budgetMsat);
+          this.pendingSend = { id: b.id, paymentHash, amountMsat, budgetMsat };
         }
         const answer: SendAnswer =
           status === 'sent' ? { status, paymentHash, amountMsat, feeMsat }
@@ -934,10 +942,15 @@ export class FakeCardd {
    * The pending send ends, as ledger's Resolve ends a hold later: settled at feeMsat (pool pays the amount and the
    * fee, "paid <hash>" in its history), or, with null, released (nothing left pool, no history line).
    */
+  /** What Pool has to spend: its balance less what is held. */
+  poolAvailable() {
+    return (this.balances.get('pool') ?? 0) - (this.held.get('pool') ?? 0);
+  }
+
   endPendingSend(feeMsat: number | null) {
     const p = this.pendingSend;
     if (!p) throw new Error('no send is pending');
-    this.held.set('pool', (this.held.get('pool') ?? 0) - p.amountMsat - feeBudgetMsat(p.amountMsat));
+    this.held.set('pool', (this.held.get('pool') ?? 0) - p.amountMsat - p.budgetMsat);
     if (feeMsat !== null) this.add('pool', -(p.amountMsat + feeMsat), 'send', `paid ${p.paymentHash}`, feeMsat);
     this.sends.set(p.id, feeMsat !== null ? { status: 'sent', paymentHash: p.paymentHash, amountMsat: p.amountMsat, feeMsat } : { status: 'failed', paymentHash: p.paymentHash, amountMsat: p.amountMsat });
     this.pendingSend = null;
