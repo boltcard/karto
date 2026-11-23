@@ -233,6 +233,23 @@ describe('Settings → Alerts, turning on through the checklist', () => {
     await checklist('Step 2 of 4');
   });
 
+  it("offers Try again when a read of the server fails, and the checklist comes back when it answers", async () => {
+    render(<Alerts />);
+    await checklist('Step 2 of 4');
+    cardd.push.mockRejectedValueOnce(new Error('offline'));
+    await comeBack();
+    await screen.findByText("Couldn't check alerts: offline", undefined, WAIT);
+    await press('Try again');
+    await checklist('Step 2 of 4');
+  });
+
+  it("says each step's state in words to a screen reader, not as its mark", async () => {
+    render(<Alerts />);
+    await checklist('Step 2 of 4');
+    const said = screen.getAllByLabelText(/, (done|now|to do)$/).map((e) => e.getAttribute('aria-label')!.split(', ').pop());
+    expect(said).toEqual(['done', 'now', 'done', 'to do']);
+  });
+
   it("says so when nothing on the phone opens ntfy or its store page", async () => {
     Object.assign(phone, { distributors: [], saved: null });
     native.openNtfySettings.mockImplementationOnce(() => {
@@ -485,6 +502,19 @@ describe('at the end of setup', () => {
     await press('Finish later');
     await press('Open the wallet');
     expect(router.back).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Try again and Finish later when a read of the server fails in set-up", async () => {
+    render(<Alerts />);
+    await screen.findByText(ASK.title, undefined, WAIT);
+    await press('Turn on alerts');
+    await checklist('Step 2 of 4');
+    cardd.push.mockRejectedValueOnce(new Error('offline'));
+    await comeBack();
+    await screen.findByText("Couldn't check alerts: offline", undefined, WAIT);
+    expect(buttons()).toEqual(['Try again', 'Finish later']);
+    await press('Finish later');
+    await screen.findByText("Alerts aren't on yet", undefined, WAIT);
   });
 
   it("asks on the Play build with its line about Google, and turns on with the one press", async () => {

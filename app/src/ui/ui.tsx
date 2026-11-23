@@ -339,6 +339,9 @@ export const Row = ({ children }: { children: ReactNode }) => <View style={layou
 /** A line that shrinks to fit rather than wrap, down to 70% of its size (Step's oneLine). */
 const ONE_LINE = { numberOfLines: 1, adjustsFontSizeToFit: true, minimumFontScale: 0.7 } as const;
 
+/** A step's state in words, for a screen reader in place of its mark. */
+const STEP_SAID = { done: 'done', current: 'now', todo: 'to do' } as const;
+
 /**
  * One row of a vertical step list: a mark, the label and its time, and what the current step is doing.
  * spoken: the row's words for a screen reader, which don't change as the time ticks; the row is then one element.
@@ -353,11 +356,20 @@ export function Step({ label, status, time, spoken, oneLine, children }: {
   const s = useStyles(makeStyles);
   return (
     <View style={layout.step} accessible={!!spoken} accessibilityLabel={spoken}>
-      <Text style={[s.mark, status === 'done' && s.markDone, status === 'current' && s.markCurrent]}>
+      {/* The mark is drawn, not read: the label says it in words. */}
+      <Text
+        style={[s.mark, status === 'done' && s.markDone, status === 'current' && s.markCurrent]}
+        importantForAccessibility="no"
+        accessibilityElementsHidden
+      >
         {status === 'done' ? '✓' : status === 'current' ? '●' : '○'}
       </Text>
       <View style={layout.stepBody}>
-        <Text style={[s.stepLabel, status === 'todo' && s.stepTodo]} {...(oneLine ? ONE_LINE : {})}>
+        <Text
+          style={[s.stepLabel, status === 'todo' && s.stepTodo]}
+          {...(oneLine ? ONE_LINE : {})}
+          accessibilityLabel={`${label}${time ? `, ${time}` : ''}, ${STEP_SAID[status]}`}
+        >
           {label}
           {time ? <Text style={s.stepTime}>{` · ${time}`}</Text> : null}
         </Text>
