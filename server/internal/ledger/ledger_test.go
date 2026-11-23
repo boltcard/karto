@@ -1802,6 +1802,23 @@ func TestAnOfferThatWasntPaidIsReleasedWithItsReason(t *testing.T) {
 	}
 }
 
+// An offer from Pool, as an invoice: all of Pool but phoenixd's fee and 1 sat.
+func TestAnOfferOutOfPoolNeedsOnlyTheMinimumBudget(t *testing.T) {
+	w := setup(t)
+	w.pool(t, 50_000)
+	offer := w.f.Offer(0, "", "")
+	amount := ledger.SendableMsat(50_000_000)
+	fee := 4_000 + amount*4/1000
+	w.f.SetOfferOutcome(offer, phoenixdtest.OfferOutcome{FeeMsat: fee})
+	h, done := w.payOffer(t, w.l, offer, amount/1000, "request:all")
+	if h.FeeBudgetMsat != 50_000_000-amount {
+		t.Fatalf("hold %+v", h)
+	}
+	if o := wait(t, done); o.Hold.State != store.HoldSettled || o.Hold.FeeMsat != fee {
+		t.Fatalf("outcome %+v", o)
+	}
+}
+
 func TestOneOfferAtATimeAndOncePerRef(t *testing.T) {
 	ctx := context.Background()
 	w := setup(t)

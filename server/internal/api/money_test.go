@@ -294,6 +294,25 @@ func TestSendAnInvoiceOnce(t *testing.T) {
 	}
 }
 
+// Send out takes all of Pool but phoenixd's fee and 1 sat (the wallet's sendableMsat), and no more.
+func TestSendOutTakesAllOfPoolButPhoenixdsFeeAndASat(t *testing.T) {
+	w := moneySetup(t)
+	s := ledger.SendableMsat(50_000_000)
+	over, _ := w.f.Invoice(s + 1_000)
+	if status, out := w.do("POST", "/api/v1/send", map[string]any{"id": "s1", "to": over}); status != 409 || out["error"] != "insufficient" {
+		t.Fatalf("a sat more: %d %v", status, out)
+	}
+	bolt11, hash := w.f.Invoice(s)
+	fee := 4_000 + s*4/1000
+	w.f.SetOutcome(hash, phoenixdtest.Outcome{FeeMsat: fee})
+	if status, out := w.do("POST", "/api/v1/send", map[string]any{"id": "s2", "to": bolt11}); status != 200 || out["status"] != "sent" {
+		t.Fatalf("all: %d %v", status, out)
+	}
+	if got := w.balance(store.Pool); got != 50_000_000-s-fee {
+		t.Fatalf("pool %d", got)
+	}
+}
+
 func TestSendToALightningAddress(t *testing.T) {
 	w := moneySetup(t)
 	status, out := w.do("POST", "/api/v1/send", map[string]any{"id": "s", "to": "alice@pay.example.com", "amountMsat": 2_000_000})
