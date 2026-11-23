@@ -50,7 +50,7 @@ describe('the update line', () => {
     render(<UpdateLine app="Karto Wallet" />);
     await settle();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(screen.getByText(/^Up to date · checked today at \d\d:\d\d$/)).toBeTruthy();
+    expect(screen.getByText(/^Up to date with release 1\.0\.1 · checked today at \d\d:\d\d$/)).toBeTruthy();
   });
 
   it('names a newer release as a link to the releases page', async () => {
@@ -97,7 +97,7 @@ describe('the update line', () => {
     render(<UpdateLine app="Karto Wallet" />);
     await settle();
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(screen.getByText(/^Up to date · checked today at /)).toBeTruthy();
+    expect(screen.getByText(/^Up to date with release 1\.0\.1 · checked today at /)).toBeTruthy();
   });
 
   it("what the page finds shows on Home's banner, from one fetch", async () => {
@@ -121,9 +121,25 @@ describe('the update line', () => {
     expect(banner()).toBe('banner: 1.0.2');
   });
 
-  it('draws nothing and asks nothing in a build that does not ask GitHub', async () => {
+  // The person, 2026-11-23: a .dev build names the latest release too; Home stays quiet in it.
+  it('names the latest release in a .dev build, with no banner on Home', async () => {
+    tag = 'v1.0.2';
+    setUpdateCheckerForTests({ os: 'android', release: undefined, store: undefined }, store(), fetch);
+    render(
+      <>
+        <Home />
+        <UpdateLine app="Karto Wallet" />
+      </>,
+    );
+    await settle();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'Karto Wallet 1.0.2 is out on GitHub' })).toBeTruthy();
+    expect(banner()).toBe('banner: none');
+  });
+
+  it('draws nothing and asks nothing in a Play build', async () => {
     const kv = store();
-    setUpdateCheckerForTests({ os: 'android', release: undefined, store: undefined }, kv, fetch);
+    setUpdateCheckerForTests({ os: 'android', release: undefined, store: 'play' }, kv, fetch);
     const { container } = render(
       <>
         <Home />

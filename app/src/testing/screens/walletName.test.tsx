@@ -23,7 +23,7 @@ vi.mock('../../services/services', () => ({
   alertsClient: () => ({}),
 }));
 vi.mock('../../alerts/useAlerts', () => ({ useAlerts: () => ({ supported: false }) }));
-vi.mock('../../deploy/bundle', () => ({ buildLabel: () => 'build' }));
+vi.mock('../../deploy/bundle', () => ({ buildLabel: (_b: unknown, version?: string) => `build ${version}` }));
 vi.mock('../../wallet/serverView', () => ({ serverView: () => ({ keyNotice: { kind: 'ok' } }) }));
 // The amounts group, where the row is, is drawn under the server's group: it needs a row of its own.
 vi.mock('../../wallet/settingsRows', () => ({ settingsRows: () => [{ key: 'server', name: 'Server', line: '', tone: 'none', opens: null }] }));
@@ -83,7 +83,7 @@ describe('WalletNameSheet', () => {
 
 // Settings / This PoS in a GitHub build: the update line is drawn under the build label.
 describe('the update line', () => {
-  afterEach(() => setUpdateCheckerForTests({ os: 'web', release: undefined, store: undefined }, { getItemAsync: async () => null, setItemAsync: async () => {} }, vi.fn()));
+  afterEach(() => setUpdateCheckerForTests({ os: 'android', release: undefined, store: 'play' }, { getItemAsync: async () => null, setItemAsync: async () => {} }, vi.fn()));
 
   it('is drawn on the page, naming Karto Wallet', async () => {
     const github = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ tag_name: 'v9.0.0' }) }) as Response);
@@ -91,5 +91,6 @@ describe('the update line', () => {
     render(<Settings />);
     expect(await screen.findByRole('link', { name: 'Karto Wallet 9.0.0 is out on GitHub' })).toBeTruthy();
     expect(github).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('build 1.0.1')).toBeTruthy();
   });
 });

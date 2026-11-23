@@ -4,6 +4,7 @@
 import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { UpdateLine } from '../appUpdate/UpdateLine';
+import { appVersion } from '../appUpdate/useAppUpdate';
 import { usePos } from '../pos/app';
 import { BUILD_LABEL } from '../pos/build';
 import { unpair, unpairWords } from '../pos/pairing';
@@ -42,8 +43,8 @@ export default function ThisPos() {
           <ListRow icon="cross" name={unpairWords.row} line={unpairWords.rowLine} danger acts onPress={() => setAsking(true)} />
         </ListGroup>
       )}
-      <Small>{BUILD_LABEL()}</Small>
-      {/* A GitHub build's: asks GitHub for a newer version each time This PoS comes into view. */}
+      <Small>{BUILD_LABEL(appVersion())}</Small>
+      {/* A GitHub APK's and a .dev build's: asks GitHub for the latest release each time This PoS comes into view. */}
       <UpdateLine app="Karto PoS" />
     </Screen>
   );

@@ -56,13 +56,17 @@ describe('the build label', () => {
   it('reads the commit and build time packed in the APK', async () => {
     const b = await loadBuildInfo(native({ 'build.json': '{"commit":"4722797","builtAt":1791364500}' }));
     expect(b).toEqual({ commit: '4722797', builtAt: 1_791_364_500 });
-    expect(buildLabel(b, 1_791_364_500 + 3600, 60)).toBe('Karto Wallet 4722797, built today at 10:15');
-    expect(buildLabel({ commit: '4722797-dirty', builtAt: 1_791_364_500 }, 1_791_364_500 + 2 * 86_400, 0)).toBe('Karto Wallet 4722797-dirty, built 7 Oct at 09:15');
+    expect(buildLabel(b, '1.0.2', 1_791_364_500 + 3600, 60)).toBe('Karto Wallet 1.0.2 (4722797), built today at 10:15');
+    expect(buildLabel({ commit: '4722797-dirty', builtAt: 1_791_364_500 }, '1.0.2', 1_791_364_500 + 2 * 86_400, 0)).toBe('Karto Wallet 1.0.2 (4722797-dirty), built 7 Oct at 09:15');
+    // No version in the app's config: the commit alone, as before.
+    expect(buildLabel(b, undefined, 1_791_364_500 + 3600, 60)).toBe('Karto Wallet 4722797, built today at 10:15');
+    expect(buildLabel(b, '', 1_791_364_500 + 3600, 60)).toBe('Karto Wallet 4722797, built today at 10:15');
   });
 
   it('says so when the APK has none, or a malformed one', async () => {
     expect(await loadBuildInfo(native({}))).toBeNull();
     expect(await loadBuildInfo(native({ 'build.json': '{"commit":4}' }))).toBeNull();
-    expect(buildLabel(null)).toBe('Karto Wallet build unknown');
+    expect(buildLabel(null, undefined)).toBe('Karto Wallet build unknown');
+    expect(buildLabel(null, '1.0.2')).toBe('Karto Wallet 1.0.2, build unknown');
   });
 });

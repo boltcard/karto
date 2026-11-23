@@ -1,8 +1,9 @@
 // A GitHub build's notice of a newer release: Karto Wallet and Karto PoS installed from the repository's APKs update
 // only when the person installs the next APK, so each asks GitHub which release is the latest and says so when it is
 // newer than itself: Home and the till at most once an hour, Settings and This PoS each time they open (at most once
-// a minute), all sharing one answer. Only those builds ask: a Play build is updated by Play (and Play's rules
-// allow no other way), an iPhone's by the App Store, a .dev build by its developer. The answer is read for its
+// a minute), all sharing one answer. A .dev build's Settings and This PoS name the latest release too (its developer
+// updates it; Home stays quiet). No other build asks: a Play build is updated by Play (and Play's rules allow no
+// other way), an App Store build by the App Store. The answer is read for its
 // version alone; the notice opens the repository's own releases page, never an address from the answer.
 // GitHub's API: https://docs.github.com/en/rest/releases/releases#get-the-latest-release (the latest full release:
 // drafts and pre-releases are never it, and with none it answers 404).
@@ -37,6 +38,13 @@ export const SAVED_KEY = 'karto.appUpdate';
 export type Build = { os: string; release: string | undefined; store: string | undefined };
 /** A release APK from GitHub: Android, the store identifiers, and not built for Play. */
 export const asksGithub = (b: Build): boolean => b.os === 'android' && b.release === '1' && b.store !== 'play';
+/**
+ * Whether Settings' and This PoS's line names the latest release: a GitHub APK's, and a .dev build's on a phone
+ * (the person, 2026-11-23). Never a Play build's (Play is checked first: a Play build carries no KARTO_RELEASE, as a
+ * .dev one doesn't) or an App Store build's: their store updates them. A screen test's page ('web') is no phone.
+ */
+export const showsLatest = (b: Build): boolean =>
+  b.store !== 'play' && (b.os === 'android' || b.os === 'ios') && (b.release !== '1' || asksGithub(b));
 
 /** X.Y.Z, or vX.Y.Z as a tag: each part a plain number below 1000 (app/variant.js's versionCode allows no more). */
 export function parseVersion(s: unknown): [number, number, number] | null {
@@ -231,8 +239,12 @@ export function updateLine(
   const newer = newerOf(s, current);
   if (newer) return { text: `${app} ${newer} is out on GitHub ›`, link: true };
   const { saved } = s;
-  // An answer from a clock since gone back has no time to give; after a failure it can't say "up to date" bare.
-  if (saved && saved.checkedAt <= nowMs) return { text: `Up to date · checked ${whenText(saved.checkedAt / 1000, nowMs / 1000, offsetMin)}`, link: false };
-  if (saved && s.failedAt === null) return { text: 'Up to date', link: false };
+  if (!saved) return s.asking ? { text: 'Asking GitHub for a newer version…', link: false } : null;
+  // The latest release as it stands against this app: the same version, or an earlier one (a .dev build made since).
+  const latest =
+    saved.latest === null ? 'No release on GitHub yet' : isNewer(current, saved.latest) ? `Latest release ${saved.latest}` : `Up to date with release ${saved.latest}`;
+  // An answer from a clock since gone back has no time to give; after a failure it can't stand without one.
+  if (saved.checkedAt <= nowMs) return { text: `${latest} · checked ${whenText(saved.checkedAt / 1000, nowMs / 1000, offsetMin)}`, link: false };
+  if (s.failedAt === null) return { text: latest, link: false };
   return s.asking ? { text: 'Asking GitHub for a newer version…', link: false } : null;
 }

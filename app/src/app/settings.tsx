@@ -6,6 +6,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import { alertsRow } from '../alerts/alertsView';
 import { useAlerts } from '../alerts/useAlerts';
 import { UpdateLine } from '../appUpdate/UpdateLine';
+import { appVersion } from '../appUpdate/useAppUpdate';
 import { buildLabel } from '../deploy/bundle';
 import { useCardDeps, useWatcher } from '../services/server';
 import { alertsClient, useRouteGuard, useServices } from '../services/services';
@@ -112,9 +113,9 @@ export default function Settings() {
             </Fragment>
           ),
       )}
-      {/* Every build of a version has the same number: this tells the person which one is installed. */}
-      <Small>{buildLabel(sv.build)}</Small>
-      {/* A GitHub build's: asks GitHub for a newer version each time Settings comes into view. */}
+      {/* The version, and the commit: every build of a version has the same number, so this tells which one is installed. */}
+      <Small>{buildLabel(sv.build, appVersion())}</Small>
+      {/* A GitHub APK's and a .dev build's: asks GitHub for the latest release each time Settings comes into view. */}
       <UpdateLine app="Karto Wallet" />
       {naming && deps && (
         <WalletNameSheet

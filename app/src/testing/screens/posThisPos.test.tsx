@@ -55,7 +55,7 @@ describe('This PoS', () => {
 
 // Settings / This PoS in a GitHub build: the update line is drawn under the build label.
 describe('the update line', () => {
-  afterEach(() => setUpdateCheckerForTests({ os: 'web', release: undefined, store: undefined }, { getItemAsync: async () => null, setItemAsync: async () => {} }, vi.fn()));
+  afterEach(() => setUpdateCheckerForTests({ os: 'android', release: undefined, store: 'play' }, { getItemAsync: async () => null, setItemAsync: async () => {} }, vi.fn()));
 
   it('is drawn on the page, naming Karto PoS', async () => {
     const github = vi.fn(async () => ({ ok: true, status: 200, headers: new Headers(), json: async () => ({ tag_name: 'v9.0.0' }) }) as Response);
@@ -63,5 +63,7 @@ describe('the update line', () => {
     render(<ThisPos />);
     expect(await screen.findByRole('link', { name: 'Karto PoS 9.0.0 is out on GitHub' })).toBeTruthy();
     expect(github).toHaveBeenCalledTimes(1);
+    // The test bundle carries no commit: the version and "build unknown".
+    expect(screen.getByText('Karto PoS 1.0.1, build unknown')).toBeTruthy();
   });
 });

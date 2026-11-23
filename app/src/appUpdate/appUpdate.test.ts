@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { asksGithub, BACKGROUND, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, ON_OPEN, parseVersion, Refused, RETRY_AFTER_MS, SAVED_KEY, updateChecker, updateLine, type KeyValue, type Memory, type UpdateStatus } from './appUpdate';
+import { asksGithub, BACKGROUND, showsLatest, CHECK_EVERY_MS, isNewer, LATEST_RELEASE_API, latestRelease, newerRelease, ON_OPEN, parseVersion, Refused, RETRY_AFTER_MS, SAVED_KEY, updateChecker, updateLine, type KeyValue, type Memory, type UpdateStatus } from './appUpdate';
 import { whenText } from '../money/words';
 
 const answer = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -24,6 +24,22 @@ describe('asksGithub', () => {
     expect(asksGithub({ os: 'android', release: '', store: '' })).toBe(false);
     expect(asksGithub({ os: 'android', release: undefined, store: undefined })).toBe(false);
     expect(asksGithub({ os: 'ios', release: '1', store: '' })).toBe(false);
+  });
+});
+
+// Settings' and This PoS's line: GitHub APKs and .dev builds (the person, 2026-11-23); Play and the App Store update
+// their own builds, and a Play build must never point at GitHub.
+describe('showsLatest', () => {
+  it('shows the latest release in a GitHub APK and a .dev build, never in a Play or App Store build', () => {
+    expect(showsLatest({ os: 'android', release: '1', store: '' })).toBe(true);
+    expect(showsLatest({ os: 'android', release: undefined, store: undefined })).toBe(true);
+    expect(showsLatest({ os: 'android', release: '', store: '' })).toBe(true);
+    expect(showsLatest({ os: 'ios', release: undefined, store: undefined })).toBe(true);
+    expect(showsLatest({ os: 'android', release: undefined, store: 'play' })).toBe(false);
+    expect(showsLatest({ os: 'android', release: '1', store: 'play' })).toBe(false);
+    expect(showsLatest({ os: 'ios', release: '1', store: '' })).toBe(false);
+    // A screen test's page is no phone: it never asks unless the test sets a phone's build.
+    expect(showsLatest({ os: 'web', release: undefined, store: undefined })).toBe(false);
   });
 });
 
@@ -319,21 +335,25 @@ describe('updateLine', () => {
     expect(line({ ...newer, failedAt: NOW })).toEqual({ text: 'Karto Wallet 1.0.2 is out on GitHub ›', link: true });
     expect(line(newer, '1.0.1', 'Karto PoS')).toEqual({ text: 'Karto PoS 1.0.2 is out on GitHub ›', link: true });
   });
-  it('says up to date with the time of the answer, while a new fetch runs too', () => {
+  it('names the latest release with the time of the answer, while a new fetch runs too', () => {
     expect(when).toMatch(/^today at /);
-    expect(line({ saved: { checkedAt: at, latest: '1.0.1' } })).toEqual({ text: `Up to date · checked ${when}`, link: false });
-    expect(line({ saved: { checkedAt: at, latest: null } })).toEqual({ text: `Up to date · checked ${when}`, link: false });
-    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, asking: true })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' } })).toEqual({ text: `Up to date with release 1.0.1 · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, asking: true })).toEqual({ text: `Up to date with release 1.0.1 · checked ${when}`, link: false });
+    // A .dev build of main made after the release carries a later number, or the same one.
+    expect(line({ saved: { checkedAt: at, latest: '1.0.0' } })).toEqual({ text: `Latest release 1.0.0 · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: null } })).toEqual({ text: `No release on GitHub yet · checked ${when}`, link: false });
   });
   // The person: "a fail should be silent". The last answer stands, with its own time.
   it('keeps the last answer\'s line after a failure, and draws nothing after one with no answer', () => {
-    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, failedAt: NOW })).toEqual({ text: `Up to date · checked ${when}`, link: false });
+    expect(line({ saved: { checkedAt: at, latest: '1.0.1' }, failedAt: NOW })).toEqual({ text: `Up to date with release 1.0.1 · checked ${when}`, link: false });
     expect(line({ failedAt: NOW })).toBeNull();
     expect(line({ failedAt: NOW, notBefore: NOW + 60_000 })).toBeNull();
   });
   it('leaves the time off an answer from a clock since gone back, and draws nothing for one after a failure', () => {
     const future = { saved: { checkedAt: NOW + 3_600_000, latest: '1.0.1' } };
-    expect(line(future)).toEqual({ text: 'Up to date', link: false });
+    expect(line(future)).toEqual({ text: 'Up to date with release 1.0.1', link: false });
+    expect(line({ saved: { checkedAt: NOW + 3_600_000, latest: '1.0.0' } })).toEqual({ text: 'Latest release 1.0.0', link: false });
+    expect(line({ saved: { checkedAt: NOW + 3_600_000, latest: null } })).toEqual({ text: 'No release on GitHub yet', link: false });
     expect(line({ ...future, failedAt: NOW })).toBeNull();
   });
 });
