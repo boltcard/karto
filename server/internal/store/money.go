@@ -813,6 +813,13 @@ func (s *Store) SettleHoldWithProofAt(ctx context.Context, id, feeMsat int64, pr
 			if _, err := s.post(ctx, tx, at, KindFeeAdjust, "", note, Entry{Pool, -short}, Entry{h.Account, short}); err != nil {
 				return err
 			}
+		} else if short > 0 && s.Log != nil {
+			// Pool has nowhere to take the rest from: the fee is paid and Pool
+			// goes below zero. A Send out All's least budget is phoenixd's
+			// fee and 1 sat (ledger.MinFeeBudgetMsat), so this means phoenixd
+			// charged more than that formula.
+			s.Log.Printf("store: Pool's send %s paid a routing fee of %d msat, above its %d msat budget; Pool is %d msat below zero (check ledger.MinFeeBudgetMsat against phoenixd)",
+				h.PaymentHash, feeMsat, h.FeeBudgetMsat, short)
 		}
 		note := fmt.Sprintf("paid %s", h.PaymentHash)
 		if h.About.SaleID != "" {

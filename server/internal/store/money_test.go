@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"math/rand/v2"
 	"path/filepath"
@@ -214,6 +216,40 @@ func TestSettleAndRelease(t *testing.T) {
 	hist, _ := s.History(ctx, card, 0, 10)
 	if len(hist) != 4 || hist[0].Kind != KindSpend || hist[1].Kind != KindFeeAdjust || hist[1].AmountMsat != 2_000 {
 		t.Fatalf("history: %+v", hist)
+	}
+}
+
+// A Send out of all of Pool whose fee comes in above its tight budget is
+// still paid: Pool goes below zero by the excess, and the server says so.
+func TestAPoolSendAboveItsBudgetIsPaidAndLogged(t *testing.T) {
+	ctx := context.Background()
+	s := open(t)
+	var buf bytes.Buffer
+	s.Log = log.New(&buf, "", 0)
+	s.Credit(ctx, Pool, 50_000, "p", "")
+	h, err := s.OpenHold(ctx, HoldRequest{Account: Pool, Kind: KindSend, AmountMsat: 40_000, FeeBudgetMsat: 20_000, MinFeeBudgetMsat: 6_000, PaymentHash: "1", Invoice: "lnbc"})
+	if err != nil || h.FeeBudgetMsat != 10_000 {
+		t.Fatalf("hold: %+v %v", h, err)
+	}
+	if _, err := s.SettleHold(ctx, h.ID, 12_500); err != nil {
+		t.Fatal(err)
+	}
+	if got := available(t, s, Pool); got != -2_500 {
+		t.Fatalf("pool %d, want -2500", got)
+	}
+	if available(t, s, Fees) != 12_500 || available(t, s, World) != -50_000+40_000 {
+		t.Fatalf("fees %d world %d", available(t, s, Fees), available(t, s, World))
+	}
+	if !strings.Contains(buf.String(), "Pool is 2500 msat below zero") {
+		t.Fatalf("log: %q", buf.String())
+	}
+	// Within the budget: nothing said.
+	s.Credit(ctx, Pool, 52_500, "q", "")
+	buf.Reset()
+	h, _ = s.OpenHold(ctx, HoldRequest{Account: Pool, Kind: KindSend, AmountMsat: 40_000, FeeBudgetMsat: 20_000, MinFeeBudgetMsat: 6_000, PaymentHash: "2", Invoice: "lnbc"})
+	s.SettleHold(ctx, h.ID, 6_000)
+	if buf.Len() != 0 || available(t, s, Pool) != 4_000 {
+		t.Fatalf("pool %d log %q", available(t, s, Pool), buf.String())
 	}
 }
 
