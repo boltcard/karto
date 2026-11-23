@@ -123,7 +123,7 @@ describe('Send out', () => {
     fireEvent.change(field(), { target: { value: 'alice@example.com' } });
     press('Next');
     fireEvent.change(screen.getByPlaceholderText('Amount in sat'), { target: { value: '100000' } });
-    expect(screen.getByText('Pool has 100,000 sat; this needs up to 100,505 sat with routing fees.')).toBeTruthy();
+    expect(screen.getByText('Pool has 100,000 sat; this needs up to 100,405 sat with routing fees.')).toBeTruthy();
     // On Amount, Next is there but off while there is a problem.
     expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).toBe('true');
   });
@@ -469,20 +469,40 @@ describe('Send out: All', () => {
     const world = await open();
     toAmount();
     press('All');
+    // cardd's figure: all but phoenixd's fee and 1 sat.
+    expect(await screen.findByPlaceholderText('All: 99,596 sat')).toBeTruthy();
+    expect(screen.getByText("Up to 404 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
+    press('Next');
+    press('Send 99,596 sat');
+    expect(await screen.findByText('Sent 99,596 sat')).toBeTruthy();
+    // The fake routes for nothing: the allowance stays in Pool.
+    expect(world.cardd.balances.get('pool')).toBe(404_000);
+  });
+
+  it('All on an older server keeps the full routing budget', async () => {
+    const world = await open();
+    world.cardd.oldFees = true;
+    act(refocus);
+    toAmount();
+    press('All');
     expect(await screen.findByPlaceholderText('All: 99,497 sat')).toBeTruthy();
     expect(screen.getByText("Up to 503 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
     press('Next');
-    press('Send 99,497 sat');
-    expect(await screen.findByText('Sent 99,497 sat')).toBeTruthy();
-    // The fake routes for nothing: the allowance stays in Pool.
-    expect(world.cardd.balances.get('pool')).toBe(503_000);
+    expect(screen.getByRole('button', { name: 'Send 99,497 sat' })).toBeTruthy();
+  });
+
+  it('takes a typed amount as large as All', async () => {
+    await open();
+    toAmount();
+    fireEvent.change(screen.getByPlaceholderText('Amount in sat'), { target: { value: '99596' } });
+    expect(screen.getByRole('button', { name: 'Next' }).getAttribute('aria-disabled')).not.toBe('true');
   });
 
   it('typing after All clears it', async () => {
     await open();
     toAmount();
     press('All');
-    fireEvent.change(await screen.findByPlaceholderText('All: 99,497 sat'), { target: { value: '5000' } });
+    fireEvent.change(await screen.findByPlaceholderText('All: 99,596 sat'), { target: { value: '5000' } });
     expect(screen.getByPlaceholderText('Amount in sat')).toBeTruthy();
     expect(screen.queryByText(/kept for routing fees/)).toBeNull();
     press('Next');
@@ -497,6 +517,8 @@ describe('Send out: All', () => {
     await screen.findByPlaceholderText('Amount in sat');
     press('All');
     expect(await screen.findByPlaceholderText('Most this address takes: 50,000 sat')).toBeTruthy();
+    // What cardd sets aside beside 50,000 sat: the full budget, which fits.
+    expect(screen.getByText("Up to 255 sat kept for routing fees; what isn't used stays in Pool.")).toBeTruthy();
   });
 
   it("All stops at the most a link takes", async () => {
@@ -515,7 +537,7 @@ describe('Send out: All', () => {
     toAmount();
     world.cardd.balances.set('pool', 50_000_000);
     press('All');
-    expect(await screen.findByPlaceholderText('All: 49,746 sat')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('All: 49,795 sat')).toBeTruthy();
   });
 
   it('after cardd refuses, Back finds All following Pool', async () => {
@@ -525,15 +547,15 @@ describe('Send out: All', () => {
     press('Next');
     world.cardd.sendRefusal = { status: 409, code: 'insufficient', message: 'store: not enough money available' };
     world.cardd.balances.set('pool', 50_000_000);
-    press('Send 99,497 sat');
+    press('Send 99,596 sat');
     expect(await screen.findByText('There isn’t enough money available.')).toBeTruthy();
     fireEvent.click(screen.getAllByRole('button', { name: 'Back' })[0]);
-    expect(await screen.findByPlaceholderText('All: 49,746 sat')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('All: 49,795 sat')).toBeTruthy();
   });
 
   it('no All to press for a Pool too small to send from', async () => {
     const world = await open();
-    world.cardd.balances.set('pool', 6_004);
+    world.cardd.balances.set('pool', 6_003);
     act(refocus);
     await screen.findByText('6 sat available');
     toAmount();

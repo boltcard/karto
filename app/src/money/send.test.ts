@@ -1,13 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SendAnswer, Tx, Wallet } from '../cardd/client';
 import { CarddError } from '../cardd/error';
-import { feeBudgetMsat, feeEstimateSat, followSend, sendAllMsat, sendProblem, watchSend } from './send';
+import { feeBudgetMsat, feeEstimateSat, followSend, minFeeBudgetMsat, sendAllMsat, sendProblem, watchSend } from './send';
 
 describe('feeBudgetMsat', () => {
   it("is cardd's: 0.5% rounded up, plus 5 sat", () => {
     expect(feeBudgetMsat(1_000_000)).toBe(10_000);
     expect(feeBudgetMsat(1)).toBe(5_001);
     expect(feeBudgetMsat(228_000)).toBe(6_140);
+  });
+});
+
+describe('minFeeBudgetMsat', () => {
+  it("is cardd's: phoenixd's 4 sat + 0.4% rounded down, and 1 sat", () => {
+    expect(minFeeBudgetMsat(0)).toBe(5_000);
+    expect(minFeeBudgetMsat(1_000_000)).toBe(9_000);
+    expect(minFeeBudgetMsat(26_000_000)).toBe(109_000);
+    expect(minFeeBudgetMsat(337_000)).toBe(6_348);
+  });
+
+  it('is what sendProblem asks for beside the amount on a server that allows it (tight)', () => {
+    expect(sendProblem(100_000_000, 99_596_000, { tight: true })).toBeNull();
+    expect(sendProblem(100_000_000, 99_597_000, { tight: true })).not.toBeNull();
+    expect(sendProblem(50_000_000, 49_795_000, { tight: true })).toBeNull();
+    expect(sendProblem(50_000_000, 49_796_000, { tight: true })).not.toBeNull();
+    expect(sendProblem(100_000_000, 99_596_000)).not.toBeNull(); // an older server keeps the full budget
   });
 });
 
