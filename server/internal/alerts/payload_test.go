@@ -349,7 +349,8 @@ var vectors = []vector{
 	{name: "disk-low", disk: &diskCase{1_400_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.4 GB left of 10.7 GB: open Karto to free it up"},
 	{name: "disk-low-rounds-up", disk: &diskCase{1_450_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.5 GB left of 10.7 GB: open Karto to free it up"},
 	{name: "disk-low-under-1gb", disk: &diskCase{900_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "900 MB left of 10.7 GB: open Karto to free it up"},
-	{name: "disk-low-at-1gb", disk: &diskCase{999_500_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.0 GB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-low-at-1gb", disk: &diskCase{950_000_000, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "1.0 GB left of 10.7 GB: open Karto to free it up"},
+	{name: "disk-low-just-under-1gb", disk: &diskCase{949_999_999, 10_700_000_000, "low"}, title: "Server disk nearly full", text: "950 MB left of 10.7 GB: open Karto to free it up"},
 	{name: "disk-critical", disk: &diskCase{400_000_000, 10_700_000_000, "critical"}, title: "Server disk almost full", text: "400 MB left: open Karto now"},
 }
 

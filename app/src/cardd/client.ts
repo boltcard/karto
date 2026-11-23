@@ -44,8 +44,14 @@ export type LimitsRequest = { perTapSat: number; dailySat: number } | CardLimits
 /** schema: cardd's database schema (store.SchemaVersion); an older cardd doesn't say. */
 /** Whether the server's name has an IPv4 address pointing at it: got is what it points to instead, for other. */
 export type DnsAnswer = { ipv4: 'ok' | 'missing' | 'other'; got?: string[] };
-/** dns: absent from an older cardd, and until cardd's first look-up of its name has an answer. */
-export type ServerInfo = { version: string; bundle: string; schema?: number; dns?: DnsAnswer };
+/**
+ * How full the server's disk is (cardd's hourly look: server/internal/disk). level: absent with room. freeableBytes
+ * (what a rebuild deletes) and rebuildHelps (whether that clears the low level) come together, or not when cardd
+ * couldn't tell.
+ */
+export type DiskAnswer = { freeBytes: number; totalBytes: number; freeableBytes?: number; rebuildHelps?: boolean; level?: 'low' | 'critical' };
+/** dns: absent from an older cardd, and until cardd's first look-up of its name has an answer. disk: absent from an older cardd, and until its first look. */
+export type ServerInfo = { version: string; bundle: string; schema?: number; dns?: DnsAnswer; disk?: unknown };
 export type CardState = 'programming' | 'active' | 'frozen' | 'wiping' | 'reset';
 /** A card as cardd reports it (server/internal/api cardJSON); counter is -1 until the first tap. */
 export type CardInfo = {

@@ -254,3 +254,20 @@ describe('moneyOff', () => {
     expect(moneyOff({ unreachable: false, updating: null })).toBe(false);
   });
 });
+
+describe("the server's disk", () => {
+  const ok = { kind: 'ok', version: 'v0.7.0', updateAvailable: false } as const;
+  const disk = { freeBytes: 1_400_000_000, totalBytes: 10_700_000_000, freeableBytes: 3e9, rebuildHelps: true };
+  it('is an amber banner when nearly full and a red one when almost full, opening the Server page', () => {
+    expect(banners({ status: { ...ok, disk: { ...disk, level: 'low' } } })).toEqual([
+      { key: 'disk', tone: 'amber', text: "Your server's disk is nearly full: 1.4 GB left", target: { kind: 'page', to: '/server' } },
+    ]);
+    const red = banners({ status: { ...ok, disk: { ...disk, freeBytes: 4e8, level: 'critical' } }, pausedReason: 'x' }).map((b) => b.key);
+    expect(red).toEqual(['paused', 'disk']);
+    expect(banners({ status: { ...ok, disk: { ...disk, freeBytes: 4e8, level: 'critical' } } })[0]).toMatchObject({ key: 'disk', tone: 'red' });
+  });
+  it('is none with room, or from an older server', () => {
+    expect(banners({ status: { ...ok, disk } })).toEqual([]);
+    expect(banners({ status: ok })).toEqual([]);
+  });
+});

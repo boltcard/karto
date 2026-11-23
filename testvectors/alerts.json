@@ -697,7 +697,7 @@
         "card": null,
         "count": 0,
         "fiat": null,
-        "freeBytes": 999500000,
+        "freeBytes": 950000000,
         "kind": "disk",
         "level": "low",
         "msat": 0,
@@ -711,6 +711,30 @@
       },
       "title": "Server disk nearly full",
       "text": "1.0 GB left of 10.7 GB: open Karto to free it up",
+      "link": "karto://server"
+    },
+    {
+      "name": "disk-low-just-under-1gb",
+      "payload": {
+        "account": "",
+        "at": 1792238400,
+        "card": null,
+        "count": 0,
+        "fiat": null,
+        "freeBytes": 949999999,
+        "kind": "disk",
+        "level": "low",
+        "msat": 0,
+        "name": "",
+        "reason": null,
+        "sat": 0,
+        "tag": "disk-low",
+        "totalBytes": 10700000000,
+        "tx": null,
+        "v": 1
+      },
+      "title": "Server disk nearly full",
+      "text": "950 MB left of 10.7 GB: open Karto to free it up",
       "link": "karto://server"
     },
     {

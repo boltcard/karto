@@ -5,6 +5,7 @@ import { installStepsFor } from '../onboarding/install';
 import { dropLine, UPDATE_STEP_LABELS } from '../onboarding/progress';
 import type { RestoreView } from '../onboarding/serverPage';
 import type { WatchSnapshot } from '../services/serverWatch';
+import { diskCard } from './diskWords';
 import { dnsWords } from './dnsWords';
 import { pairAgain } from './pairAgain';
 import type { ServerView } from './serverView';
@@ -22,6 +23,8 @@ export type ServerCard =
   | { kind: 'overdue'; text: string }
   /** The server's name has no IPv4 address, or one that isn't the server's: who can fix it, in words to copy. */
   | { kind: 'dns'; title: string; text: string }
+  /** The server's disk nearly (or, critical, almost) full: what to do; rebuild: offer Rebuild server. */
+  | { kind: 'disk'; title: string; text: string; rebuild: boolean; critical: boolean }
   /** Update ready: Update server. */
   | { kind: 'update' }
   /** An update's steps and outcome, while it runs and after; error: "The update stopped: …". waiting: its line while it waits to connect again after a drop. */
@@ -46,6 +49,9 @@ export function serverCards(snap: ServerCardsSnap, view: ServerView, o: { outliv
   const host = snap.state?.host;
   const name = host && snap.status?.kind === 'ok' ? dnsWords(host.hostname, host.ipv4, snap.status.dns) : null;
   if (name) cards.push({ kind: 'dns', ...name });
+  const disk = snap.status?.kind === 'ok' ? snap.status.disk : undefined;
+  const diskWords = diskCard(disk);
+  if (diskWords) cards.push({ kind: 'disk', ...diskWords, critical: disk?.level === 'critical' });
   if (view.offerUpdate) cards.push({ kind: 'update' });
   if (snap.update) {
     const { dropped, done, error } = snap.update;

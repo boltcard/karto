@@ -117,8 +117,8 @@ internal object AlertWords {
   }
 
   /**
-   * Bytes as the phones show them, decimal: GB with one decimal from 999,500,000 (to the nearest tenth), else whole
-   * MB (to the nearest). Integer arithmetic, as cardd's vectors and the wallet's words: no float rounding.
+   * Bytes as the phones show them, decimal: GB with one decimal once that rounds to 1.0 GB (from 950,000,000 bytes),
+   * else whole MB, each to the nearest. Integer arithmetic, as cardd's vectors and the wallet's words: no float rounding.
    */
   internal fun bytesWords(n: Long): String {
     val tenths = (n + 50_000_000) / 100_000_000

@@ -111,3 +111,17 @@ describe('serverCards', () => {
     });
   });
 });
+
+describe("the server's disk card", () => {
+  const ok = { kind: 'ok', version: '0.7.0', updateAvailable: false } as const;
+  const disk = { freeBytes: 1_400_000_000, totalBytes: 10_700_000_000, freeableBytes: 3e9, rebuildHelps: true };
+  it('comes after the name card when the disk is low, with Rebuild server when it helps', () => {
+    const c = cards({ status: { ...ok, dns: { ipv4: 'missing' }, disk: { ...disk, level: 'low' } } });
+    expect(c.map((x) => x.kind)).toEqual(['running', 'dns', 'disk', 'details']);
+    expect(c[2]).toMatchObject({ kind: 'disk', title: 'The disk is nearly full', rebuild: true, critical: false });
+    expect(cards({ status: { ...ok, disk: { ...disk, freeBytes: 4e8, level: 'critical' } } })[1]).toMatchObject({ kind: 'disk', critical: true });
+  });
+  it('is none with room', () => {
+    expect(kinds({ status: { ...ok, disk } })).toEqual(['running', 'details']);
+  });
+});

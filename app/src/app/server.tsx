@@ -2,6 +2,7 @@
 // how the server stands, what needs the person with today's buttons, Update server, a restore's lines, and the
 // builder's details. serverCards says which cards show; ServerWatch does the work (useWatcher); the acts that need
 // the screen lock ask for it here, as Settings did.
+import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Alert, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { installStepsFor } from '../onboarding/install';
@@ -156,6 +157,23 @@ export default function Server() {
         return (
           <Panel key="dns" tone="warn" title={c.title}>
             <Body selectable>{c.text}</Body>
+          </Panel>
+        );
+      case 'disk':
+        return (
+          <Panel key="disk" tone={c.critical ? 'error' : 'warn'} title={c.title}>
+            <Body selectable>{c.text}</Body>
+            {/* As Settings' row: home under it, so Rebuild server's way back is home. */}
+            {c.rebuild && (
+              <Button
+                title="Rebuild server"
+                disabled={view.sshBusy}
+                onPress={() => {
+                  router.dismissTo('/home');
+                  router.replace('/rebuild');
+                }}
+              />
+            )}
           </Panel>
         );
       case 'update':
