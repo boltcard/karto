@@ -122,8 +122,10 @@ type laneCount struct {
 //
 // Refused, a stranger is refused as a whole when the stranger places are
 // full, else for its own share. A known client is refused as a whole when
-// the known places are full (it stays known), else for its own share, and is
-// a stranger again. Retry is when the soonest place it may use frees.
+// the known places are full (it stays known), else for its own share; it is
+// a stranger again only when its own share of the stranger places is full
+// too, not when strangers fill them. Retry is when the soonest place it may
+// use frees.
 func (c *UnpaidCap) Reserve(client string) (Lane, bool, CapRefusal) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -165,10 +167,15 @@ func (c *UnpaidCap) Reserve(client string) (Lane, bool, CapRefusal) {
 	if !known {
 		return 0, false, CapRefusal{Overall: sWhole, Retry: sWait}
 	}
-	if kWait, kWhole := c.laneWait(n[KnownLane], c.l.Known, now); kWhole {
+	kWait, kWhole := c.laneWait(n[KnownLane], c.l.Known, now)
+	if kWhole {
 		return 0, false, CapRefusal{Overall: true, Known: true, Retry: min(kWait, sWait)}
 	}
-	// Over its own share: a stranger again, and its wait is a stranger's.
+	if s := n[StrangerLane]; len(s.mine)+s.reservedMine < c.l.Stranger.PerClient {
+		// Over its own known share while strangers fill theirs: it stays known.
+		return 0, false, CapRefusal{Known: true, Retry: min(kWait, sWait)}
+	}
+	// Over its own share in both: a stranger again, and its wait is a stranger's.
 	delete(c.known, client)
 	return 0, false, CapRefusal{Known: true, Retry: sWait}
 }

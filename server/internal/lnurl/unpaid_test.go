@@ -298,6 +298,28 @@ func TestAKnownClientOverItsShareIsDemoted(t *testing.T) {
 	}
 }
 
+// Strangers filling their places don't make a known client at its own known share a stranger: it is refused for
+// its own share, waits for the soonest place it may use, and stays known.
+func TestAStrangerFloodDoesntDemoteAKnownClient(t *testing.T) {
+	at := time.Unix(1_790_000_000, 0)
+	c := capWith(&at, lnurl.Share{Overall: 4, PerClient: 2}, lnurl.Share{Overall: 6, PerClient: 3}, 16)
+	pay(t, c, "k", 1000)
+	t0 := at
+	makeN(t, c, "k", 3, lnurl.KnownLane)
+	at = t0.Add(2 * time.Minute)
+	makeN(t, c, "s1", 2, lnurl.StrangerLane)
+	makeN(t, c, "s2", 2, lnurl.StrangerLane)
+	at = t0.Add(4 * time.Minute)
+	// Its oldest known invoice (t0) leaves at t0+10m, before the strangers' first (t0+2m) at t0+12m.
+	if _, ok, r := c.Reserve("k"); ok || r.Overall || !r.Known || r.Retry != 6*time.Minute {
+		t.Fatalf("the 4th: %v %+v", ok, r)
+	}
+	at = t0.Add(10 * time.Minute)
+	if !known(c, "k") {
+		t.Fatal("a stranger flood made k a stranger")
+	}
+}
+
 // A full table drops a client that isn't known before one that is, then the known one known longest.
 func TestTheKnownTableKeepsKnownClients(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
