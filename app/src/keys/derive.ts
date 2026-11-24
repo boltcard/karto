@@ -7,7 +7,7 @@ import { sha512 } from '@noble/hashes/sha2.js';
 import { bytesToHex, concatBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { schnorr } from '@noble/curves/secp256k1.js';
 import { ed25519, x25519 } from '@noble/curves/ed25519.js';
-import { base32nopad, base64, bech32 } from '@scure/base';
+import { base64, bech32 } from '@scure/base';
 
 export type DerivedKeys = {
   nostrPrivateKey: string; // hex, NIP-06 m/44'/1237'/0'/0/0
@@ -18,8 +18,8 @@ export type DerivedKeys = {
   backupAgeRecipient: string; // age1...
   sshEd25519Seed: string; // hex 32 bytes, BIP-85 HEX index 2
   sshAuthorizedKey: string; // "ssh-ed25519 AAAA..."
-  mailtmName: string; // 16 lower-case base32 chars, BIP-85 HEX index 3
-  mailtmPassword: string; // hex 32 bytes, BIP-85 HEX index 4
+  // BIP-85 HEX indexes 3 and 4 are spent: older versions made the mail.tm inbox's name and password from them, for
+  // the verified email LNVPS once asked for. Accounts set up then still hold that address, so never use 3 or 4 again.
 };
 
 export function newPhrase(): string {
@@ -70,7 +70,5 @@ export function deriveKeys(phrase: string): DerivedKeys {
     backupAgeRecipient: bech32.encode('age', bech32.toWords(x25519.getPublicKey(backup)), false),
     sshEd25519Seed: bytesToHex(sshSeed),
     sshAuthorizedKey: 'ssh-ed25519 ' + base64.encode(sshBlob),
-    mailtmName: base32nopad.encode(hexApp(root, 16, 3).slice(0, 10)).toLowerCase(),
-    mailtmPassword: bytesToHex(hexApp(root, 32, 4)),
   };
 }

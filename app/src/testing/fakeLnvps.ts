@@ -1,7 +1,7 @@
 // A stateful stand-in for api.lnvps.net that checks every NIP-98 signature.
 // It models what the onboarding flow depends on, as observed on the real API
 // (2026-10-02): unknown countries saved as null, VAT by
-// country, email verification by link, orders needing a verified email.
+// country. Orders need no verified email: LNVPS dropped that rule on 2026-11-24.
 import { bech32 } from '@scure/base';
 import { FakeHttp, HttpError } from './http';
 import { verifyNip98Header } from '../nostr/nip98';
@@ -28,18 +28,8 @@ export class FakeLnvps {
   invoices: { vmId: number; msat: bigint; pr: string }[] = [];
   /** LNVPS's own clock (ms). It rejects NIP-98 events more than 60 s from it, and sends it as Date. */
   serverNow = () => Date.now();
-  /** Called with (address, verification link) whenever the account email changes. */
-  onVerificationEmail: (address: string, link: string) => void = () => {};
-  /** Every token verify-email was asked, in order, recorded before it answers. */
-  verifyCalls: string[] = [];
-  /** Set: verify-email answers this status (429, 503…) whatever the token. */
-  verifyStatus?: number;
   /** renew-lnurlp's status, when set: 429 is LNVPS's limit of about five invoices a minute for a VM. */
   invoiceStatus?: number;
-  /** verify-email's status for one token (verifyStatus, when set, wins). */
-  verifyStatusFor = new Map<string, number>();
-  /** Tokens of other accounts: verify-email answers 200 and this account stays unverified. */
-  foreignTokens = new Set<string>();
   /**
    * LNVPS's renewal quote enforces max_prepay_days (365): once a VM is paid
    * further ahead, it refuses (the Lightning-address route doesn't). Set to refuse.
@@ -55,7 +45,6 @@ export class FakeLnvps {
   /** Ids of VMs re-installed (PATCH /re-install), in order. */
   reinstalled: number[] = [];
   private nextId = 1001;
-  private tokens = new Map<string, true>();
   private seen = new Set<string>();
 
   constructor() {
@@ -84,22 +73,7 @@ export class FakeLnvps {
       const country = next.country_code && KNOWN_COUNTRIES.includes(next.country_code) ? next.country_code : null;
       const emailChanged = next.email !== this.account.email;
       this.account = { ...next, country_code: country, email_verified: emailChanged ? false : this.account.email_verified };
-      if (emailChanged && next.email) {
-        const token = `tok${this.tokens.size + 1}`;
-        this.tokens.set(token, true);
-        this.onVerificationEmail(next.email, `${API}/api/v1/account/verify-email?token=${token}`);
-      }
     }));
-    h.on('GET', `${API}/api/v1/account/verify-email`, ({ url }) => {
-      const token = url.searchParams.get('token') ?? '';
-      this.verifyCalls.push(token);
-      const status = this.verifyStatus ?? this.verifyStatusFor.get(token);
-      if (status !== undefined) throw new HttpError(status, 'verify-email unavailable');
-      if (this.foreignTokens.has(token)) return { data: null };
-      if (!this.tokens.has(token)) throw new HttpError(400, 'bad token');
-      this.account.email_verified = true;
-      return { data: null };
-    });
     h.on('GET', `${API}/api/v1/ssh-key`, signed('GET', () => this.sshKeys.map(({ id, name }) => ({ id, name, created: '2026-10-03T00:00:00Z' }))));
     h.on('POST', `${API}/api/v1/ssh-key`, signed('POST', ({ body }) => {
       const { name, key_data } = JSON.parse(body!);
@@ -123,7 +97,6 @@ export class FakeLnvps {
       ],
     }));
     h.on('POST', `${API}/api/v1/vm/custom-template`, signed('POST', ({ body }) => {
-      if (!this.account.email_verified) throw new HttpError(400, 'Email must be verified to create a VM');
       const order = JSON.parse(body!);
       if (order.pricing_id !== 7 || order.image_id !== 6) throw new HttpError(400, 'unexpected template or image');
       if (!this.sshKeys.some((k) => k.id === order.ssh_key_id)) throw new HttpError(400, 'unknown ssh key');

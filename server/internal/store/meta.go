@@ -13,7 +13,7 @@ var ErrBadMetaKey = errors.New("store: meta key must match [a-z0-9._]+")
 
 var metaKey = regexp.MustCompile(`^[a-z0-9._]+$`)
 
-// SetMeta stores a deployment fact (VM id, hostname, mail.tm address, ...).
+// SetMeta stores a deployment fact (VM id, hostname, account key, ...).
 // The meta table is in every backup, so restore can read these back.
 func (s *Store) SetMeta(ctx context.Context, key, value string) error {
 	if !metaKey.MatchString(key) {

@@ -19,8 +19,8 @@ describe('progress', () => {
   // Choosing a backup, where, and retiring the old server belong to a rebuild only.
   it('shows a rebuild\'s own steps only in a rebuild', () => {
     const s = initialState('GBR');
-    expect(stepsFor(s)).toEqual(['country', 'email', 'order', 'pay', 'boot', 'install', 'pair', 'done']);
-    expect(stepsFor({ ...s, rebuild: { source: 'new_phone' } })).toEqual(['country', 'email', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done']);
+    expect(stepsFor(s)).toEqual(['country', 'order', 'pay', 'boot', 'install', 'pair', 'done']);
+    expect(stepsFor({ ...s, rebuild: { source: 'new_phone' } })).toEqual(['country', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done']);
     expect([STEP_LABELS.backup, STEP_LABELS.where, STEP_LABELS.retire]).toEqual(['Choose a backup', 'Choose where', 'Retire the old server']);
   });
 
@@ -46,20 +46,15 @@ describe('progress', () => {
     expect(statusLine({ ...s, step: 'boot', error: { kind: 'retry', message: 'boom' } })).toBe('boom');
   });
 
-  it("says mail.tm is busy and that it tries again by itself", () => {
-    expect(statusLine({ ...initialState('GBR'), step: 'email', waiting: 'mailtm_busy' })).toBe("mail.tm, the inbox for LNVPS's email, is busy. Trying again in a minute…");
-  });
-
   it('says it is waiting for the network, not that something broke', () => {
     expect(statusLine({ ...initialState('GBR'), waiting: 'network' })).toBe('The phone can’t reach the internet right now. Trying again…');
     // Since trust on first use, boot waits for the server's SSH to answer, not for LNVPS.
     expect(statusLine({ ...initialState('GBR'), step: 'boot', waiting: 'host_keys' })).toBe('Waiting for the new server to answer…');
   });
 
-  // Three waits in words for someone who has never run a server; the rest as they were.
-  it('says the email, the new server and its address in plain words', () => {
+  // Waits in words for someone who has never run a server; the rest as they were.
+  it('says the new server and its address in plain words', () => {
     const s = initialState('GBR');
-    expect(statusLine({ ...s, step: 'email', waiting: 'email' })).toBe('Waiting for LNVPS’s email. Karto Wallet reads it for you.');
     expect(statusLine({ ...s, step: 'pair', waiting: 'health' })).toBe('Waiting for the server’s web address to be ready…');
     expect(statusLine({ ...s, step: 'boot', waiting: 'boot' })).toBe('The server is starting…');
     expect(statusLine({ ...s, step: 'pay', waiting: 'order_expiring' })).toBe('This order is about to expire. A new one is made once LNVPS deletes it…');
@@ -69,7 +64,6 @@ describe('progress', () => {
     const s = initialState('GBR');
     const line = (step: OnboardingState['step'], o: Partial<OnboardingState> = {}) => statusLine({ ...s, step, ...o });
     expect(line('country')).toBe('Setting the country on your LNVPS account…');
-    expect(line('email')).toBe('Making an inbox for LNVPS’s email…');
     expect(line('backup')).toBe('Looking for backups…');
     expect(line('where')).toBe('Asking LNVPS for your servers…');
     expect(line('order')).toBe('Asking LNVPS for a server…');
@@ -316,8 +310,8 @@ describe('the setup screen', () => {
       const first = rebuilding('install', r);
       const step4 = rebuilding('retire', r);
       const second = rebuilding('install', { ...r, retire: retired });
-      expect([first, step4, second, rebuilding('pair', { ...r, retire: retired })].map((x) => setupProgress(x).n)).toEqual([8, 8, 9, 10]);
-      expect(setupProgress(first).label).toBe('Step 8 of 10, Installing your server');
+      expect([first, step4, second, rebuilding('pair', { ...r, retire: retired })].map((x) => setupProgress(x).n)).toEqual([7, 7, 8, 9]);
+      expect(setupProgress(first).label).toBe('Step 7 of 9, Installing your server');
       expect(doneSummary(first)).not.toContain('old server');
       expect(doneSummary(step4)).not.toContain('install');
       expect(doneSummary(second)).toMatch(/old server$/);
@@ -327,37 +321,37 @@ describe('the setup screen', () => {
     // In place on the old server's own VM, step 4 comes first, before the install: the order as listed.
     const own = { target: { kind: 'in_place' as const, vmId: 1009 }, oldVm: { id: 1009 } } as Partial<Rebuild>;
     expect([rebuilding('boot', own), rebuilding('retire', own), rebuilding('install', { ...own, retire: { result: 'in_place', at: 1 } })].map((x) => setupProgress(x).n))
-      .toEqual([7, 8, 9]);
+      .toEqual([6, 7, 8]);
   });
 
-  it('counts the steps: seven setting up, ten in a rebuild', () => {
-    expect(['country', 'email', 'order', 'pay', 'boot', 'install', 'pair'].map((x) => setupProgress(plain(x as OnboardingState['step'])).n)).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    expect(setupProgress(plain('pay'))).toEqual({ n: 4, of: 7, label: 'Step 4 of 7, Pay for the server' });
+  it('counts the steps: six setting up, nine in a rebuild', () => {
+    expect(['country', 'order', 'pay', 'boot', 'install', 'pair'].map((x) => setupProgress(plain(x as OnboardingState['step'])).n)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(setupProgress(plain('pay'))).toEqual({ n: 3, of: 6, label: 'Step 3 of 6, Pay for the server' });
     // Step 4 (retire) done, as it is once the install's second part runs.
     const retired = { result: 'retired' as const, at: 1 };
     expect(STEPS.filter((x) => x !== 'done').map((x) => setupProgress(rebuilding(x, x === 'install' || x === 'pair' ? { retire: retired } : {})).n))
-      .toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    expect(setupProgress(rebuilding('retire'))).toEqual({ n: 8, of: 10, label: 'Step 8 of 10, Retiring the old server' });
-    expect(setupProgress(plain('done'))).toMatchObject({ n: 7, of: 7 });
+      .toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(setupProgress(rebuilding('retire'))).toEqual({ n: 7, of: 9, label: 'Step 7 of 9, Retiring the old server' });
+    expect(setupProgress(plain('done'))).toMatchObject({ n: 6, of: 6 });
   });
 
   // The machine never puts a rebuild's step in a state without its rebuild; if one ever were, the count is still a count.
-  it("counts a rebuild's step among all ten even without its rebuild", () => {
-    expect(setupProgress(plain('backup'))).toMatchObject({ n: 3, of: 10 });
-    expect(setupProgress(plain('retire'))).toMatchObject({ n: 8, of: 10 });
-    expect(doneSummary(plain('where'))).toBe('Done: country, email, backup');
+  it("counts a rebuild's step among all nine even without its rebuild", () => {
+    expect(setupProgress(plain('backup'))).toMatchObject({ n: 2, of: 9 });
+    expect(setupProgress(plain('retire'))).toMatchObject({ n: 7, of: 9 });
+    expect(doneSummary(plain('where'))).toBe('Done: country, backup');
   });
 
   it('keeps the number of a step the machine passed over', () => {
-    // In place has no order and no payment: starting the server is still step 7 of 10.
-    expect(setupProgress(rebuilding('boot', { target: { kind: 'in_place', vmId: 1009 } }))).toMatchObject({ n: 7, of: 10 });
-    // A typed-in phrase whose server is still paid has no payment: step 5 of 7.
-    expect(setupProgress(plain('boot', { restoring: true }))).toMatchObject({ n: 5, of: 7 });
+    // In place has no order and no payment: starting the server is still step 6 of 9.
+    expect(setupProgress(rebuilding('boot', { target: { kind: 'in_place', vmId: 1009 } }))).toMatchObject({ n: 6, of: 9 });
+    // A typed-in phrase whose server is still paid has no payment: step 4 of 6.
+    expect(setupProgress(plain('boot', { restoring: true }))).toMatchObject({ n: 4, of: 6 });
   });
 
   it('heads each step with what is happening', () => {
     expect(STEPS.filter((x) => x !== 'done').map((x) => stepHeading(rebuilding(x)))).toEqual([
-      'Telling LNVPS your country', 'Opening your LNVPS account', 'Choose a backup', 'Choose where to rebuild', 'Ordering the server', 'Pay for the server',
+      'Telling LNVPS your country', 'Choose a backup', 'Choose where to rebuild', 'Ordering the server', 'Pay for the server',
       'Starting the server', 'Retiring the old server', 'Installing your server', 'Pairing this phone',
     ]);
     expect(stepHeading(plain('order'))).toBe('Ordering the server');
@@ -374,11 +368,11 @@ describe('the setup screen', () => {
 
   it('spins while Karto works, and not when it is the person\'s turn or something failed', () => {
     const turn: Waiting[] = ['payment', 'old_payment', 'choose_vm', 'choose_backup', 'choose_where', 'confirm_older', 'confirm_retire', 'confirm_reinstall', 'confirm_expired'];
-    const karto: Waiting[] = ['email', 'order_expiring', 'boot', 'host_keys', 'host_key_confirm', 'health', 'network', 'old_unreachable', 'old_vm_starting', 'recovery_check'];
+    const karto: Waiting[] = ['order_expiring', 'boot', 'host_keys', 'host_key_confirm', 'health', 'network', 'old_unreachable', 'old_vm_starting', 'recovery_check'];
     for (const w of turn) expect([w, working(plain('pay', { waiting: w }))]).toEqual([w, false]);
     for (const w of karto) expect([w, working(plain('boot', { waiting: w }))]).toEqual([w, true]);
     // Every wait is one or the other.
-    expect([...turn, ...karto]).toHaveLength(19);
+    expect([...turn, ...karto]).toHaveLength(18);
     expect(working(plain('order'))).toBe(true);
     expect(working(plain('install'))).toBe(true);
     for (const kind of ['retry', 'fatal', 'wrong_phrase'] as const) expect(working(plain('boot', { error: { kind, message: 'x' } }))).toBe(false);
@@ -389,17 +383,16 @@ describe('the setup screen', () => {
   it('names what is done, in order, and nothing at the first step', () => {
     expect(doneSummary(plain('country'))).toBeNull();
     expect(doneSteps(plain('country'), NOW, 0)).toEqual([]);
-    expect(doneSummary(plain('pay'))).toBe('Done: country, email, order');
-    expect(doneSummary(plain('pair'))).toBe('Done: country, email, order, payment, start, install');
-    expect(doneSummary(rebuilding('pair', { target: { kind: 'new' } }))).toBe('Done: country, email, backup, where, order, payment, start, old server, install');
-    expect(doneSummary(plain('done'))).toBe('Done: country, email, order, payment, start, install, pairing');
+    expect(doneSummary(plain('pay'))).toBe('Done: country, order');
+    expect(doneSummary(plain('pair'))).toBe('Done: country, order, payment, start, install');
+    expect(doneSummary(rebuilding('pair', { target: { kind: 'new' } }))).toBe('Done: country, backup, where, order, payment, start, old server, install');
+    expect(doneSummary(plain('done'))).toBe('Done: country, order, payment, start, install, pairing');
   });
 
   it('says what each finished step settled', () => {
     const s = rebuilding('retire', { backup: KEPT, target: { kind: 'new' } }, { vmId: 1003, host });
     expect(doneSteps(s, NOW, 0)).toEqual([
       { step: 'country', name: 'country', label: 'Country', line: null },
-      { step: 'email', name: 'email', label: 'Email', line: null },
       { step: 'backup', name: 'backup', label: 'Choose a backup', line: 'Today at 13:00 · 3 cards · 48,210 sat' },
       { step: 'where', name: 'where', label: 'Choose where', line: 'A new server' },
       { step: 'order', name: 'order', label: 'Order the server', line: 'VM 1003' },
@@ -407,21 +400,21 @@ describe('the setup screen', () => {
       { step: 'boot', name: 'start', label: 'Start the server', line: 'vm-1003.lnvps.cloud · 45.67.89.170' },
     ]);
     // The backup's time as the phone's clock has it: a day later it is yesterday's.
-    expect(doneSteps(s, NOW + 86_400, 0)[2].line).toBe('Yesterday at 13:00 · 3 cards · 48,210 sat');
+    expect(doneSteps(s, NOW + 86_400, 0)[1].line).toBe('Yesterday at 13:00 · 3 cards · 48,210 sat');
   });
 
   it('leaves out the steps that never ran', () => {
     // In place: nothing is ordered or paid.
     const inPlace = rebuilding('install', { backup: KEPT, target: { kind: 'in_place', vmId: 1009 }, oldVm: { id: 1009 } } as Partial<Rebuild>, { vmId: 1009, host });
-    expect(doneSummary(inPlace)).toBe('Done: country, email, backup, where, start, old server');
-    expect(doneSteps(inPlace, NOW, 0).map((x) => x.step)).toEqual(['country', 'email', 'backup', 'where', 'boot', 'retire']);
-    expect(doneSteps(inPlace, NOW, 0)[3]).toMatchObject({ label: 'Choose where', line: 'In place on VM 1009' });
+    expect(doneSummary(inPlace)).toBe('Done: country, backup, where, start, old server');
+    expect(doneSteps(inPlace, NOW, 0).map((x) => x.step)).toEqual(['country', 'backup', 'where', 'boot', 'retire']);
+    expect(doneSteps(inPlace, NOW, 0)[2]).toMatchObject({ label: 'Choose where', line: 'In place on VM 1009' });
     // A typed-in phrase whose server is still paid: it was found, not ordered, and nothing was paid.
     const found = plain('install', { restoring: true, vmId: 1009, host });
-    expect(doneSummary(found)).toBe('Done: country, email, server found, start');
-    expect(doneSteps(found, NOW, 0)[2]).toEqual({ step: 'order', name: 'server found', label: 'Find the server', line: 'VM 1009' });
+    expect(doneSummary(found)).toBe('Done: country, server found, start');
+    expect(doneSteps(found, NOW, 0)[1]).toEqual({ step: 'order', name: 'server found', label: 'Find the server', line: 'VM 1009' });
     // The same phrase with no server left rebuilds, and orders and pays as a rebuild does.
-    expect(doneSummary(plain('boot', { restoring: true, rebuild: { source: 'new_phone', target: { kind: 'new' } } }))).toBe('Done: country, email, backup, where, order, payment');
+    expect(doneSummary(plain('boot', { restoring: true, rebuild: { source: 'new_phone', target: { kind: 'new' } } }))).toBe('Done: country, backup, where, order, payment');
   });
 });
 

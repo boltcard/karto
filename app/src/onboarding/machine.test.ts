@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   advance, verifyHostKey, DEFAULT_PAY_DAYS, HOST_KEY_CONFIRM_LIMIT_MS, HOST_KEY_UNCONFIRMED, HOST_KEY_UNCONFIRMED_IN_PLACE, HOST_KEY_UNCONFIRMED_OLDER, HOST_KEY_WAIT_MS, initialState, INVOICE_RENEW_BEFORE_MS, MAX_PAY_DAYS, NEWER_BACKUP, OLD_VM_SSH_WAIT_MS, PAY_DAY_PRESETS, reconcileDevice,
-  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, MAILTM_BUSY_WAIT_MS, MAILTM_FAILED, paySat,
+  FINAL_NOT_FETCHED, oldVmsToWatch, overrideFor, overrideOffered, overridePrompt, RECOVERY_CHECK_WAIT_MS, RETIRE_TRIES_BEFORE_OVERRIDE, retireOldServer, serverHostname, sshKeyName, startRebuild, withPayDays, PAY_DAYS_SETTLE_MS, INVOICE_BUSY_WAIT_MS, paySat,
   type ChosenBackup, type OnboardingState, type Rebuild, type RetireRecord, type ServerHost, type Waiting,
 } from './machine';
 import { installFoot, installRows, statusLine } from './progress';
@@ -22,9 +22,6 @@ type World = ReturnType<typeof world>;
 
 /** The install's steps that carry no secret, host-key and the wipe after it: what a rebuild onto a new VM runs before step 4. */
 const BEFORE_SECRETS = ['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe'] as const;
-
-/** A verification link as LNVPS builds it (LNVPS/api, routes.rs). */
-const LINK = (token: string) => `https://api.lnvps.net/api/v1/account/verify-email?token=${token}`;
 
 /** Advances until done, an error, or `stopAt`; when waiting, lets the world move on. */
 async function drive(s: OnboardingState, t: World, stopAt?: (s: OnboardingState) => boolean): Promise<OnboardingState> {
@@ -63,9 +60,8 @@ describe('onboarding', () => {
     const s = await drive(initialState('GBR'), t);
     expect(s.error).toBeUndefined();
     expect(s.step).toBe('done');
-    // Email: the phrase-derived inbox, verified.
-    expect(t.lnvps.account.email).toBe(`${t.keys.mailtmName}@uberip.com`);
-    expect(t.lnvps.account.email_verified).toBe(true);
+    // No email: LNVPS orders a VM without one now, so none is set (and the world fails any call to mail.tm).
+    expect(t.lnvps.account.email).toBeUndefined();
     // One VM, one key named for this phrase.
     expect(t.lnvps.vms.size).toBe(1);
     expect(t.lnvps.sshKeys.map((k) => [k.name, k.key_data])).toEqual([[sshKeyName(t.keys), t.keys.sshAuthorizedKey]]);
@@ -79,7 +75,7 @@ describe('onboarding', () => {
     // Installed, with the meta the backups need, and paired.
     expect(s.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare', 'host-key', 'wipe', 'seed', 'issuer-key', 'restore', 'up', 'meta']);
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/install.sh prepare 'vm-1001.lnvps.cloud'`)).toBe(true);
-    expect(t.ssh.commands.some((c) => c.command === `sh card-app/cardd-ctl meta set 'mailtm.address' '${t.keys.mailtmName}@uberip.com'`)).toBe(true);
+    expect(t.ssh.commands.some((c) => c.command.includes('mailtm'))).toBe(false);
     expect(t.ssh.commands.some((c) => c.command === `sh card-app/cardd-ctl meta set 'account.pubkey' '${vectors.phrase.nostrPublicKey}'`)).toBe(true);
     expect(s.deviceKeyId).toBe(vectors.deviceAuth.keyId);
     // The backup public key, so cardd can encrypt snapshots to this phrase.
@@ -108,7 +104,7 @@ describe('onboarding', () => {
   // VAT for the country chosen is fine; VAT the choice didn't decide (a VAT number on the account) is not.
   it('goes on when LNVPS charges VAT for the country chosen, and stops for good on any other VAT', async () => {
     const t = world();
-    expect((await advance(initialState('IRL'), t.deps)).step).toBe('email');
+    expect((await advance(initialState('IRL'), t.deps)).step).toBe('order');
     const other = world();
     other.lnvps.vatNumberCountry = 'IRL';
     const s = await advance(initialState('DEU'), other.deps);
@@ -126,210 +122,23 @@ describe('onboarding', () => {
     expect((await advance(initialState(), t.deps)).error?.message).toBe('Choose a country first');
   });
 
-  it('waits for the verification email, then carries on', async () => {
+  // LNVPS dropped its verified-email rule for orders (2026-11-24): the country step leads straight to the order.
+  it('goes from the country straight to the order, setting no email on the account', async () => {
     const t = world();
-    let pending: (() => void) | undefined;
-    t.lnvps.onVerificationEmail = (address, link) => (pending = () => t.mail.deliver(address, 'Verify', link));
-    let s = await advance(initialState('GBR'), t.deps);
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    pending!();
-    s = await advance(s, t.deps);
-    expect(s.step).toBe('order');
-    expect(t.lnvps.account.email_verified).toBe(true);
+    const s = await advance(initialState('GBR'), t.deps);
+    expect(s).toMatchObject({ step: 'order' });
+    expect([s.error, s.waiting]).toEqual([undefined, undefined]);
+    const patches = t.lnvps.http.requests.filter((r) => r.method === 'PATCH').map((r) => JSON.parse(r.body!));
+    expect(patches.some((p) => 'email' in p)).toBe(false);
   });
 
-  // A look-alike sent to the inbox first (a token LNVPS refuses) can't block LNVPS's own link.
-  it('tries every LNVPS link until the email is verified', async () => {
+  // Accounts set up while LNVPS asked for one hold a mail.tm address, verified or not: it is left as it is.
+  it('orders for an account that already has an email, and leaves the email alone', async () => {
     const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    t.lnvps.onVerificationEmail = (to, link) => {
-      t.mail.deliver(to, 'Verify', `${LINK('bogus')}`); // first in the inbox
-      mailed(to, link);
-    };
-    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order');
-    expect(t.lnvps.account.email_verified).toBe(true);
-    expect(s.error).toBeUndefined();
-    expect(t.lnvps.verifyCalls).toEqual(['bogus', 'tok1']); // the look-alike was tried, and passed over
-  });
-
-  // Look-alikes in the inbox must not spend LNVPS's 10 verify-email requests a minute every 5-second pass.
-  it('opens each link LNVPS refuses once, remembering it across passes', async () => {
-    const t = world();
-    t.lnvps.onVerificationEmail = (to) => t.mail.deliver(to, 'Verify', LINK('bogus')); // LNVPS's own email hasn't come yet
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && !!x.emailLinksRefused?.length);
-    expect(s.emailLinksRefused).toEqual([LINK('bogus')]);
-    s = await advance(s, t.deps);
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(t.lnvps.verifyCalls).toEqual(['bogus']); // once, not every pass
-  });
-
-  // The security review of f6e873a: refused look-alikes never fill a pass's five, and their messages are deleted,
-  // so a flood can't keep LNVPS's email off mail.tm's first page.
-  it('opens LNVPS\'s link within two passes behind six refused look-alikes, deleting their messages', async () => {
-    const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    t.lnvps.onVerificationEmail = (to, link) => {
-      for (let i = 1; i <= 6; i++) t.mail.deliver(to, 'Verify', LINK(`bogus${i}`));
-      mailed(to, link);
-    };
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && !!x.emailLinksRefused?.length);
-    expect(t.lnvps.verifyCalls).toEqual(['bogus1', 'bogus2', 'bogus3', 'bogus4', 'bogus5']);
-    s = await advance(s, t.deps);
-    expect(s.step).toBe('order');
-    expect(t.lnvps.verifyCalls.slice(5)).toEqual(['bogus6', 'tok1']);
-    expect(t.mail.accounts.get(s.mailtmAddress!)!.messages.map((m) => m.subject)).toEqual(['Verify', 'Verify your email']); // bogus6's, and LNVPS's
-    expect(s.emailLinksRefused).toBeUndefined();
-  });
-
-  it('deletes a message whose links LNVPS all refused, going on if the delete fails', async () => {
-    const t = world();
-    t.lnvps.onVerificationEmail = (to) => t.mail.deliver(to, 'Verify', LINK('bogus')); // LNVPS's own email hasn't come yet
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && !!x.emailLinksRefused?.length);
-    const inbox = () => t.mail.accounts.get(s.mailtmAddress!)!.messages;
-    expect(inbox()).toHaveLength(1);
-    t.mail.deleteFails = true;
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email', emailLinksRefused: [LINK('bogus')] });
-    expect(inbox()).toHaveLength(1);
-    t.mail.deleteFails = false;
-    s = await advance(s, t.deps);
-    expect(inbox()).toHaveLength(0);
-    expect(t.lnvps.verifyCalls).toEqual(['bogus']); // never opened again
-  });
-
-  // One message's hundreds of look-alikes take five at most, so it is deleted after five refusals.
-  it('opens LNVPS\'s link within two passes behind one message of 120 look-alikes, deleting it', async () => {
-    const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    t.lnvps.onVerificationEmail = (to, link) => {
-      const bogus = Array.from({ length: 120 }, (_, i) => LINK(`bogus${i}`));
-      t.mail.deliver(to, 'Flood', '', Array.from({ length: 24 }, (_, p) => bogus.slice(p * 5, p * 5 + 5).join(' ')));
-      mailed(to, link);
-    };
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && !!x.emailLinksRefused?.length);
-    s = await advance(s, t.deps);
-    expect(s.step).toBe('order');
-    expect(t.lnvps.verifyCalls).toEqual(['bogus0', 'bogus1', 'bogus2', 'bogus3', 'bogus4', 'tok1']);
-    expect(t.mail.accounts.get(s.mailtmAddress!)!.messages.map((m) => m.subject)).toEqual(['Verify your email']);
-  });
-
-  // Five look-alikes that fail without being refused (a 5xx, or a 4xx such as 403)
-  // would otherwise take every pass's five, and LNVPS's own link behind them would never be asked.
-  it('passes over for 10 minutes the links a full pass found failing, so LNVPS\'s link behind them is asked', async () => {
-    const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    const bogus = ['b1', 'b2', 'b3', 'b4', 'b5'];
-    t.lnvps.onVerificationEmail = (to, link) => {
-      for (const b of bogus) t.mail.deliver(to, 'Verify', LINK(b));
-      mailed(to, link);
-    };
-    bogus.forEach((b, i) => t.lnvps.verifyStatusFor.set(b, i % 2 ? 403 : 503));
-    let s = await drive(initialState('GBR'), t, (x) => !!x.error);
-    expect(s).toMatchObject({ step: 'email', error: { kind: 'retry', message: 'opening the verification link gave HTTP 503' } });
-    expect(s.emailLinksRefused).toBeUndefined();
-    expect(s.emailLinksOpened?.map((o) => o.link)).toEqual(bogus.map(LINK));
-    s = await advance({ ...s, error: undefined }, t.deps); // Try again
-    expect(s.step).toBe('order');
-    expect(t.lnvps.verifyCalls).toEqual([...bogus, 'tok1']);
-    expect(t.mail.accounts.get(s.mailtmAddress!)!.messages).toHaveLength(6); // none refused: none deleted
-  });
-
-  // LNVPS's limit counts the requests it rejects, so the app waits a minute after a 429.
-  it('opens nothing for a minute after a 429', async () => {
-    const t = world();
-    t.lnvps.verifyStatus = 429;
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && t.lnvps.verifyCalls.length > 0);
-    expect(s.emailBusyUntil).toBe(t.w.nowMs + 60_000);
-    t.lnvps.verifyStatus = undefined;
-    t.w.nowMs += 55_000;
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(t.lnvps.verifyCalls).toEqual(['tok1']);
-    t.w.nowMs += 5_000;
-    s = await advance(s, t.deps);
-    expect(s.step).toBe('order');
-    expect(s.emailBusyUntil).toBeUndefined();
-    expect(t.lnvps.verifyCalls).toEqual(['tok1', 'tok1']);
-  });
-
-  // A 429 after another failure in the same pass waits, polling on, rather than stopping on an error.
-  it('waits after a 429 that follows a failure in the same pass, showing no error', async () => {
-    const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    t.lnvps.onVerificationEmail = (to, link) => {
-      t.mail.deliver(to, 'Verify', LINK('bogus'));
-      mailed(to, link);
-    };
-    t.lnvps.verifyStatusFor.set('bogus', 403).set('tok1', 429);
-    const s = await drive(initialState('GBR'), t, (x) => !!x.error || (x.waiting === 'email' && t.lnvps.verifyCalls.length > 0));
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(s.error).toBeUndefined();
-    expect(t.lnvps.verifyCalls).toEqual(['bogus', 'tok1']);
-  });
-
-  // LNVPS's limit has tripped, so nothing more is asked this pass.
-  it('ends the pass at a 429', async () => {
-    const t = world();
-    const mailed = t.lnvps.onVerificationEmail;
-    t.lnvps.onVerificationEmail = (to, link) => {
-      t.mail.deliver(to, 'Verify', LINK('bogus'));
-      mailed(to, link);
-    };
-    t.lnvps.verifyStatus = 429;
-    const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && t.lnvps.verifyCalls.length > 0);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(t.lnvps.verifyCalls).toEqual(['bogus']);
-  });
-
-  // Only what LNVPS answers an unknown token (400, 404, 410) refuses a link for
-  // good; a 403 (a firewall, say) on LNVPS's own link must not delete its email.
-  it('shows any other 4xx as an error, refusing and deleting nothing', async () => {
-    const t = world();
-    t.lnvps.verifyStatus = 403;
-    let s = await drive(initialState('GBR'), t, (x) => !!x.error || x.step === 'order');
-    expect(s).toMatchObject({ step: 'email', error: { kind: 'retry', message: 'opening the verification link gave HTTP 403' } });
-    expect(s.emailLinksRefused).toBeUndefined();
-    t.lnvps.verifyStatus = undefined;
-    s = await advance({ ...s, error: undefined }, t.deps);
-    expect(s.step).toBe('order');
-  });
-
-  // A valid token for someone else's account answers 2xx and verifies nothing.
-  it('passes over a link that opened without verifying this account for 10 minutes, keeping its message', async () => {
-    const t = world();
-    t.lnvps.foreignTokens.add('foreign');
-    t.lnvps.onVerificationEmail = (to) => t.mail.deliver(to, 'Verify', LINK('foreign')); // LNVPS's own email hasn't come yet
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && !!x.emailLinksOpened?.length);
-    expect(s.emailLinksOpened).toEqual([{ link: LINK('foreign'), at: t.w.nowMs }]);
-    s = await advance(s, t.deps);
-    s = await advance(s, t.deps);
-    expect(t.lnvps.verifyCalls).toEqual(['foreign']);
-    expect(t.mail.accounts.get(s.mailtmAddress!)!.messages).toHaveLength(1);
-    t.w.nowMs += 10 * 60_000;
-    s = await advance(s, t.deps);
-    expect(t.lnvps.verifyCalls).toEqual(['foreign', 'foreign']); // getAccount may have lagged: tried again
-  });
-
-  it('leaves a link for the next pass when LNVPS is busy (429) or down (5xx)', async () => {
-    const t = world();
-    t.lnvps.verifyStatus = 429;
-    let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email' && t.lnvps.verifyCalls.length > 0);
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(s.emailLinksRefused).toBeUndefined();
-    expect(t.mail.accounts.get(s.mailtmAddress!)!.messages).toHaveLength(1); // a 429 neither refuses nor deletes
-    t.w.nowMs += 60_000; // the minute's wait after a 429
-    t.lnvps.verifyStatus = 503;
-    s = await advance(s, t.deps);
-    expect(s).toMatchObject({ step: 'email', error: { kind: 'retry', message: 'opening the verification link gave HTTP 503' } });
-    expect(s.emailLinksRefused).toBeUndefined();
-    t.lnvps.verifyStatus = undefined;
-    s = await advance({ ...s, error: undefined }, t.deps);
-    expect(s.step).toBe('order');
-    expect(t.lnvps.verifyCalls).toEqual(['tok1', 'tok1', 'tok1']); // asked again at each pass
+    t.lnvps.account = { ...t.lnvps.account, email: 'abc123@example.com', email_verified: false };
+    const s = await drive(initialState('GBR'), t);
+    expect(s.step).toBe('done');
+    expect(t.lnvps.account.email).toBe('abc123@example.com');
   });
 
   it('does not order a second VM if the app died before saving the order', async () => {
@@ -935,19 +744,21 @@ describe('onboarding', () => {
   it('keeps progress saved inside a step when the step then fails', async () => {
     const t = world();
     let s = await advance(initialState('GBR'), t.deps);
-    // The account is read before the inbox is opened; setting the address on it comes after the checkpoint.
-    const real = t.deps.lnvps.updateAccount.bind(t.deps.lnvps);
+    // The order step saves the SSH key it added before it orders the VM.
+    const real = t.deps.lnvps.orderVm.bind(t.deps.lnvps);
     let fail = true;
-    t.deps.lnvps.updateAccount = async (patch) => {
+    t.deps.lnvps.orderVm = async (...a) => {
       if (fail) {
         fail = false;
         throw new Error('network down');
       }
-      return real(patch);
+      return real(...a);
     };
     s = await advance(s, t.deps);
-    expect(s.error?.kind).toBe('retry');
-    expect(s.mailtmAddress).toBe(`${t.keys.mailtmName}@uberip.com`);
+    expect(s).toMatchObject({ step: 'order', sshKeyId: 1, error: { kind: 'retry' } });
+    s = await advance({ ...s, error: undefined }, t.deps);
+    expect(s.vmId).toBeDefined();
+    expect(t.lnvps.sshKeys).toHaveLength(1);
   });
 
   it('keeps finished install steps when closing the connection fails', async () => {
@@ -1014,7 +825,7 @@ describe('onboarding', () => {
     expect(s).toMatchObject({ step: 'country', waiting: 'network' });
     expect(s.error).toBeUndefined();
     s = await advance(s, deps);
-    expect(s).toMatchObject({ step: 'email' });
+    expect(s).toMatchObject({ step: 'order' });
   });
 
   // On the phone, expo/fetch rejects with its own FetchError (a plain Error), not a TypeError.
@@ -1631,7 +1442,7 @@ describe('rebuild', () => {
 
     /**
      * A rebuild started on the server page of VM 1012 (paid, running, its own server answering
-     * SSH and HTTPS, this phone paired), after onboarding's email step: at step 1, with `r` merged in.
+     * SSH and HTTPS, this phone paired), after onboarding's country step: at step 1, with `r` merged in.
      */
     async function fromServerPage(r: Partial<Rebuild> = {}, host = OLD_HOST) {
       const t = world();
@@ -3549,95 +3360,5 @@ describe('a connection that drops under the install or pairing', () => {
     }
     expect(s.step).toBe('done');
     expect(seen).toEqual([['pair', 1, false, undefined], ['pair', 2, false, undefined], ['pair', 1, true, undefined], ['pair', 2, true, undefined]]);
-  });
-});
-
-// mail.tm's rate limit (429) at any of its calls is a wait, never an error: a minute, then the step carries on.
-describe('mail.tm busy', () => {
-  it.each(['GET /domains', 'POST /accounts', 'POST /token', 'GET /messages', 'GET /messages/{id}'] as const)(
-    'waits a minute after mail.tm answers 429 to %s, showing no error',
-    async (call) => {
-      const t = world();
-      t.mail.busy.add(call);
-      let s = await drive(initialState('GBR'), t, (x) => x.waiting === 'mailtm_busy');
-      expect(s).toMatchObject({ step: 'email', waiting: 'mailtm_busy', mailtmBusyUntil: t.w.nowMs + MAILTM_BUSY_WAIT_MS });
-      expect(s.error).toBeUndefined();
-      const asked = t.mail.http.requests.length;
-      t.w.nowMs += 55_000;
-      s = await advance(s, t.deps);
-      expect(s).toMatchObject({ step: 'email', waiting: 'mailtm_busy' });
-      expect(t.mail.http.requests).toHaveLength(asked);
-      t.mail.busy.delete(call);
-      t.w.nowMs += 5_000;
-      s = await drive(s, t, (x) => x.step === 'order');
-      expect(s.step).toBe('order');
-      expect(s.mailtmBusyUntil).toBeUndefined();
-    },
-  );
-
-  it('keeps the address saved before the 429', async () => {
-    const t = world();
-    t.mail.busy.add('POST /accounts');
-    const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'mailtm_busy');
-    expect(s.mailtmAddress).toBe(`${t.deps.keys.mailtmName}@uberip.com`);
-  });
-});
-
-// A restore, or set-up started over: LNVPS has this phrase's address verified already, so mail.tm isn't needed.
-describe('email step with an address LNVPS already verified', () => {
-  const verified = (t: World, email: string, email_verified = true) => (t.lnvps.account = { ...t.lnvps.account, email, email_verified });
-
-  it("asks mail.tm nothing when LNVPS already has this phrase's address, verified", async () => {
-    const t = world();
-    const email = `${t.deps.keys.mailtmName}@old-domain.example`;
-    verified(t, email);
-    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order');
-    expect(s.step).toBe('order');
-    expect(t.mail.http.requests).toEqual([]);
-    expect(s.mailtmAddress).toBe(email);
-    expect(t.lnvps.account.email).toBe(email);
-  });
-
-  it('even when mail.tm is busy', async () => {
-    const t = world();
-    verified(t, `${t.deps.keys.mailtmName.toUpperCase()}@old-domain.example`);
-    t.mail.busy.add('GET /domains');
-    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order' || x.waiting === 'mailtm_busy');
-    expect(s.step).toBe('order');
-  });
-
-  it('goes the usual way when the verified address has another name', async () => {
-    const t = world();
-    verified(t, 'someone-else@uberip.com');
-    const s = await drive(initialState('GBR'), t, (x) => x.step === 'order');
-    expect(s.step).toBe('order');
-    expect(t.mail.http.requests.length).toBeGreaterThan(0);
-    expect(t.lnvps.account.email).toBe(`${t.deps.keys.mailtmName}@uberip.com`);
-  });
-
-  it("goes the usual way when the address is the phrase's but unverified", async () => {
-    const t = world();
-    verified(t, `${t.deps.keys.mailtmName}@uberip.com`, false);
-    // Its email was set before, so LNVPS sends none now: the step looks in the inbox and waits.
-    const s = await drive(initialState('GBR'), t, (x) => x.waiting === 'email');
-    expect(s).toMatchObject({ step: 'email', waiting: 'email' });
-    expect(t.mail.http.requests.length).toBeGreaterThan(0);
-  });
-});
-
-describe('mail.tm failures in words', () => {
-  it('says a mail.tm failure in words, not as the request', async () => {
-    const t = world();
-    t.mail.fails.set('POST /token', 503);
-    const s = await drive(initialState('GBR'), t);
-    expect(s).toMatchObject({ step: 'email', error: { kind: 'retry', message: MAILTM_FAILED(503) } });
-    expect(MAILTM_FAILED(503)).toBe("mail.tm, the inbox for LNVPS's email, didn't answer as it should (HTTP 503). Try again in a little while.");
-  });
-
-  it('says plainly when mail.tm has no inbox domain to give', async () => {
-    const t = world();
-    t.mail.domains = [];
-    const s = await drive(initialState('GBR'), t);
-    expect(s.error?.message).toBe('mail.tm has no public inbox domain right now. Try again in a little while.');
   });
 });

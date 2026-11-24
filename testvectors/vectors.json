@@ -8,9 +8,7 @@
     "backupAgeIdentity": "AGE-SECRET-KEY-1RJ7TJGQVC7RVSW7XXPA3ZTG387CLSSNV5542RTX66JACK2D9Y95S0XRUPZ",
     "backupAgeRecipient": "age1xxg672re45mvahk27jnrt9xdrhhck5gy40fm0usu46tsgnfqxe9qd9stm5",
     "sshEd25519Seed": "022c068f88ab8f8b4ae486f1928bbcbccbaf8149b95999fdb07572470e3aa5fa",
-    "sshAuthorizedKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7OaJ/OiX8fQqSebMIWCvTHRxCAl3j+ZDKh4HZao3gE",
-    "mailtmName": "f6ygjrifabn6ne2s",
-    "mailtmPassword": "ad3532a660b8700e9f3b22fe02f14e6459df30033ba0144dcbfaa1639ac538ec"
+    "sshAuthorizedKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM7OaJ/OiX8fQqSebMIWCvTHRxCAl3j+ZDKh4HZao3gE"
   },
   "sun": [
     {
