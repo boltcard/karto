@@ -2,6 +2,7 @@
 // person, red before amber, each opening where it is dealt with. The server
 // page's helpers make what they say; Settings and its pages keep the full text.
 import type { ServerStatus } from '../cardd/status';
+import { diskBanner } from './diskWords';
 import type { HostingWarnings } from '../money/hosting';
 import type { NfcState } from '../native/nfc';
 import { elapsed } from '../onboarding/progress';
@@ -62,6 +63,9 @@ export function walletBanners(i: BannerInput): Banner[] {
   if (i.status?.kind === 'not_paired' && !i.revoked) b.push(red('not-paired', "This phone isn't paired with your server", SETTINGS));
   if (i.revoked) b.push(red('revoked', 'Another phone restored this server, so this phone is unpaired', BACKUPS));
   if (i.pausedReason !== null) b.push(red('paused', "Payments are paused: the books don't add up", SERVER));
+  // The server's disk: red when almost full, amber (beside the name's) when nearly (cardd decides which).
+  const disk = diskBanner(i.status?.kind === 'ok' ? i.status.disk : undefined);
+  if (disk?.tone === 'red') b.push(red('disk', disk.text, SERVER));
   // The paid-until banner: amber with 3 days or more left, red under (money/hosting.ts). When it speaks for the
   // funding line too (a new server: paid for 7 days, Hosting empty) it is the one banner, and opens Hosting, where
   // Top up, Pay LNVPS and Renew now are.
@@ -91,6 +95,7 @@ export function walletBanners(i: BannerInput): Banner[] {
   // The server's name with no IPv4 address, or one that isn't the server's: the Server page says who can fix it.
   const dns = i.status?.kind === 'ok' ? i.status.dns?.ipv4 : undefined;
   if (dns === 'missing' || dns === 'other') b.push(amber('dns', "Your server can't be reached on some networks", SERVER));
+  if (disk?.tone === 'amber') b.push(amber('disk', disk.text, SERVER));
   if (i.status?.kind === 'ok' && i.status.updateAvailable && !i.updating) b.push(amber('update', 'This app carries a newer version of the server', SERVER));
   if (i.updating) b.push(amber('updating', `Updating the server · ${elapsed(i.updating.startedAt, i.nowMs)}`, SERVER));
   if (i.appUpdate) b.push(amber('app-update', `Karto Wallet ${i.appUpdate} is out on GitHub`, { kind: 'github-releases' }));

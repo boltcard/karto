@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/boltcard/karto/server/internal/alerts"
+	"github.com/boltcard/karto/server/internal/disk"
 	"io"
 	"log"
 	"net/http"
@@ -57,6 +58,9 @@ type Money struct {
 	// Names says whether Host's A record points at this VM, for
 	// GET /api/v1/server; nil: the status says nothing of it.
 	Names *namecheck.Checker
+	// Disk is the server's disk as last looked at (package disk), for the
+	// wallet to say when it is nearly full; nil: no disk field.
+	Disk interface{ Reading() (disk.Reading, bool) }
 	// Push sends the owner phones' alerts and the test alert; its
 	// NtfyPublic is the server's own ntfy. nil: no push routes.
 	Push *alerts.Sender

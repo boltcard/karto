@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CarddClient } from './client';
-import { serverStatus, updateOutcome } from './status';
+import { parseDisk, serverStatus, updateOutcome } from './status';
 import { FakeCardd, vectorDeviceKey } from '../testing/fakeCardd';
 import { deviceKey } from '../native/deviceKey';
 import { vectors } from '../testing/vectors';
@@ -81,5 +81,21 @@ describe('updateOutcome', () => {
       ok: false,
       text: "The update ran, but the server can't be checked: certificate not ready",
     });
+  });
+});
+
+// A disk answer from a newer (or broken) cardd that isn't the shape is dropped, never shown.
+describe('parseDisk', () => {
+  const good = { freeBytes: 1_400_000_000, totalBytes: 10_700_000_000, freeableBytes: 3e9, rebuildHelps: true, level: 'low' };
+  it('takes the shape cardd sends, with or without a level and what a rebuild frees', () => {
+    expect(parseDisk(good)).toEqual(good);
+    expect(parseDisk({ freeBytes: 5e9, totalBytes: 1.07e10 })).toEqual({ freeBytes: 5e9, totalBytes: 1.07e10 });
+    expect(parseDisk({ ...good, level: 'critical' })).toMatchObject({ level: 'critical' });
+  });
+  it('drops anything else', () => {
+    for (const bad of [null, 'x', {}, { ...good, level: 'full' }, { ...good, freeBytes: '1' }, { ...good, freeBytes: -1 }, { ...good, totalBytes: NaN },
+      { ...good, rebuildHelps: undefined }, { ...good, freeableBytes: undefined }, { ...good, rebuildHelps: 'yes' }]) {
+      expect(parseDisk(bad)).toBeUndefined();
+    }
   });
 });

@@ -67,7 +67,7 @@ internal object AlertWords {
   private fun read(p: JSONObject): Alert? {
     if (p.optInt("v", 0) != 1) return null
     val kind = p.str("kind") ?: return null
-    if (kind !in listOf("received", "spent", "refused", "test", "hosting", "capped")) return null
+    if (kind !in listOf("received", "spent", "refused", "test", "hosting", "capped", "disk")) return null
     val account = p.str("account") ?: ""
     val name = p.str("name") ?: ""
     val card = p.str("card")
@@ -82,6 +82,12 @@ internal object AlertWords {
       // cardd's cap on unpaid invoices turned payers away (top-ups, refund links): the whole cap, or one address
       // whose payers have paid before. cardd says when, not this.
       "capped" -> "Some payments in were turned away: too many unpaid invoices just now"
+      // The server's disk nearly full (level low) or almost full (critical): the wallet's Server page says what to do.
+      "disk" -> if (p.str("level") == "critical") {
+        "${bytesWords(p.optLong("freeBytes"))} left: open Karto now"
+      } else {
+        "${bytesWords(p.optLong("freeBytes"))} left of ${bytesWords(p.optLong("totalBytes"))}: open Karto to free it up"
+      }
       else -> "Alerts work"
     }
     // The app's pages name an account as its API does: pool, hosting, shop, or a card's bare id (cardd's payload
@@ -90,6 +96,7 @@ internal object AlertWords {
     val link = when {
       kind == "refused" -> card?.let { "$SCHEME://account?id=${encode(it)}" }
       kind == "hosting" -> "$SCHEME://account?id=hosting"
+      kind == "disk" -> "$SCHEME://server"
       tx != null && pageAccount.isNotEmpty() -> "$SCHEME://payment?account=${encode(pageAccount)}&tx=$tx"
       else -> null
     }
@@ -97,6 +104,7 @@ internal object AlertWords {
       title = when (kind) {
         "test" -> "Karto"
         "hosting" -> "Hosting"
+        "disk" -> if (p.str("level") == "critical") "Server disk almost full" else "Server disk nearly full"
         else -> title(account, name)
       },
       text = text,
@@ -106,6 +114,15 @@ internal object AlertWords {
       atMs = if (p.has("at") && !p.isNull("at")) p.optLong("at") * 1000 else null,
       update = p.optBoolean("update", false),
     )
+  }
+
+  /**
+   * Bytes as the phones show them, decimal: GB with one decimal once that rounds to 1.0 GB (from 950,000,000 bytes),
+   * else whole MB, each to the nearest. Integer arithmetic, as cardd's vectors and the wallet's words: no float rounding.
+   */
+  internal fun bytesWords(n: Long): String {
+    val tenths = (n + 50_000_000) / 100_000_000
+    return if (tenths >= 10) "${tenths / 10}.${tenths % 10} GB" else "${(n + 500_000) / 1_000_000} MB"
   }
 
   /** The account's name: the card's ("Blue card"), the till's ("Shop · Till 1"), else the wallet's. */

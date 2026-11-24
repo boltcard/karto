@@ -36,6 +36,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/boltcard/karto/server/internal/alerts"
+	"github.com/boltcard/karto/server/internal/disk"
 	"io"
 	"log"
 	"net"
@@ -261,6 +262,11 @@ func newServer(args []string) (*server, error) {
 		return true
 	}
 	renewer.Alerts = sender // hosting's daily low-funding alert
+	// The disk: cardd's volume is on the VM's root filesystem, beside phoenixd's (mounted read-only) and the snapshots.
+	dataDir := filepath.Dir(*dbPath)
+	mon := &disk.Monitor{DataDir: dataDir, PhoenixDir: filepath.Dir(*pdConf), BackupsDir: filepath.Join(dataDir, "backups"),
+		Stat: disk.StatFS, Store: st, Alerts: sender, Now: time.Now, Log: logger}
+	money.Disk = mon
 	// Snapshots next to the database: /data/backups in the container.
 	snaps := &backup.Snapshotter{Store: st, Dir: filepath.Join(filepath.Dir(*dbPath), "backups"), Now: time.Now, Log: logger}
 	public := api.New(svc, auth, version, st, money, snaps)
@@ -273,6 +279,7 @@ func newServer(args []string) (*server, error) {
 			go ln.RunSweep(ctx)
 			go renewer.Run(ctx, l.Checked())
 			go snaps.Run(ctx)
+			go mon.Run(ctx)
 			go src.Run(ctx)
 			go sender.Run(ctx)
 			l.Run(ctx)
