@@ -5,7 +5,7 @@ import type { ServerLatest } from '../backup/backups';
 import type { CardState } from '../cardd/client';
 import type { MoneyRequest } from '../money/requests';
 import { isUnit, type Unit } from '../money/view';
-import type { OnboardingState } from '../onboarding/machine';
+import type { OnboardingState, Step, Waiting } from '../onboarding/machine';
 import { savedSteps } from '../onboarding/install';
 
 type Param = string | number | null;
@@ -19,6 +19,28 @@ export type SqlDb = {
 };
 
 const ONBOARDING = 'onboarding';
+
+/** A setup as an older app may have saved it: at the email step, waiting on it or on mail.tm, with its mail.tm fields. */
+type SavedOnboarding = Omit<OnboardingState, 'step' | 'waiting'> & {
+  step: Step | 'email';
+  waiting?: Waiting | 'email' | 'mailtm_busy';
+  mailtmAddress?: string;
+  emailLinksRefused?: string[];
+  emailLinksOpened?: { link: string; at: number }[];
+  emailBusyUntil?: number;
+  mailtmBusyUntil?: number;
+};
+
+/**
+ * An older app's setup, stopped at the email step (an update came in the middle of it), goes on at the order: the
+ * email step's error or wait is dropped with it, since an error left standing would hold the runner at a step that
+ * is gone. Its mail.tm fields are dropped wherever it stopped: nothing reads them now.
+ */
+function setUpAfterEmail(saved: SavedOnboarding): OnboardingState {
+  const { mailtmAddress: _a, emailLinksRefused: _r, emailLinksOpened: _o, emailBusyUntil: _e, mailtmBusyUntil: _m, step, waiting, error, ...s } = saved;
+  if (step === 'email') return { ...s, step: 'order' };
+  return { ...s, step, ...(error && { error }), ...(waiting && waiting !== 'email' && waiting !== 'mailtm_busy' && { waiting }) };
+}
 
 /**
  * What the phone remembers about a card, so a wipe works without the VM
@@ -226,10 +248,14 @@ export class AppStore {
     });
   }
 
-  /** The saved setup, its finished steps read as this app knows them (savedSteps: an older app's 'system'). */
+  /**
+   * The saved setup, read as this app knows it: its finished steps through savedSteps (an older app's 'system'), and
+   * an older app's email step, which LNVPS no longer needs, as the order it led to (setUpAfterEmail).
+   */
   async onboarding(): Promise<OnboardingState | null> {
-    const s = await this.get<OnboardingState>(ONBOARDING);
-    if (!s) return null;
+    const saved = await this.get<SavedOnboarding>(ONBOARDING);
+    if (!saved) return null;
+    const s = setUpAfterEmail(saved);
     const before = s.rebuild?.before;
     return {
       ...s,

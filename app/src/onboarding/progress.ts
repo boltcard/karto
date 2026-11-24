@@ -10,7 +10,6 @@ import { REFREEZE } from './serverPage';
 
 export const STEP_LABELS: Record<Step, string> = {
   country: 'Country',
-  email: 'Email',
   backup: 'Choose a backup',
   where: 'Choose where',
   order: 'Order the server',
@@ -23,7 +22,6 @@ export const STEP_LABELS: Record<Step, string> = {
 };
 
 const WAITING_TEXT: Record<Waiting, string> = {
-  email: 'Waiting for LNVPS’s email. Karto Wallet reads it for you.',
   payment: 'Waiting for the payment…',
   order_expiring: 'This order is about to expire. A new one is made once LNVPS deletes it…',
   boot: 'The server is starting…',
@@ -46,7 +44,6 @@ const WAITING_TEXT: Record<Waiting, string> = {
   reconnect: 'Your server isn’t answering yet. Trying again…',
   pay_days: 'Getting the invoice for the days chosen…',
   lnvps_busy: 'LNVPS is busy. Asking for the invoice again in a minute…',
-  mailtm_busy: "mail.tm, the inbox for LNVPS's email, is busy. Trying again in a minute…",
 };
 
 /**
@@ -72,7 +69,6 @@ export function dropLine(during: 'connect' | 'command' | 'upload', step?: Instal
 /** What a step is doing while it waits for nothing (the install's own steps say it themselves). */
 const STEP_WORKING: Record<Exclude<Step, 'install' | 'done'>, string> = {
   country: 'Setting the country on your LNVPS account…',
-  email: 'Making an inbox for LNVPS’s email…',
   backup: 'Looking for backups…',
   where: 'Asking LNVPS for your servers…',
   order: 'Asking LNVPS for a server…',
@@ -85,7 +81,6 @@ const STEP_WORKING: Record<Exclude<Step, 'install' | 'done'>, string> = {
 /** The heading over each step: what is happening. */
 const STEP_HEADINGS: Record<Step, string> = {
   country: 'Telling LNVPS your country',
-  email: 'Opening your LNVPS account',
   backup: 'Choose a backup',
   where: 'Choose where to rebuild',
   order: 'Ordering the server',
@@ -99,7 +94,7 @@ const STEP_HEADINGS: Record<Step, string> = {
 
 /** A step's name on the Done line. */
 const STEP_SHORT: Record<Step, string> = {
-  country: 'country', email: 'email', backup: 'backup', where: 'where', order: 'order', pay: 'payment', boot: 'start', retire: 'old server',
+  country: 'country', backup: 'backup', where: 'where', order: 'order', pay: 'payment', boot: 'start', retire: 'old server',
   install: 'install', pair: 'pairing', done: 'done',
 };
 
@@ -116,14 +111,14 @@ const findsServer = (s: OnboardingState) => !!s.restoring && !s.rebuild;
 
 /**
  * The steps the setup counts: the machine's for this state, without done. A rebuild's own step in a state with no
- * rebuild (the machine never makes one) is counted among all ten, so the number is never nought.
+ * rebuild (the machine never makes one) is counted among all nine, so the number is never nought.
  */
 const countedSteps = (s: OnboardingState): Step[] => runOrder(s, (stepsFor(s).includes(s.step) ? stepsFor(s) : STEPS).filter((x) => x !== 'done'));
 
 /**
  * The steps in the order this state runs them. A rebuild onto a new VM, or in place on another, runs the install's
  * steps that carry no secret before step 4 retires the old server: while they run, step 4 comes after the install,
- * so the count goes by the steps finished (install 8, retire 8, then install 9) and never names step 4 done early.
+ * so the count goes by the steps finished (install 7, retire 7, then install 8) and never names step 4 done early.
  */
 function runOrder(s: OnboardingState, steps: Step[]): Step[] {
   if (s.step !== 'install' || !s.rebuild || s.rebuild.retire || onOldVm(s) || !steps.includes('retire')) return steps;
@@ -140,7 +135,7 @@ export function stepHeading(s: OnboardingState): string {
 }
 
 /**
- * Where the setup stands: step n of the machine's steps (seven setting up, ten in a rebuild), and what TalkBack
+ * Where the setup stands: step n of the machine's steps (six setting up, nine in a rebuild), and what TalkBack
  * reads for the bar. A step the machine passes over keeps its number, so the count never shrinks.
  */
 export function setupProgress(s: OnboardingState): { n: number; of: number; label: string } {
@@ -168,7 +163,7 @@ export function doneSteps(s: OnboardingState, nowS: number, offsetMin: number): 
   });
 }
 
-/** The Done line, folded: "Done: country, email, order"; null while nothing is. */
+/** The Done line, folded: "Done: country, order, payment"; null while nothing is. */
 export function doneSummary(s: OnboardingState): string | null {
   const names = ranSteps(s).map((step) => (step === 'order' && findsServer(s) ? 'server found' : STEP_SHORT[step]));
   return names.length ? `Done: ${names.join(', ')}` : null;

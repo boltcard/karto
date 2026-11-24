@@ -32,7 +32,7 @@ The app runs these over SSH, in order:
 ~/card-app/install.sh seed        < 12 words # phoenixd seed, never replaced once set
 ~/card-app/install.sh issuer-key  < 32 hex   # cardd issuer key, never replaced once set
 ~/card-app/install.sh up                     # start, wait until healthy
-~/card-app/cardd-ctl meta set vm.id 1234     # and vm.host, account.pubkey, mailtm.address, ...
+~/card-app/cardd-ctl meta set vm.id 1234     # and vm.host, account.pubkey, backup.recipient, ...
 ~/card-app/cardd-ctl device add -pubkey <hex> -name "My phone"
 ```
 

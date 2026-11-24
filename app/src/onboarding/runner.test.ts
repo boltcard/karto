@@ -204,7 +204,7 @@ describe('OnboardingRunner', () => {
     await runner.start();
     off();
     expect(seen.at(-1)).toBe('done');
-    expect(new Set(seen)).toEqual(new Set(['email', 'order', 'pay', 'boot', 'install', 'pair', 'done']));
+    expect(new Set(seen)).toEqual(new Set(['order', 'pay', 'boot', 'install', 'pair', 'done']));
   });
 
   // The user leaves to pay in another wallet: polling stops in the background and starts

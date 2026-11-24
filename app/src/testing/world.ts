@@ -1,17 +1,16 @@
-// Wires the fakes into onboarding Deps: a fake LNVPS, mail.tm, SSH server and
-// clock, with LNVPS's verification email delivered to the fake inbox.
+// Wires the fakes into onboarding Deps: a fake LNVPS, SSH server, cardd and
+// clock.
 import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { expect } from 'vitest';
 import { AgeError, ageDecrypt, ageEncrypt } from '../backup/age';
 import type { ServerLatest, SnapshotSummary } from '../backup/backups';
 import { CarddClient } from '../cardd/client';
 import { deriveKeys } from '../keys/derive';
 import type { FetchFn } from '../lightning/lightning';
 import { LnvpsClient } from '../lnvps/client';
-import { MailTmClient } from '../mailtm/client';
 import type { Deps, OnboardingState } from '../onboarding/machine';
 import { FakeCardd, vectorDeviceKey } from './fakeCardd';
 import { FakeLnvps } from './fakeLnvps';
-import { FakeMailTm } from './fakeMailTm';
 import { FakeSsh } from './fakeSsh';
 import { json } from './http';
 import { memoryFiles } from './memoryFiles';
@@ -30,16 +29,13 @@ export const sealSummary = (x: SnapshotSummary, recipient: string) => ageEncrypt
 
 export function world() {
   const lnvps = new FakeLnvps();
-  const mail = new FakeMailTm();
   const ssh = new FakeSsh();
   ssh.scanKey = { keyType: HOST_KEY.key_type, publicKey: HOST_KEY.public_key };
   const cardd: FakeCardd = new FakeCardd((): number => w.nowMs).serve(ssh);
-  lnvps.onVerificationEmail = (address, link) => mail.deliver(address, 'Verify your email', `Open ${link} to verify.`);
   // One clock for the phone and LNVPS, moved by tests.
   lnvps.serverNow = () => w.nowMs;
   const w = {
     lnvps,
-    mail,
     ssh,
     cardd,
     healthy: true,
@@ -61,7 +57,12 @@ export function world() {
       return u.pathname === '/health' ? json(200, { ok: true, version: 'test' }) : other.cardd.http.fetch(url, init);
     }
     if (u.origin === 'https://api.lnvps.net') return lnvps.http.fetch(url, init);
-    if (u.origin === 'https://api.mail.tm') return mail.http.fetch(url, init);
+    if (u.hostname.endsWith('mail.tm')) {
+      // Set-up no longer uses mail.tm (LNVPS stopped asking for a verified email): any call to it fails the test
+      // that made it, even where the code under test catches the error thrown here.
+      expect.soft(url, 'a call to mail.tm').toBeUndefined();
+      throw new TypeError(`fetch failed: no host ${u.origin}`);
+    }
     if (u.pathname.startsWith('/api/v1/')) return cardd.http.fetch(url, init);
     if (u.pathname === '/health') {
       if (!w.healthy) throw new TypeError('fetch failed: certificate not ready');
@@ -73,7 +74,6 @@ export function world() {
   const deps: Deps = {
     keys,
     lnvps: new LnvpsClient({ fetch, nostrSecretKey: keys.nostrPrivateKey, now: () => w.nowMs }),
-    mailtm: new MailTmClient({ fetch }),
     fetch,
     ssh: (o) => (w.others.get(o.host)?.ssh ?? ssh).connect(o),
     scanHostKey: ssh.scanHostKey,

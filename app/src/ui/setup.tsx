@@ -9,7 +9,7 @@ import { alpha, AMOUNT, TYPE, type Theme } from './theme';
 import { useStyles, useTheme } from './useTheme';
 
 /**
- * Where a run of steps stands: text ("Step 4 of 7", "Word 2 of 3") over a bar with a part for each step, those up
+ * Where a run of steps stands: text ("Step 4 of 6", "Word 2 of 3") over a bar with a part for each step, those up
  * to n in orange. stopped (a hold whose card moved away): part n, where it stopped, is amber
  * (look.ts partLook). One element for TalkBack, read once as label.
  */
@@ -70,7 +70,7 @@ export function WordChoices({ choices, picked, onPick, disabled }: { choices: st
 }
 
 /**
- * What is done, at the foot of the setup screen: one line ("Done: country, email, order") that unfolds into a panel
+ * What is done, at the foot of the setup screen: one line ("Done: country, order, payment") that unfolds into a panel
  * with a row for each finished step, its label and what it settled (onboarding/progress.ts doneSummary, doneSteps).
  */
 export function DoneFold({ summary, rows, open, onToggle }: { summary: string; rows: { label: string; line: string | null }[]; open: boolean; onToggle: () => void }) {

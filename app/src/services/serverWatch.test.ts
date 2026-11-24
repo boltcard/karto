@@ -295,7 +295,7 @@ function world(state: OnboardingState = saved()) {
 
 describe('ServerWatch', () => {
   it('does nothing until onboarding is done', async () => {
-    const { w, watch } = world(saved({ step: 'email' }));
+    const { w, watch } = world(saved({ step: 'order' }));
     const release = watch.watch();
     await w.clock.advance(10 * MINUTE);
     expect([w.made, w.at(HOST).calls, w.keyChecks, w.clock.pending()]).toEqual([[], [], [], 0]);
@@ -1326,7 +1326,7 @@ describe("ServerWatch's slower checks and actions", () => {
   });
 
   it('does nothing for Update server or Retire before it holds a server', async () => {
-    const { w, watch } = world(saved({ step: 'email' }));
+    const { w, watch } = world(saved({ step: 'order' }));
     await watch.update();
     await watch.retireOld(1013);
     expect([w.updates, w.awake, w.log, watch.snapshot().update]).toEqual([0, [], [], null]);

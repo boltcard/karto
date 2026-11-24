@@ -9,8 +9,7 @@ import type { BackupFiles, ServerLatest, SnapshotSummary } from '../backup/backu
 import { CarddError, isRevoked, type CarddClient } from '../cardd/client';
 import type { DerivedKeys } from '../keys/derive';
 import { bolt11ExpiresAtMs, isNetworkFailure, LnurlHttpError, type FetchFn } from '../lightning/lightning';
-import { getVmOrNull, LnvpsClient, LnvpsError, vatGuard, type Account, type Vm } from '../lnvps/client';
-import { MailTmClient, MailTmError, MAX_VERIFY_LINKS } from '../mailtm/client';
+import { getVmOrNull, LnvpsClient, LnvpsError, vatGuard, type Vm } from '../lnvps/client';
 import { keyId } from '../cardd/deviceauth';
 import { hexToBytes } from '@noble/hashes/utils.js';
 import { bundleSha } from '../deploy/bundle';
@@ -31,7 +30,7 @@ import { HostKeyMismatchError, SshAuthError, SshDropped, type PinnedHostKey, typ
 // the new one is never confirmed.
 // In place on the old server's own VM, step 4 comes first, its final snapshot before the wipe, once LNVPS has
 // confirmed that VM's key (boot waits for it).
-export const STEPS = ['country', 'email', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done'] as const;
+export const STEPS = ['country', 'backup', 'where', 'order', 'pay', 'boot', 'retire', 'install', 'pair', 'done'] as const;
 export type Step = (typeof STEPS)[number];
 export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
 
@@ -44,9 +43,9 @@ export const REBUILD_STEPS: readonly Step[] = ['backup', 'where', 'retire'];
  * host_key_confirm for LNVPS to publish the SSH key of a server trusted on first use, before any secret goes to it.
  */
 export type Waiting =
-  | 'email' | 'payment' | 'order_expiring' | 'boot' | 'host_keys' | 'host_key_confirm' | 'health' | 'network' | 'old_unreachable'
+  | 'payment' | 'order_expiring' | 'boot' | 'host_keys' | 'host_key_confirm' | 'health' | 'network' | 'old_unreachable'
   | 'choose_vm' | 'choose_backup' | 'confirm_older' | 'choose_where' | 'confirm_retire' | 'old_vm_starting' | 'confirm_reinstall'
-  | 'confirm_expired' | 'old_payment' | 'recovery_check' | 'reconnect' | 'pay_days' | 'lnvps_busy' | 'mailtm_busy';
+  | 'confirm_expired' | 'old_payment' | 'recovery_check' | 'reconnect' | 'pay_days' | 'lnvps_busy';
 export type ErrorKind = 'retry' | 'fatal' | 'wrong_phrase';
 
 /**
@@ -155,18 +154,6 @@ export type OnboardingState = {
   payPrice?: { vmId: number; satPerDay: number };
   /** After LNVPS answered 429 to an invoice: none is asked for before this (ms). */
   invoiceBusyUntil?: number;
-  mailtmAddress?: string;
-  /** Verification links LNVPS refused (400, 404 or 410): never opened again (at most 100, the newest kept). */
-  emailLinksRefused?: string[];
-  /**
-   * Verification links that opened without verifying this account, or failed unrefused in a pass that found a
-   * full five, and when (ms): passed over for 10 minutes.
-   */
-  emailLinksOpened?: { link: string; at: number }[];
-  /** After LNVPS answered 429: nothing is opened before this (ms). */
-  emailBusyUntil?: number;
-  /** After mail.tm answered 429: mail.tm is asked nothing before this (ms). */
-  mailtmBusyUntil?: number;
   sshKeyId?: number;
   vmId?: number;
   /** When LNVPS deletes the order if it is still unpaid (ms, LNVPS's clock): the pay screen's countdown. */
@@ -258,8 +245,7 @@ export function reconcileDevice(s: OnboardingState, publicKeyHex: string): Onboa
 export type Deps = {
   keys: DerivedKeys;
   lnvps: LnvpsClient;
-  mailtm: MailTmClient;
-  /** Plain HTTPS: the verification link and the new server's /health. */
+  /** Plain HTTPS: the new server's /health. */
   fetch: FetchFn;
   ssh: SshConnect;
   /** The server's host key without logging in, for trust on first use. */
@@ -339,7 +325,6 @@ export async function advance(state: OnboardingState, deps: Deps): Promise<Onboa
   const step = async (): Promise<OnboardingState> => {
     switch (s.step) {
       case 'country': return await country(s, d);
-      case 'email': return await email(s, d);
       case 'backup': return await chooseBackup(s, d);
       case 'where': return await chooseWhere(s, d);
       case 'order': return await order(s, d);
@@ -444,12 +429,8 @@ function classify(e: unknown, s: OnboardingState): { kind: ErrorKind; message: s
         'If it keeps happening, the server was set up with another recovery phrase.',
     };
   }
-  if (e instanceof MailTmError) return { kind: 'retry', message: e.plain ?? MAILTM_FAILED(e.status) };
   return { kind: 'retry', message: e instanceof Error ? e.message : String(e) };
 }
-
-/** A mail.tm failure (other than its rate limit, which is waited out) in words. */
-export const MAILTM_FAILED = (status: number) => `mail.tm, the inbox for LNVPS's email, didn't answer as it should (HTTP ${status}). Try again in a little while.`;
 
 async function country(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   if (!s.country) throw new StepError('fatal', 'Choose a country first');
@@ -460,117 +441,6 @@ async function country(s: OnboardingState, d: Deps): Promise<OnboardingState> {
   } catch (e) {
     if (e instanceof LnvpsError && e.status === 400) throw new StepError('fatal', e.message);
     throw e;
-  }
-  return { ...s, step: 'email' };
-}
-
-/** The most refused verification links remembered (emailLinksRefused), the newest kept: their messages are deleted, so few build up. */
-const MAX_REFUSED_LINKS = 100;
-/** What LNVPS answers a token it doesn't know: only these refuse a link for good. Any other 4xx may be passing (a firewall's 403). */
-const LINK_REFUSED = [400, 404, 410];
-/**
- * How long a link is passed over that opened without verifying this account (getAccount may have lagged),
- * or that failed without being refused in a pass that found a full five (more may wait behind it).
- */
-const OPENED_PASS_OVER_MS = 10 * 60 * 1000;
-/** After a 429 nothing is opened for this long: LNVPS's limit (10 a minute) may count the requests it rejects. */
-export const EMAIL_BUSY_WAIT_MS = 60 * 1000;
-/** After mail.tm's 429 it is asked nothing for this long, as LNVPS after its own. */
-export const MAILTM_BUSY_WAIT_MS = 60 * 1000;
-
-/**
- * The email step. An account LNVPS already has with this phrase's address, verified (a restore, or set-up started
- * over), needs nothing of mail.tm: the address's name is the phrase's, whatever mail.tm's domain was then. Otherwise
- * mail.tm's rate limit (429), at any of its calls, is a wait of a minute that the step sits out by itself, from the
- * latest state (the address kept), never an error.
- */
-async function email(s: OnboardingState, d: Deps): Promise<OnboardingState> {
-  const account = await d.lnvps.getAccount();
-  if (account.email_verified && account.email && phrasesAddress(account.email, d.keys.mailtmName)) {
-    return { ...s, mailtmAddress: account.email, mailtmBusyUntil: undefined, emailLinksRefused: undefined, emailLinksOpened: undefined, emailBusyUntil: undefined, step: 'order' };
-  }
-  if (s.mailtmBusyUntil !== undefined && d.now() < s.mailtmBusyUntil) return { ...s, waiting: 'mailtm_busy' };
-  let current: OnboardingState = { ...s, mailtmBusyUntil: undefined };
-  try {
-    return await emailNow(current, d, account, (x) => (current = x));
-  } catch (e) {
-    if (e instanceof MailTmError && e.status === 429) return { ...current, mailtmBusyUntil: d.now() + MAILTM_BUSY_WAIT_MS, waiting: 'mailtm_busy' };
-    throw e;
-  }
-}
-
-/** Whether an email address is this phrase's mail.tm inbox: its name (before the last @) is the phrase's, in any case. */
-const phrasesAddress = (email: string, name: string) => email.slice(0, email.lastIndexOf('@')).toLowerCase() === name.toLowerCase();
-
-/** The email step's work, from the account as read; kept: told each state worth keeping, for a 429's wait to start from. */
-async function emailNow(s: OnboardingState, d: Deps, read: Account, kept: (s: OnboardingState) => void): Promise<OnboardingState> {
-  if (!s.mailtmAddress) {
-    s = { ...s, mailtmAddress: `${d.keys.mailtmName}@${await d.mailtm.domain()}` };
-    kept(s);
-  }
-  const address = s.mailtmAddress!;
-  // Open the inbox before setting it on the account, so the email can't arrive first.
-  const token = await d.mailtm.open(address, d.keys.mailtmPassword);
-  await d.checkpoint(s);
-  let account = read;
-  if (account.email !== address) {
-    await d.lnvps.updateAccount({ email: address });
-    return { ...s, waiting: 'email' };
-  }
-  if (!account.email_verified) {
-    // Every LNVPS link in the inbox, in order, each opened once: one LNVPS refuses as it does an unknown
-    // token (400, 404, 410: expired, or a look-alike's) is remembered and passed over without counting
-    // toward the pass's five, so look-alikes can't spend LNVPS's 10 verify-email requests a minute every
-    // pass nor fill the five ahead of its own link; a message holding only such links is deleted at the
-    // next pass (a failed delete is ignored: the list still covers it), so a flood can't keep LNVPS's
-    // email off mail.tm's first page. One that opened but didn't verify this account (another account's
-    // token) is passed over for 10 minutes, its message kept. A 429 ends the pass, and nothing is opened
-    // for a minute (LNVPS's limit has tripped). Any other 4xx, a 5xx or a network failure leaves the link
-    // for the next pass, the 4xx and 5xx shown as an error with Try again; but when the pass found a full
-    // five, those failing are passed over for 10 minutes too, so five failing look-alikes can't take every
-    // pass's five ahead of LNVPS's own link.
-    const now = d.now();
-    if (s.emailBusyUntil !== undefined && now < s.emailBusyUntil) return { ...s, waiting: 'email' };
-    let refused = s.emailLinksRefused ?? [];
-    let opened = (s.emailLinksOpened ?? []).filter((o) => now - o.at < OPENED_PASS_OVER_MS);
-    let failed: number | undefined;
-    let busy = false;
-    const scan = await d.mailtm.findVerificationLinks(token, refused, opened.map((o) => o.link));
-    for (const id of scan.spent) await d.mailtm.deleteMessage(token, id).catch(() => {});
-    const full = scan.links.length >= MAX_VERIFY_LINKS;
-    const passOver = (link: string) => (opened = [...opened, { link, at: now }].slice(-MAX_REFUSED_LINKS));
-    for (const { link } of scan.links) {
-      const res = await d.fetch(link);
-      if (LINK_REFUSED.includes(res.status)) {
-        refused = [...refused, link].slice(-MAX_REFUSED_LINKS);
-        continue;
-      }
-      if (res.status === 429) {
-        busy = true;
-        break;
-      }
-      if (!res.ok) {
-        failed = res.status;
-        if (full) passOver(link);
-        continue;
-      }
-      account = await d.lnvps.getAccount();
-      if (account.email_verified) break;
-      passOver(link);
-    }
-    if (account.email_verified) s = { ...s, emailLinksRefused: undefined, emailLinksOpened: undefined, emailBusyUntil: undefined };
-    else {
-      s = {
-        ...s,
-        emailLinksRefused: refused.length ? refused : undefined,
-        emailLinksOpened: opened.length ? opened : undefined,
-        emailBusyUntil: busy ? now + EMAIL_BUSY_WAIT_MS : undefined,
-      };
-      // Returned as state, not thrown, so the refused links are saved with it. After a 429 the polls go on
-      // (a minute later), whatever failed before it: an error would stop them until Try again.
-      if (failed !== undefined && !busy) return { ...s, error: { kind: 'retry', message: `opening the verification link gave HTTP ${failed}` } };
-      return { ...s, waiting: 'email' };
-    }
   }
   return { ...s, step: 'order' };
 }
@@ -820,7 +690,6 @@ export function installOptions(s: OnboardingState, keys: DerivedKeys, bundle: Bu
       'vm.host': s.host!.hostname,
       'vm.ipv4': s.host!.ipv4,
       'account.pubkey': keys.nostrPublicKey,
-      'mailtm.address': s.mailtmAddress!,
       'bundle.sha256': bundleSha(bundle),
       // The backup public key: cardd encrypts its snapshots to it.
       'backup.recipient': keys.backupAgeRecipient,

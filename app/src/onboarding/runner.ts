@@ -6,7 +6,6 @@ import { advance, initialState, KEEPS_DROPPING, NEWER_BACKUP, PAY_DAYS_SETTLE_MS
 
 /** How long to wait before asking again, by what we are waiting for. */
 export const WAIT_MS: Record<Waiting, number> = {
-  email: 5_000,
   payment: 3_000,
   order_expiring: 30_000,
   boot: 10_000,
@@ -34,8 +33,6 @@ export const WAIT_MS: Record<Waiting, number> = {
   pay_days: PAY_DAYS_SETTLE_MS,
   // The pay step asks LNVPS nothing until the 429's minute is up.
   lnvps_busy: 10_000,
-  // The email step asks mail.tm nothing until its 429's minute is up.
-  mailtm_busy: 10_000,
 };
 
 /** After the first, second and third drop in a row (the fourth stops the step: machine.ts DROPS_WAITED). */

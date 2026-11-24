@@ -41,6 +41,33 @@ describe('AppStore', () => {
     expect(back!.rebuild!.before!.installed).toEqual(['upload', 'first-boot', 'swap', 'docker', 'docker-setup', 'prepare']);
   });
 
+  // LNVPS no longer asks for a verified email, so the email step is gone: a setup an update stopped there goes on.
+  it("reads a setup an older app saved at the email step as one at the order, its error and mail.tm fields dropped", async () => {
+    const store = await AppStore.open(nodeSqlite());
+    const old = {
+      ...initialState('GBR'), step: 'email', mailtmAddress: 'abc@example.com', emailLinksRefused: ['https://x/1'],
+      emailLinksOpened: [{ link: 'https://x/2', at: 5 }], emailBusyUntil: 6, mailtmBusyUntil: 7,
+      error: { kind: 'retry', message: "mail.tm didn't answer" },
+    };
+    await store.saveOnboarding(old as unknown as OnboardingState);
+    expect(await store.onboarding()).toStrictEqual({ ...initialState('GBR'), step: 'order' });
+  });
+
+  it("drops an older app's email or mail.tm wait and its mail.tm fields at any step, and keeps the rest", async () => {
+    const store = await AppStore.open(nodeSqlite());
+    const s = { ...initialState('GBR'), step: 'order' as const, sshKeyId: 3 };
+    await store.saveOnboarding({ ...s, waiting: 'mailtm_busy', mailtmBusyUntil: 7 } as unknown as OnboardingState);
+    expect(await store.onboarding()).toStrictEqual(s);
+    // A wait or an error this app still knows stays as it was.
+    const error = { kind: 'retry' as const, message: 'LNVPS is busy' };
+    await store.saveOnboarding({ ...s, waiting: 'lnvps_busy', error, mailtmAddress: 'abc@example.com' } as unknown as OnboardingState);
+    expect(await store.onboarding()).toStrictEqual({ ...s, waiting: 'lnvps_busy', error });
+    // A finished setup keeps its step, and loses only the address it no longer uses.
+    const done = { ...initialState('GBR'), step: 'done' as const, vmId: 1001 };
+    await store.saveOnboarding({ ...done, mailtmAddress: 'abc@example.com' } as unknown as OnboardingState);
+    expect(await store.onboarding()).toStrictEqual(done);
+  });
+
   // A connection expo-sqlite had destroyed stayed dead until the app was stopped; Try again opens a new one.
   describe('reconnect', () => {
     /** A connection that can be made to fail every call, as expo-sqlite's did once its native binding was gone. */

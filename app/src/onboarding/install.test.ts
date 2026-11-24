@@ -20,7 +20,7 @@ const base = {
   host: 'vm-1001.lnvps.cloud',
   phoenixdSeed: 'prosper short ramp prepare exchange stove life snack client enough purpose fold',
   issuerKey: '866a12e42e31a09aa8ca4f25a02e999e',
-  meta: { 'vm.id': '1001', 'vm.host': 'vm-1001.lnvps.cloud', 'vm.ipv4': '45.67.89.164', 'mailtm.address': "o'brien@uberip.com" },
+  meta: { 'vm.id': '1001', 'vm.host': 'vm-1001.lnvps.cloud', 'vm.ipv4': '45.67.89.164', 'wallet.name': "o'brien" },
 };
 
 const session = async (ssh: FakeSsh) =>
@@ -145,7 +145,7 @@ describe('install', () => {
       "sh card-app/cardd-ctl meta set 'vm.id' '1001'",
       "sh card-app/cardd-ctl meta set 'vm.host' 'vm-1001.lnvps.cloud'",
       "sh card-app/cardd-ctl meta set 'vm.ipv4' '45.67.89.164'",
-      `sh card-app/cardd-ctl meta set 'mailtm.address' 'o'\\''brien@uberip.com'`,
+      `sh card-app/cardd-ctl meta set 'wallet.name' 'o'\\''brien'`,
     ]);
     expect(ssh.commands[3].stdin).toBe(`${'aa'.repeat(32)}  install.sh\n${'bb'.repeat(32)}  bin/cardd\n`);
     expect(ssh.commands[9].stdin).toBe(base.phoenixdSeed);

@@ -22,7 +22,6 @@ import { deriveKeys, type DerivedKeys } from '../keys/derive';
 import { withDownloadTimeout, withTimeout, type FetchFn } from '../lightning/lightning';
 import { LnvpsClient } from '../lnvps/client';
 import { hostingSyncer, syncHosting } from '../money/hosting';
-import { MailTmClient } from '../mailtm/client';
 import { deviceKey, type DeviceKey } from '../native/deviceKey';
 import { deviceName } from '../native/deviceName';
 import { nativeNfc, type Nfc } from '../native/nfc';
@@ -150,7 +149,6 @@ export function onboardingDeps(sv: Services, keys: DerivedKeys, publicKeyHex: st
   return {
     keys,
     lnvps: new LnvpsClient({ fetch: fetchFn, nostrSecretKey: keys.nostrPrivateKey }),
-    mailtm: new MailTmClient({ fetch: fetchFn }),
     fetch: fetchFn,
     ssh: nativeSsh(sv.native),
     scanHostKey: nativeScanHostKey(sv.native),

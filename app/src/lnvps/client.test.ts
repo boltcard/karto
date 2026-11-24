@@ -48,7 +48,6 @@ describe('LnvpsClient', () => {
   it('orders a VM, prices it and gets an invoice for its Lightning address', async () => {
     const { fake, client } = setup();
     fake.serverNow = () => 1_790_000_000_000; // the invoice carries the server's time
-    fake.account.email_verified = true;
     fake.account.country_code = 'GBR'; // no VAT
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await client.orderVm(7, 6, key.id);
@@ -63,7 +62,6 @@ describe('LnvpsClient', () => {
   // The project's LNVPS referral code goes with every order (LNVPS's CustomVmOrder.ref_code).
   it('orders a VM with the project\'s referral code', async () => {
     const { fake, client } = setup();
-    fake.account.email_verified = true;
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     await client.orderVm(7, 6, key.id);
     const order = fake.http.requests.find((r) => r.method === 'POST' && r.url.endsWith('/api/v1/vm/custom-template'));
@@ -74,7 +72,6 @@ describe('LnvpsClient', () => {
   it('gets LNVPS\'s own Lightning invoice for one billing period', async () => {
     const { fake, client } = setup();
     fake.serverNow = () => 1_790_000_000_000;
-    fake.account.email_verified = true;
     await client.setCountry('GBR'); // no VAT
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await client.orderVm(7, 6, key.id);
@@ -100,7 +97,6 @@ describe('LnvpsClient', () => {
   // LNVPS had the first copy, and refused the second as a replay. Sign afresh and send again.
   it('signs again when the network delivered a request twice', async () => {
     const fake = new FakeLnvps();
-    fake.account.email_verified = true;
     const plain = new LnvpsClient({ fetch: fake.http.fetch, nostrSecretKey: vectors.phrase.nostrPrivateKey });
     const key = await plain.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await plain.orderVm(7, 6, key.id);
@@ -122,7 +118,6 @@ describe('LnvpsClient', () => {
   // A POST the server already acted on must not be sent again: that would order a second VM.
   it('does not send a refused POST again', async () => {
     const fake = new FakeLnvps();
-    fake.account.email_verified = true;
     let doubled = false;
     const client = new LnvpsClient({
       fetch: async (url, init) => {
@@ -143,7 +138,6 @@ describe('LnvpsClient', () => {
   // yet far enough from the Date header to look like skew. Only a timestamp refusal proves it wasn't.
   it('does not send a refused POST again even when the phone clock looks off', async () => {
     const fake = new FakeLnvps();
-    fake.account.email_verified = true;
     const phone = Date.UTC(2026, 9, 3, 12, 0, 0);
     fake.serverNow = () => phone + 40_000;
     let doubled = false;
@@ -183,7 +177,6 @@ describe('LnvpsClient', () => {
   it('starts and re-installs a VM, and reads when an expired one is deleted', async () => {
     const { fake, client } = setup();
     fake.serverNow = () => Date.UTC(2026, 9, 6, 12, 0, 0);
-    fake.account.email_verified = true;
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await client.orderVm(7, 6, key.id);
     fake.pay(vm.id);
@@ -208,7 +201,6 @@ describe('LnvpsClient', () => {
 
   it('reads a VM LNVPS deleted, or never had, as none', async () => {
     const { fake, client } = setup();
-    fake.account.email_verified = true;
     const key = await client.addSshKey('card-app', vectors.phrase.sshAuthorizedKey);
     const vm = await client.orderVm(7, 6, key.id);
     expect((await getVmOrNull(client, vm.id))?.id).toBe(vm.id);
@@ -224,7 +216,7 @@ describe('LnvpsClient', () => {
     const err = await client.orderVm(7, 6, 1).catch((e) => e);
     expect(err).toBeInstanceOf(LnvpsError);
     expect(err.status).toBe(400);
-    expect(err.message).toContain('Email must be verified');
+    expect(err.message).toContain('unknown ssh key');
   });
 });
 
