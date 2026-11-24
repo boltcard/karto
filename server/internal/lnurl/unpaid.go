@@ -28,10 +28,14 @@ import (
 // unless addresses real payers made known (a wallet's servers) are used. A
 // known client refused at its own share in both lanes is a stranger again.
 //
-// It is kept in memory: a restart forgets the count and the known clients,
-// which a stranger can't cause, and at most doubles a window's rows when it
-// happens. The day's sum is counted from a client's first payment in it, so
-// a total split across a restart, or across that day's end, may fall short.
+// It is kept in memory while cardd runs. A clean stop (an update, a restart,
+// a reboot) saves it (Save) to a file beside the database, read and deleted
+// at the next start (Load): that file holds up to KnownMax clients'
+// addresses, part-payers' too, only while cardd is down. A crash forgets
+// the count and the known clients, which a stranger can't cause, and at most
+// doubles a window's rows when it happens; an invoice being made at a stop
+// isn't counted after it. The day's sum is counted from a client's first
+// payment in it, so a total split across that day's end may fall short.
 type UnpaidCap struct {
 	l   CapLimits
 	now func() time.Time

@@ -42,9 +42,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/boltcard/karto/server/internal/api"
@@ -112,16 +115,15 @@ func runWithStdin(args []string, stdin io.Reader, out io.Writer) error {
 			return err
 		}
 		defer srv.cleanup()
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go srv.run(ctx)
-		errs := make(chan error, 2)
-		// The webhook port is only for phoenixd, inside the compose network;
-		// Caddy proxies the public one.
-		go func() { errs <- newHTTPServer(srv.webhookAddr, srv.webhook).ListenAndServe() }()
-		go func() { errs <- newHTTPServer(srv.addr, srv.public).ListenAndServe() }()
-		fmt.Fprintf(out, "cardd %s listening on %s (phoenixd webhook on %s)\n", version, srv.addr, srv.webhookAddr)
-		return <-errs
+		// docker stop's SIGTERM (or Ctrl-C) stops it cleanly, saving what it
+		// keeps in memory; a second one kills it at once.
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+		defer stop()
+		go func() {
+			<-ctx.Done()
+			stop()
+		}()
+		return srv.serve(ctx, out)
 	case "device":
 		return device(args[1:], out)
 	case "meta":
@@ -151,6 +153,12 @@ type server struct {
 	renewer           *renew.Renewer
 	ledger            *ledger.Ledger
 	rates             *rates.Source
+	unpaid            *lnurl.UnpaidCap // kept in capFile, beside the database, while cardd is down
+	capFile           string
+	log               *log.Logger
+
+	ready             chan struct{} // closed once serve listens, at pubAddr and hookAddr
+	pubAddr, hookAddr net.Addr
 }
 
 // newServer parses serve flags and builds the handlers.
@@ -275,20 +283,36 @@ func newServer(args []string) (*server, error) {
 	webhook.Handle("POST /phoenixd", ln.Webhook(conf.WebhookSecret))
 	return &server{
 		public: public, webhook: webhook, addr: *addr, webhookAddr: *webhookAddr,
+		// run returns once every job has stopped, so nothing changes the
+		// cap or the database after serve saves the one and closes the other.
 		run: func(ctx context.Context) {
-			go ln.RunSweep(ctx)
-			go renewer.Run(ctx, l.Checked())
-			go snaps.Run(ctx)
-			go mon.Run(ctx)
-			go src.Run(ctx)
-			go sender.Run(ctx)
+			var jobs sync.WaitGroup
+			for _, job := range []func(){
+				func() { ln.RunSweep(ctx) },
+				func() { renewer.Run(ctx, l.Checked()) },
+				func() { snaps.Run(ctx) },
+				func() { mon.Run(ctx) },
+				func() { src.Run(ctx) },
+				func() { sender.Run(ctx) },
+			} {
+				jobs.Add(1)
+				go func() {
+					defer jobs.Done()
+					job()
+				}()
+			}
 			l.Run(ctx)
+			jobs.Wait()
 		},
 		cleanup: func() { st.Close() },
 		store:   st,
 		renewer: renewer,
 		ledger:  l,
 		rates:   src,
+		unpaid:  ln.Unpaid,
+		capFile: filepath.Join(filepath.Dir(*dbPath), "unpaid-cap.json"),
+		log:     logger,
+		ready:   make(chan struct{}),
 	}, nil
 }
 
