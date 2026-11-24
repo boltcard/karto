@@ -150,7 +150,8 @@ type Server struct {
 	// cap for both (nil: no cap). See InvoiceUnpaidCap.
 	Unpaid *UnpaidCap
 	// Capped is told, for the owner's alert, when the unpaid cap turns a
-	// payer away: own false for the whole cap (at once, then after an hour,
+	// payer away: own false for the strangers' places or the known clients'
+	// full as a whole (each on its own schedule: at once, then after an hour,
 	// six hours, and once a day while it goes on), own true for a known
 	// client over its own share (a wallet's servers many payers share; at
 	// most once a day). A stranger over its own share isn't told of: it may
@@ -165,15 +166,42 @@ type Server struct {
 	limitSince  int       // invoices refused since then
 	cappedSaid  time.Time // the same for the unpaid cap
 	cappedSince int
-	wholeTold   time.Time // when Capped was last told of the whole cap
-	wholeLast   time.Time // the whole cap's last refusal
-	wholeStep   int       // the gap (cappedGaps) before the whole cap is told again
-	ownTold     time.Time // when Capped was last told of a known client's share
+	whole       cappedGate // the strangers' places full
+	knownWhole  cappedGate // the known clients' places full
+	ownTold     time.Time  // when Capped was last told of a known client's share
 }
 
 // cappedGaps are the waits between the whole cap's alerts while a flood goes
 // on: an hour, six, then a day.
 var cappedGaps = [...]time.Duration{time.Hour, 6 * time.Hour, 24 * time.Hour}
+
+// cappedGate is when a lane full as a whole was last told of and refused,
+// and the gap (cappedGaps) before it is told again.
+type cappedGate struct {
+	told, last time.Time
+	step       int
+}
+
+// next records a refusal at now and says whether to tell of it (only when
+// telling is possible), with how to undo that if the alert isn't queued: at
+// once, then after cappedGaps while refusals go on; a refusal more than an
+// hour after the last starts afresh. Called under limitLog.
+func (g *cappedGate) next(now time.Time, can bool) (bool, func()) {
+	fresh := g.last.IsZero() || now.Sub(g.last) > time.Hour
+	if fresh {
+		g.step = 0
+	}
+	g.last = now
+	if !can || !(fresh || g.told.IsZero() || now.Sub(g.told) >= cappedGaps[g.step]) {
+		return false, nil
+	}
+	told, step := g.told, g.step
+	if !fresh && !g.told.IsZero() {
+		g.step = min(g.step+1, len(cappedGaps)-1)
+	}
+	g.told = now
+	return true, func() { g.told, g.step = told, step }
+}
 
 // InvoiceLimit is cardd's limit on the invoices the public callbacks make,
 // per client and overall. The overall bucket is what bounds phoenixd: 60 at
@@ -249,9 +277,10 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 		return bolt11, hash, true, err
 	}
 	client := ratelimit.ClientKey(r)
-	if free, r := s.Unpaid.Reserve(client); !free {
-		s.sayCapped(r)
-		w.Header().Set("Retry-After", strconv.FormatInt(int64((r.Retry+time.Second-1)/time.Second), 10))
+	lane, free, refusal := s.Unpaid.Reserve(client)
+	if !free {
+		s.sayCapped(refusal)
+		w.Header().Set("Retry-After", strconv.FormatInt(int64((refusal.Retry+time.Second-1)/time.Second), 10))
 		writeJSONStatus(w, http.StatusTooManyRequests, map[string]string{"status": "ERROR",
 			"reason": "This server has too many unpaid invoices just now. Try again later."})
 		return "", "", false, nil
@@ -259,12 +288,12 @@ func (s *Server) makeInvoice(w http.ResponseWriter, r *http.Request, amountSat i
 	// The place is given back unless an invoice is recorded in it, whatever happens (a panic too).
 	defer func() {
 		if hash == "" {
-			s.Unpaid.Release(client)
+			s.Unpaid.Release(client, lane)
 		}
 	}()
 	bolt11, hash, err = s.Invoices.CreateInvoice(ctx, amountSat, descriptionHash, externalID, invoiceExpiry)
 	if hash != "" {
-		s.Unpaid.Made(client, hash)
+		s.Unpaid.Made(client, lane, hash)
 	}
 	return bolt11, hash, true, err
 }
@@ -284,20 +313,10 @@ func (s *Server) sayCapped(r CapRefusal) {
 	var tell, own bool
 	var undo func()
 	switch {
+	case r.Overall && r.Known:
+		tell, undo = s.knownWhole.next(now, s.Capped != nil)
 	case r.Overall:
-		fresh := s.wholeLast.IsZero() || now.Sub(s.wholeLast) > time.Hour
-		if fresh {
-			s.wholeStep = 0
-		}
-		s.wholeLast = now
-		if s.Capped != nil && (fresh || s.wholeTold.IsZero() || now.Sub(s.wholeTold) >= cappedGaps[s.wholeStep]) {
-			told, step := s.wholeTold, s.wholeStep
-			undo = func() { s.wholeTold, s.wholeStep = told, step }
-			if !fresh && !s.wholeTold.IsZero() {
-				s.wholeStep = min(s.wholeStep+1, len(cappedGaps)-1)
-			}
-			s.wholeTold, tell = now, true
-		}
+		tell, undo = s.whole.next(now, s.Capped != nil)
 	case r.Known:
 		if s.Capped != nil && (s.ownTold.IsZero() || now.Sub(s.ownTold) >= 24*time.Hour) {
 			told := s.ownTold

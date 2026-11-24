@@ -8,29 +8,47 @@ import (
 	"github.com/boltcard/karto/server/internal/lnurl"
 )
 
-// capAt is a cap with small numbers on a clock the test moves: strangers 4 overall and 2 each, known clients 6
-// and 3, known after 1,000 sat in a day, at most 2 known clients kept.
+// capAt is a cap with small numbers on a clock the test moves: strangers 4 overall and 2 each, known clients a
+// lane of their own of 6 and 3 each, known after 1,000 sat in a day, at most 2 known clients kept.
 func capAt(at *time.Time) *lnurl.UnpaidCap {
-	return capWith(at, lnurl.Share{Overall: 4, PerClient: 2}, lnurl.Share{Overall: 6, PerClient: 3})
+	return capWith(at, lnurl.Share{Overall: 4, PerClient: 2}, lnurl.Share{Overall: 6, PerClient: 3}, 2)
 }
 
-func capWith(at *time.Time, stranger, known lnurl.Share) *lnurl.UnpaidCap {
+func capWith(at *time.Time, stranger, known lnurl.Share, knownMax int) *lnurl.UnpaidCap {
 	return lnurl.NewUnpaidCap(lnurl.CapLimits{Window: 10 * time.Minute, Keep: 20 * time.Minute, Stranger: stranger, Known: known,
-		KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 2}, func() time.Time { return *at })
+		KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: knownMax}, func() time.Time { return *at })
 }
 
 var hashes int
 
-// make has c make an invoice for client, failing the test if there is no place; its hash.
-func make1(t *testing.T, c *lnurl.UnpaidCap, client string) string {
+// makeIn has c make an invoice for client, failing the test if there is no place; its hash and lane.
+func makeIn(t *testing.T, c *lnurl.UnpaidCap, client string) (string, lnurl.Lane) {
 	t.Helper()
-	if ok, r := c.Reserve(client); !ok {
+	lane, ok, r := c.Reserve(client)
+	if !ok {
 		t.Fatalf("%s refused: %+v", client, r)
 	}
 	hashes++
 	h := fmt.Sprintf("h%d", hashes)
-	c.Made(client, h)
+	c.Made(client, lane, h)
+	return h, lane
+}
+
+// make1 is makeIn's hash alone.
+func make1(t *testing.T, c *lnurl.UnpaidCap, client string) string {
+	t.Helper()
+	h, _ := makeIn(t, c, client)
 	return h
+}
+
+// makeN has client make n invoices, each in lane want.
+func makeN(t *testing.T, c *lnurl.UnpaidCap, client string, n int, want lnurl.Lane) {
+	t.Helper()
+	for i := 0; i < n; i++ {
+		if _, lane := makeIn(t, c, client); lane != want {
+			t.Fatalf("%s's invoice %d in lane %d, want %d", client, i+1, lane, want)
+		}
+	}
 }
 
 // pay has client pay sat through an invoice of its own.
@@ -39,22 +57,14 @@ func pay(t *testing.T, c *lnurl.UnpaidCap, client string, sat int64) {
 	c.Paid(make1(t, c, client), sat)
 }
 
-// known says whether client is judged as known: it may hold a third unpaid invoice (a stranger's share is 2).
-// The places it tries are given back.
+// known says whether client is judged as known: it is given a known place (the test leaves one free for it).
+// The place is given back.
 func known(c *lnurl.UnpaidCap, client string) bool {
-	n := 0
-	defer func() {
-		for ; n > 0; n-- {
-			c.Release(client)
-		}
-	}()
-	for n < 3 {
-		if ok, _ := c.Reserve(client); !ok {
-			return false
-		}
-		n++
+	lane, ok, _ := c.Reserve(client)
+	if ok {
+		c.Release(client, lane)
 	}
-	return true
+	return ok && lane == lnurl.KnownLane
 }
 
 func TestAStrangerIsRefusedAtTheStrangersShare(t *testing.T) {
@@ -64,54 +74,113 @@ func TestAStrangerIsRefusedAtTheStrangersShare(t *testing.T) {
 	at = at.Add(time.Minute)
 	make1(t, c, "a")
 	at = at.Add(time.Minute)
-	ok, r := c.Reserve("a")
+	_, ok, r := c.Reserve("a")
 	if ok || r.Overall || r.Known || r.Retry != 8*time.Minute {
 		t.Fatalf("the third: %v %+v", ok, r)
 	}
-	if ok, _ := c.Reserve("b"); !ok {
+	if _, ok, _ := c.Reserve("b"); !ok {
 		t.Fatal("another client")
 	}
 }
 
-func TestStrangersStopAtTheirOverallKnownClientsGoOn(t *testing.T) {
+// Strangers filling their places take none of the known clients'; known clients filling theirs refuse the next
+// known client as a whole, and it stays known.
+func TestStrangersCantTakeKnownPlaces(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
-	c := capAt(&at)
-	pay(t, c, "k", 1000)
-	for _, s := range []string{"s1", "s2", "s3", "s4"} {
-		make1(t, c, s)
+	c := capWith(&at, lnurl.Share{Overall: 4, PerClient: 2}, lnurl.Share{Overall: 6, PerClient: 3}, 16)
+	for _, k := range []string{"k1", "k2", "k3"} {
+		pay(t, c, k, 1000)
 	}
-	if ok, r := c.Reserve("s5"); ok || !r.Overall || r.Known {
+	for _, s := range []string{"s1", "s2"} {
+		makeN(t, c, s, 2, lnurl.StrangerLane)
+	}
+	if _, ok, r := c.Reserve("s3"); ok || !r.Overall || r.Known {
 		t.Fatalf("the fifth stranger: %v %+v", ok, r)
 	}
-	make1(t, c, "k")
-	make1(t, c, "k")
-	if ok, r := c.Reserve("k"); ok || !r.Overall || !r.Known {
-		t.Fatalf("past the known lane: %v %+v", ok, r)
+	makeN(t, c, "k1", 3, lnurl.KnownLane)
+	makeN(t, c, "k2", 3, lnurl.KnownLane)
+	for i := 0; i < 2; i++ {
+		if _, ok, r := c.Reserve("k3"); ok || !r.Overall || !r.Known {
+			t.Fatalf("past the known lane, %d: %v %+v", i+1, ok, r)
+		}
+	}
+	at = at.Add(10 * time.Minute)
+	if !known(c, "k3") {
+		t.Fatal("k3 lost its status to a full lane")
 	}
 }
 
-// The wait is until enough places are free for this client, not until the oldest invoice leaves.
-func TestTheWaitIsForEnoughPlacesNotTheOldest(t *testing.T) {
+// A known client whose own known places are full may take stranger places, as a stranger may; past both it is
+// refused for its own share and is a stranger again.
+func TestAKnownClientUsesStrangerPlacesWhenItsOwnAreFull(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
-	c := capWith(&at, lnurl.Share{Overall: 4, PerClient: 4}, lnurl.Share{Overall: 8, PerClient: 6})
+	c := capWith(&at, lnurl.Share{Overall: 50, PerClient: 10}, lnurl.Share{Overall: 25, PerClient: 5}, 16)
 	pay(t, c, "k", 1000)
-	t0 := at
-	for i := 0; i < 6; i++ {
-		at = t0.Add(time.Duration(i) * time.Minute)
-		make1(t, c, "k")
+	makeN(t, c, "k", 5, lnurl.KnownLane)
+	makeN(t, c, "k", 10, lnurl.StrangerLane)
+	if _, ok, r := c.Reserve("k"); ok || r.Overall || !r.Known {
+		t.Fatalf("the 16th: %v %+v", ok, r)
 	}
-	// 6 counted, a stranger's limit 4: 3 must leave, the 3rd oldest made at t0+2m.
-	if ok, r := c.Reserve("x"); ok || !r.Overall || r.Retry != t0.Add(12*time.Minute).Sub(at) {
-		t.Fatalf("a stranger: %v %+v", ok, r)
+	at = at.Add(10 * time.Minute)
+	if known(c, "k") {
+		t.Fatal("still known past its own share")
+	}
+}
+
+// An invoice being made holds its place in the lane it was given, and only there.
+func TestReservationsCountInTheirLane(t *testing.T) {
+	at := time.Unix(1_790_000_000, 0)
+	c := capWith(&at, lnurl.Share{Overall: 50, PerClient: 10}, lnurl.Share{Overall: 25, PerClient: 5}, 16)
+	for i := 1; i <= 6; i++ {
+		pay(t, c, fmt.Sprintf("k%d", i), 1000)
+	}
+	for i := 1; i <= 4; i++ {
+		makeN(t, c, fmt.Sprintf("k%d", i), 5, lnurl.KnownLane)
+	}
+	makeN(t, c, "k5", 4, lnurl.KnownLane)
+	l5, ok, _ := c.Reserve("k5")
+	if !ok || l5 != lnurl.KnownLane {
+		t.Fatalf("k5's 5th: %v %v", l5, ok)
+	}
+	l6, ok, _ := c.Reserve("k6")
+	if !ok || l6 != lnurl.StrangerLane {
+		t.Fatalf("k6 beside a full known lane: %v %v", l6, ok)
+	}
+	c.Release("k6", l6)
+	c.Release("k5", l5)
+	if l, ok, _ := c.Reserve("k6"); !ok || l != lnurl.KnownLane {
+		t.Fatalf("k6 after k5 gave its place back: %v %v", l, ok)
+	}
+}
+
+// A known client refused by both lanes waits for the one that frees first.
+func TestRetryIsTheSoonestLane(t *testing.T) {
+	for _, knownFirst := range []bool{true, false} {
+		at := time.Unix(1_790_000_000, 0)
+		c := capWith(&at, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 2, PerClient: 2}, 16)
+		pay(t, c, "k1", 1000)
+		pay(t, c, "k", 1000)
+		t0 := at
+		fill := []func(){func() { makeN(t, c, "k1", 2, lnurl.KnownLane) }, func() { makeN(t, c, "s", 2, lnurl.StrangerLane) }}
+		if !knownFirst {
+			fill[0], fill[1] = fill[1], fill[0]
+		}
+		fill[0]()
+		at = t0.Add(3 * time.Minute)
+		fill[1]()
+		at = t0.Add(5 * time.Minute)
+		if _, ok, r := c.Reserve("k"); ok || !r.Overall || !r.Known || r.Retry != 5*time.Minute {
+			t.Fatalf("known lane filled first %v: %v %+v", knownFirst, ok, r)
+		}
 	}
 }
 
 func TestOnlyReservationsMeanASecond(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
-	c := capWith(&at, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 2, PerClient: 2})
+	c := capWith(&at, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 2, PerClient: 2}, 2)
 	c.Reserve("a")
 	c.Reserve("b")
-	if ok, r := c.Reserve("c"); ok || !r.Overall || r.Retry != time.Second {
+	if _, ok, r := c.Reserve("c"); ok || !r.Overall || r.Retry != time.Second {
 		t.Fatalf("%v %+v", ok, r)
 	}
 }
@@ -124,10 +193,11 @@ func TestALatePaymentStillMakesItsClientKnown(t *testing.T) {
 	ha := make1(t, c, "a")
 	hb := make1(t, c, "b")
 	at = at.Add(15 * time.Minute)
-	if ok, _ := c.Reserve("z"); !ok {
+	lz, ok, _ := c.Reserve("z")
+	if !ok {
 		t.Fatal("z")
 	}
-	c.Release("z")
+	c.Release("z", lz)
 	c.Paid(ha, 1000)
 	if !known(c, "a") {
 		t.Fatal("a paid at 15 minutes is not known")
@@ -150,8 +220,8 @@ func TestPaidForAnUnknownHashChangesNothing(t *testing.T) {
 	if known(c, "a") {
 		t.Fatal("one payment of 600 counted twice")
 	}
-	c.Reserve("")
-	c.Made("", "empty")
+	l, _, _ := c.Reserve("")
+	c.Made("", l, "empty")
 	c.Paid("empty", 5000)
 	if known(c, "") {
 		t.Fatal("the empty client is known")
@@ -193,38 +263,37 @@ func TestKnownStatusLastsADay(t *testing.T) {
 	}
 }
 
-// A known client over its own share is a stranger again: it must bring 1,000 sat to be known. Its wait is a
-// stranger's. A refusal by both limits doesn't demote.
+// A known client over its own share in every lane it may use is a stranger again: it must bring 1,000 sat to be
+// known. Its wait is a stranger's. A refusal because the known lane is full as a whole doesn't demote.
 func TestAKnownClientOverItsShareIsDemoted(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
 	c := capAt(&at)
 	pay(t, c, "k", 1000)
 	t0 := at
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 5; i++ {
 		at = t0.Add(time.Duration(i) * time.Minute)
 		make1(t, c, "k")
 	}
-	at = t0.Add(3 * time.Minute)
-	// As a stranger it may hold 2: the 2nd oldest (t0+1m) must leave.
-	if ok, r := c.Reserve("k"); ok || r.Overall || !r.Known || r.Retry != 8*time.Minute {
+	at = t0.Add(5 * time.Minute)
+	// 3 known places (t0..t0+2m) and 2 stranger ones (t0+3m, t0+4m). As a stranger it may hold 2: the oldest
+	// stranger one (t0+3m) must leave.
+	if _, ok, r := c.Reserve("k"); ok || r.Overall || !r.Known || r.Retry != 8*time.Minute {
 		t.Fatalf("over its share: %v %+v", ok, r)
 	}
-	if ok, r := c.Reserve("k"); ok || r.Known {
+	if _, ok, r := c.Reserve("k"); ok || r.Known {
 		t.Fatalf("after: %v %+v", ok, r)
 	}
 
 	at = t0.Add(time.Hour)
 	pay(t, c, "j", 1000)
-	for i := 0; i < 3; i++ {
-		make1(t, c, "j")
-	}
 	pay(t, c, "i", 1000)
-	for i := 0; i < 3; i++ {
-		make1(t, c, "i")
-	}
+	makeN(t, c, "j", 3, lnurl.KnownLane)
+	makeN(t, c, "i", 3, lnurl.KnownLane)
+	makeN(t, c, "s1", 2, lnurl.StrangerLane)
+	makeN(t, c, "s2", 2, lnurl.StrangerLane)
 	for i := 0; i < 2; i++ {
-		if ok, r := c.Reserve("j"); ok || !r.Overall || !r.Known {
-			t.Fatalf("both limits, %d: %v %+v", i+1, ok, r)
+		if _, ok, r := c.Reserve("j"); ok || !r.Overall || !r.Known {
+			t.Fatalf("the known lane full, %d: %v %+v", i+1, ok, r)
 		}
 	}
 }
@@ -250,8 +319,8 @@ func TestTheKnownTableKeepsKnownClients(t *testing.T) {
 	}
 }
 
-// cardd's numbers: strangers 10 each and 50 in all, known clients 20 each and 75 in all, a wait of at most the
-// invoice's 10 minutes.
+// cardd's numbers: strangers 10 each and 50 in all; known clients 5 each and 25 in all in their own lane; a wait
+// of at most the invoice's 10 minutes.
 func TestCarddsUnpaidCap(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
 	c := lnurl.InvoiceUnpaidCap(func() time.Time { return at })
@@ -261,34 +330,28 @@ func TestCarddsUnpaidCap(t *testing.T) {
 			t.Fatalf("wait %v", r.Retry)
 		}
 	}
-	pay(t, c, "k1", 1000)
-	pay(t, c, "k2", 1000)
-	for i := 0; i < 10; i++ {
-		make1(t, c, "s0")
+	for i := 1; i <= 6; i++ {
+		pay(t, c, fmt.Sprintf("k%d", i), 1000)
 	}
-	if ok, r := c.Reserve("s0"); ok || r.Overall {
+	makeN(t, c, "s0", 10, lnurl.StrangerLane)
+	if _, ok, r := c.Reserve("s0"); ok || r.Overall {
 		t.Fatalf("the 11th from one stranger: %v %+v", ok, r)
 	} else {
 		short(r)
 	}
 	for i := 1; i < 5; i++ {
-		for j := 0; j < 10; j++ {
-			make1(t, c, fmt.Sprintf("s%d", i))
-		}
+		makeN(t, c, fmt.Sprintf("s%d", i), 10, lnurl.StrangerLane)
 	}
-	if ok, r := c.Reserve("s5"); ok || !r.Overall {
+	if _, ok, r := c.Reserve("s5"); ok || !r.Overall {
 		t.Fatalf("the 51st: %v %+v", ok, r)
 	} else {
 		short(r)
 	}
-	for i := 0; i < 20; i++ {
-		make1(t, c, "k1")
+	for i := 1; i <= 5; i++ {
+		makeN(t, c, fmt.Sprintf("k%d", i), 5, lnurl.KnownLane)
 	}
-	for i := 0; i < 5; i++ {
-		make1(t, c, "k2")
-	}
-	if ok, r := c.Reserve("k2"); ok || !r.Overall || !r.Known {
-		t.Fatalf("the 76th: %v %+v", ok, r)
+	if _, ok, r := c.Reserve("k6"); ok || !r.Overall || !r.Known {
+		t.Fatalf("the 26th known: %v %+v", ok, r)
 	} else {
 		short(r)
 	}

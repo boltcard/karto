@@ -255,27 +255,30 @@ func TestAFailedInvoiceTakesNoPlace(t *testing.T) {
 func TestUnpaidCapCountsInvoicesBeingMade(t *testing.T) {
 	at := time.Unix(1_790_000_000, 0)
 	c := lnurl.NewUnpaidCap(lnurl.CapLimits{Window: time.Hour, Keep: time.Hour, Stranger: lnurl.Share{Overall: 2, PerClient: 2}, Known: lnurl.Share{Overall: 2, PerClient: 2}, KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 16}, func() time.Time { return at })
-	if ok, _ := c.Reserve("a"); !ok {
+	la, ok, _ := c.Reserve("a")
+	if !ok {
 		t.Fatal("first")
 	}
-	if ok, _ := c.Reserve("b"); !ok {
+	lb, ok, _ := c.Reserve("b")
+	if !ok {
 		t.Fatal("second")
 	}
-	if ok, r := c.Reserve("c"); ok || !r.Overall || r.Retry != time.Second {
+	if _, ok, r := c.Reserve("c"); ok || !r.Overall || r.Retry != time.Second {
 		t.Fatalf("third while two are being made: %v %+v", ok, r)
 	}
-	c.Release("a")
-	c.Made("b", "bb")
+	c.Release("a", la)
+	c.Made("b", lb, "bb")
 	at = at.Add(10 * time.Minute)
-	if ok, _ := c.Reserve("a"); !ok {
+	la, ok, _ = c.Reserve("a")
+	if !ok {
 		t.Fatal("after a release")
 	}
-	c.Made("a", "aa")
-	if ok, r := c.Reserve("c"); ok || r.Retry != 50*time.Minute {
+	c.Made("a", la, "aa")
+	if _, ok, r := c.Reserve("c"); ok || r.Retry != 50*time.Minute {
 		t.Fatalf("full: %v %+v", ok, r)
 	}
 	c.Paid("bb", 0)
-	if ok, _ := c.Reserve("c"); !ok {
+	if _, ok, _ := c.Reserve("c"); !ok {
 		t.Fatal("after a payment")
 	}
 }
@@ -360,7 +363,8 @@ func TestAStrangerOverItsShareIsNotTold(t *testing.T) {
 	}
 }
 
-// A known client over its own share (a wallet's servers that many payers share) is told, at most once a day.
+// A known client over its own share (a wallet's servers that many payers share) is told, at most once a day. Its
+// share is its known places and a stranger's.
 func TestAKnownClientOverItsShareIsToldOnceADay(t *testing.T) {
 	w := setup(t)
 	at := time.Unix(1_790_000_000, 0)
@@ -369,7 +373,7 @@ func TestAKnownClientOverItsShareIsToldOnceADay(t *testing.T) {
 	over := func(addr string) {
 		t.Helper()
 		w.knownClient(t, addr)
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 3; i++ {
 			if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != http.StatusOK {
 				t.Fatalf("%s %d: %d", addr, i+1, code)
 			}
@@ -414,19 +418,58 @@ func TestADroppedAlertIsToldAgain(t *testing.T) {
 	}
 }
 
-// Retry-After is the wait until a place is free for the client asking: here the second oldest must leave.
-func TestRetryAfterIsTheWaitForEnoughPlaces(t *testing.T) {
+// Retry-After is the wait until a place is free for the client asking: for a known client refused by both lanes,
+// the lane whose oldest invoice leaves first.
+func TestRetryAfterIsTheWaitForAPlace(t *testing.T) {
 	w := setup(t)
 	at := time.Unix(1_790_000_000, 0)
 	t0 := at
-	w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 4, PerClient: 4}, yes)
+	w.alerted(&at, 10*time.Minute, lnurl.Share{Overall: 2, PerClient: 2}, lnurl.Share{Overall: 2, PerClient: 2}, yes)
 	w.knownClient(t, "203.0.113.1")
-	for i := 0; i < 3; i++ {
-		at = t0.Add(time.Duration(i) * time.Minute)
-		w.from("203.0.113.1", "/lnurlp/pool/cb?amount=1000")
+	w.knownClient(t, "203.0.113.2")
+	for i := 0; i < 2; i++ { // the known lane, made at t0
+		if code, _, _ := w.from("203.0.113.1", "/lnurlp/pool/cb?amount=1000"); code != http.StatusOK {
+			t.Fatalf("known %d: %d", i+1, code)
+		}
 	}
-	at = t0.Add(2*time.Minute + 500*time.Millisecond)
-	if code, h, _ := w.from("198.51.100.9", "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests || h.Get("Retry-After") != "540" {
+	at = t0.Add(time.Minute)
+	for i := 0; i < 2; i++ { // the stranger lane, made at t0+1m
+		if code, _, _ := w.from("198.51.100.1", "/lnurlp/pool/cb?amount=1000"); code != http.StatusOK {
+			t.Fatalf("stranger %d: %d", i+1, code)
+		}
+	}
+	at = t0.Add(2*time.Minute + 30*time.Second)
+	if code, h, _ := w.from("203.0.113.2", "/lnurlp/pool/cb?amount=1000"); code != http.StatusTooManyRequests || h.Get("Retry-After") != "450" {
 		t.Fatalf("%d %v", code, h.Get("Retry-After"))
+	}
+}
+
+// The known places full is told on its own schedule, so a strangers' flood told before doesn't hide it.
+func TestTheKnownLaneFullIsToldApartFromStrangers(t *testing.T) {
+	w := setup(t)
+	at := time.Unix(1_790_000_000, 0)
+	t0 := at
+	told := w.alerted(&at, 100*time.Hour, lnurl.Share{Overall: 1, PerClient: 1}, lnurl.Share{Overall: 1, PerClient: 1}, yes)
+	w.knownClient(t, "203.0.113.1")
+	w.knownClient(t, "203.0.113.2")
+	ask := func(addr string, after time.Duration, want int) {
+		t.Helper()
+		at = t0.Add(after)
+		if code, _, _ := w.from(addr, "/lnurlp/pool/cb?amount=1000"); code != want {
+			t.Fatalf("%s at %v: %d, want %d", addr, after, code, want)
+		}
+	}
+	ask("198.51.100.1", 0, http.StatusOK)                           // the stranger place
+	ask("198.51.100.2", 0, http.StatusTooManyRequests)              // the strangers' cap: told
+	ask("198.51.100.2", 10*time.Minute, http.StatusTooManyRequests) // not told again yet
+	ask("203.0.113.1", 15*time.Minute, http.StatusOK)               // the known place
+	ask("203.0.113.2", 20*time.Minute, http.StatusTooManyRequests)  // the known lane full: told
+	ask("203.0.113.2", 30*time.Minute, http.StatusTooManyRequests)  // not again yet
+	if fmt.Sprint(*told) != "[false false]" {
+		t.Fatalf("told %v", *told)
+	}
+	ask("203.0.113.2", 80*time.Minute, http.StatusTooManyRequests) // an hour after it was told
+	if fmt.Sprint(*told) != "[false false false]" {
+		t.Fatalf("an hour on: told %v", *told)
 	}
 }
