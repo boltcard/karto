@@ -18,25 +18,32 @@ import (
 // long after it stops.
 //
 // A client that has brought KnownSat through its invoices in the last
-// KnownFor is known: it has places strangers can't take (Known's Overall
-// above Stranger's) and a larger share of its own, so payers who really pay
-// (the owner's other wallet, a regular customer, a wallet's servers) get
-// through while strangers fill the cap. The lane costs: a sat or two from
-// each address would buy it otherwise. A known client refused at its own
-// share is a stranger again.
+// KnownFor is known: it has a lane of places of its own (Known) that
+// strangers can't take, so payers who really pay (the owner's other wallet,
+// a regular customer, a wallet's servers) get through while strangers fill
+// theirs (Stranger). A known client whose own known places are full, or
+// whose lane is, may take a stranger's place as a stranger may. The lane
+// costs: a sat or two from each address would buy it otherwise; filling it
+// takes Known.Overall/Known.PerClient addresses that each brought KnownSat,
+// unless addresses real payers made known (a wallet's servers) are used. A
+// known client refused at its own share in both lanes is a stranger again.
 //
-// It is kept in memory: a restart forgets the count and the known clients,
-// which a stranger can't cause, and at most doubles a window's rows when it
-// happens. The day's sum is counted from a client's first payment in it, so
-// a total split across a restart, or across that day's end, may fall short.
+// It is kept in memory while cardd runs. A clean stop (an update, a restart,
+// a reboot) saves it (Save) to a file beside the database, read and deleted
+// at the next start (Load): that file holds up to KnownMax clients'
+// addresses, part-payers' too, only while cardd is down. A crash forgets
+// the count and the known clients, which a stranger can't cause, and at most
+// doubles a window's rows when it happens; an invoice being made at a stop
+// isn't counted after it. The day's sum is counted from a client's first
+// payment in it, so a total split across that day's end may fall short.
 type UnpaidCap struct {
 	l   CapLimits
 	now func() time.Time
 
 	mu       sync.Mutex
-	made     map[string]unpaid // unpaid invoices by payment hash, kept for Keep
-	reserved map[string]int    // invoices being made now, by client (Reserve, before Made or Release)
-	known    map[string]*payer // what clients have brought, at most KnownMax of them
+	made     map[string]unpaid  // unpaid invoices by payment hash, kept for Keep
+	reserved map[laneClient]int // invoices being made now, by lane and client (Reserve, before Made or Release)
+	known    map[string]*payer  // what clients have brought, at most KnownMax of them
 }
 
 // Share is how many unpaid invoices a class of client may fill the cap to, and hold each.
@@ -59,9 +66,23 @@ type CapRefusal struct {
 	Retry   time.Duration // until a place should be free for it
 }
 
+// Lane is the set of places an invoice was made in.
+type Lane uint8
+
+const (
+	StrangerLane Lane = 1 // any client's: CapLimits.Stranger
+	KnownLane    Lane = 2 // known clients' alone: CapLimits.Known
+)
+
+type laneClient struct {
+	lane   Lane
+	client string
+}
+
 type unpaid struct {
 	at     time.Time
 	client string
+	lane   Lane
 }
 
 // payer is what a client has brought since since (towards the next KnownSat), and when its status ends.
@@ -73,7 +94,7 @@ type payer struct {
 
 // NewUnpaidCap is a cap with limits l.
 func NewUnpaidCap(l CapLimits, now func() time.Time) *UnpaidCap {
-	return &UnpaidCap{l: l, now: now, made: map[string]unpaid{}, reserved: map[string]int{}, known: map[string]*payer{}}
+	return &UnpaidCap{l: l, now: now, made: map[string]unpaid{}, reserved: map[laneClient]int{}, known: map[string]*payer{}}
 }
 
 // InvoiceUnpaidCap is cardd's: an invoice counts for its 10-minute life (kept
@@ -81,22 +102,39 @@ func NewUnpaidCap(l CapLimits, now func() time.Time) *UnpaidCap {
 // client). Strangers may fill it to 50, 10 each: far beyond a personal
 // server's abandoned payments, a crowd's included, and room for several
 // payers behind one address. Clients that brought 1,000 sat in the last day
-// may fill it to 75, 20 each. At most 10,800 rows a day in phoenixd's
-// database, a few megabytes, 7,200 of them strangers'.
+// have 25 more of their own, 5 each (15 each with the stranger places). At
+// most 10,800 rows a day in phoenixd's database, a few megabytes, 7,200 of
+// them strangers'.
 func InvoiceUnpaidCap(now func() time.Time) *UnpaidCap {
 	return NewUnpaidCap(CapLimits{Window: invoiceExpiry, Keep: 20 * time.Minute,
-		Stranger: Share{Overall: 50, PerClient: 10}, Known: Share{Overall: 75, PerClient: 20},
+		Stranger: Share{Overall: 50, PerClient: 10}, Known: Share{Overall: 25, PerClient: 5},
 		KnownSat: 1000, KnownFor: 24 * time.Hour, KnownMax: 4096}, now)
 }
 
-// Reserve takes a place for an invoice about to be made for client; false,
-// with why, when there is none. The caller then calls Made with the
-// invoice's hash, or Release.
-func (c *UnpaidCap) Reserve(client string) (bool, CapRefusal) {
+// laneCount is what a lane holds, as Reserve sees it for one client: when its
+// counted invoices were made, all and the client's, and how many are being
+// made, all and the client's.
+type laneCount struct {
+	all, mine              []time.Time
+	reserved, reservedMine int
+}
+
+// Reserve takes a place for an invoice about to be made for client, in the
+// lane it returns; false, with why, when there is none. A known client takes
+// a known place, or else a stranger's; a stranger only a stranger's. The
+// caller then calls Made with the lane and the invoice's hash, or Release.
+//
+// Refused, a stranger is refused as a whole when the stranger places are
+// full, else for its own share. A known client is refused as a whole when
+// the known places are full (it stays known), else for its own share; it is
+// a stranger again only when its own share of the stranger places is full
+// too, not when strangers fill them. Retry is when the soonest place it may
+// use frees.
+func (c *UnpaidCap) Reserve(client string) (Lane, bool, CapRefusal) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	now := c.now()
-	var all, mine []time.Time // when the counted invoices were made, all and this client's
+	var n [KnownLane + 1]laneCount
 	for hash, u := range c.made {
 		age := now.Sub(u.at)
 		if age >= c.l.Keep {
@@ -106,42 +144,65 @@ func (c *UnpaidCap) Reserve(client string) (bool, CapRefusal) {
 		if age >= c.l.Window {
 			continue
 		}
-		all = append(all, u.at)
+		n[u.lane].all = append(n[u.lane].all, u.at)
 		if u.client == client {
-			mine = append(mine, u.at)
+			n[u.lane].mine = append(n[u.lane].mine, u.at)
 		}
 	}
-	reserved, reservedMine := 0, c.reserved[client]
-	for _, n := range c.reserved {
-		reserved += n
+	for k, r := range c.reserved {
+		n[k.lane].reserved += r
+		if k.client == client {
+			n[k.lane].reservedMine += r
+		}
 	}
 	known := c.isKnown(client, now)
-	share := c.l.Stranger
+	lanes := []Lane{StrangerLane}
 	if known {
-		share = c.l.Known
+		lanes = []Lane{KnownLane, StrangerLane}
 	}
-	overall := len(all)+reserved >= share.Overall
-	own := len(mine)+reservedMine >= share.PerClient
-	if !overall && !own {
-		c.reserved[client]++
-		return true, CapRefusal{}
-	}
-	r := CapRefusal{Overall: overall, Known: known}
-	if !overall && known {
-		// Over its own share alone: a stranger again, and its wait is a stranger's.
-		delete(c.known, client)
-		share = c.l.Stranger
-		if len(all)+reserved >= share.Overall {
-			r.Retry = c.wait(all, reserved, share.Overall, now)
+	for _, l := range lanes {
+		s, x := c.share(l), n[l]
+		if len(x.all)+x.reserved < s.Overall && len(x.mine)+x.reservedMine < s.PerClient {
+			c.reserved[laneClient{l, client}]++
+			return l, true, CapRefusal{}
 		}
 	}
-	if overall {
-		r.Retry = c.wait(all, reserved, share.Overall, now)
+	sWait, sWhole := c.laneWait(n[StrangerLane], c.l.Stranger, now)
+	if !known {
+		return 0, false, CapRefusal{Overall: sWhole, Retry: sWait}
 	}
-	if len(mine)+reservedMine >= share.PerClient {
-		r.Retry = max(r.Retry, c.wait(mine, reservedMine, share.PerClient, now))
+	kWait, kWhole := c.laneWait(n[KnownLane], c.l.Known, now)
+	if kWhole {
+		return 0, false, CapRefusal{Overall: true, Known: true, Retry: min(kWait, sWait)}
 	}
-	return false, r
+	if s := n[StrangerLane]; len(s.mine)+s.reservedMine < c.l.Stranger.PerClient {
+		// Over its own known share while strangers fill theirs: it stays known.
+		return 0, false, CapRefusal{Known: true, Retry: min(kWait, sWait)}
+	}
+	// Over its own share in both: a stranger again, and its wait is a stranger's.
+	delete(c.known, client)
+	return 0, false, CapRefusal{Known: true, Retry: sWait}
+}
+
+func (c *UnpaidCap) share(l Lane) Share {
+	if l == KnownLane {
+		return c.l.Known
+	}
+	return c.l.Stranger
+}
+
+// laneWait is how long until a full lane has a place for the client, and
+// whether it is full as a whole.
+func (c *UnpaidCap) laneWait(x laneCount, s Share, now time.Time) (time.Duration, bool) {
+	var w time.Duration
+	whole := len(x.all)+x.reserved >= s.Overall
+	if whole {
+		w = c.wait(x.all, x.reserved, s.Overall, now)
+	}
+	if len(x.mine)+x.reservedMine >= s.PerClient {
+		w = max(w, c.wait(x.mine, x.reservedMine, s.PerClient, now))
+	}
+	return w, whole
 }
 
 // wait is how long until a set of counted invoices made at made, with
@@ -162,24 +223,24 @@ func (c *UnpaidCap) isKnown(client string, now time.Time) bool {
 	return p != nil && now.Before(p.knownUntil)
 }
 
-// Made fills client's reserved place with the invoice phoenixd made.
-func (c *UnpaidCap) Made(client, paymentHash string) {
+// Made fills client's place reserved in lane with the invoice phoenixd made.
+func (c *UnpaidCap) Made(client string, lane Lane, paymentHash string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.unreserve(client)
-	c.made[paymentHash] = unpaid{at: c.now(), client: client}
+	c.unreserve(laneClient{lane, client})
+	c.made[paymentHash] = unpaid{at: c.now(), client: client, lane: lane}
 }
 
-// Release gives back client's reserved place: no invoice was made.
-func (c *UnpaidCap) Release(client string) {
+// Release gives back client's place reserved in lane: no invoice was made.
+func (c *UnpaidCap) Release(client string, lane Lane) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.unreserve(client)
+	c.unreserve(laneClient{lane, client})
 }
 
-func (c *UnpaidCap) unreserve(client string) {
-	if c.reserved[client]--; c.reserved[client] <= 0 {
-		delete(c.reserved, client)
+func (c *UnpaidCap) unreserve(k laneClient) {
+	if c.reserved[k]--; c.reserved[k] <= 0 {
+		delete(c.reserved, k)
 	}
 }
 

@@ -408,8 +408,13 @@ set -e
 [ "$code" -eq 8 ] || fail "up on a retired server exited $code, want 8"
 [ "$msg" = "install.sh up: this server was retired (replaced by VM 1004)" ] || fail "up said '$msg'"
 [ -z "$(docker compose ps -aq)" ] || fail "up started something on a retired server"
+# cardd saved the unpaid cap's state as it stopped; a retired server never reads it.
+cardd=$(docker compose run --rm --no-deps -T -v cardapp-test_cardd_data:/data --entrypoint ls phoenixd -A /data | tr '\n' ' ')
+case " $cardd" in *" unpaid-cap.json"*) fail "the unpaid cap's state left after retire: $cardd" ;; esac
 
 echo "== wipe: the databases and the marker go, the seed and issuer key stay"
+docker compose run --rm --no-deps -T --user 65532:65532 -v cardapp-test_cardd_data:/data --entrypoint sh phoenixd \
+	-c 'echo {} >/data/unpaid-cap.json && echo {} >/data/unpaid-cap.json.tmp' || fail "seeding the cap's state"
 ./install.sh wipe
 set +e
 ./install.sh retired >/dev/null

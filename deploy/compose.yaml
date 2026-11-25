@@ -26,6 +26,9 @@ services:
   cardd:
     image: cardd:local
     restart: unless-stopped
+    # On a stop cardd lets requests finish, waits for its jobs, then saves
+    # the unpaid cap's state; more than Docker's default 10 s.
+    stop_grace_period: 30s
     environment:
       CARDD_HOST: ${CARDD_HOST:?set CARDD_HOST in .env}
       CARDD_PHOENIXD_URL: http://phoenixd:9740

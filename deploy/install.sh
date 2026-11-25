@@ -318,7 +318,25 @@ retire() {
 	printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$vm" | compose run --rm --no-deps -T --entrypoint sh phoenixd -c '
 		f=/phoenix/.phoenix/RETIRED
 		cat >"$f.tmp" && mv "$f.tmp" "$f"'
+	# cardd saved the unpaid cap's state (payers' addresses) as it stopped,
+	# for a next start that never comes here.
+	vol=$(cardd_volume)
+	if [ -n "$vol" ]; then
+		compose run --rm --no-deps -T --user 65532:65532 -v "$vol:/data" --entrypoint rm phoenixd \
+			-f /data/unpaid-cap.json /data/unpaid-cap.json.tmp
+	fi
 	echo retired
+}
+
+# cardd's volume, by the project's own name (a volume given to compose run is
+# a global name), or nothing when there is none. cardd's image has no shell,
+# so phoenixd's image deletes cardd's files in it.
+cardd_volume() {
+	project=$(compose config | sed -n 's/^name: //p' | head -n 1)
+	[ -n "$project" ] || return 0
+	if $DOCKER volume inspect "${project}_cardd_data" >/dev/null 2>&1; then
+		echo "${project}_cardd_data"
+	fi
 }
 
 # The marker, "<UTC time> <new VM id>", or nothing.
@@ -361,16 +379,14 @@ retired() {
 wipe() {
 	lock_out_check wipe
 	compose down --timeout 60
-	# cardd's image has no shell, so phoenixd's image deletes cardd's files. A
-	# volume given to compose run is a global name, so name the project's own.
-	project=$(compose config | sed -n 's/^name: //p' | head -n 1)
-	vol="${project}_cardd_data"
-	if [ -z "$project" ] || ! $DOCKER volume inspect "$vol" >/dev/null 2>&1; then
-		echo "install.sh wipe: no cardd volume '$vol'; run prepare first" >&2
+	vol=$(cardd_volume)
+	if [ -z "$vol" ]; then
+		echo "install.sh wipe: no cardd volume; run prepare first" >&2
 		exit 1
 	fi
 	compose run --rm --no-deps -T --user 65532:65532 -v "$vol:/data" --entrypoint rm phoenixd \
-		-rf /data/cardd.db /data/cardd.db-wal /data/cardd.db-shm /data/backups /data/rates.json
+		-rf /data/cardd.db /data/cardd.db-wal /data/cardd.db-shm /data/backups /data/rates.json \
+		/data/unpaid-cap.json /data/unpaid-cap.json.tmp
 	# Everything of phoenixd's but its seed, the marker included.
 	compose run --rm --no-deps -T --entrypoint find phoenixd /phoenix/.phoenix \
 		-mindepth 1 -maxdepth 1 ! -name seed.dat -exec rm -rf {} +
