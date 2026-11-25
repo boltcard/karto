@@ -157,3 +157,17 @@ func TestABadCapFileStartsEmpty(t *testing.T) {
 		t.Fatalf("%v %v", lane, ok)
 	}
 }
+
+// A save that can't put its file in place leaves no temp file of payers' addresses behind.
+func TestAFailedSaveLeavesNoTemp(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "unpaid-cap.json")
+	if err := os.MkdirAll(filepath.Join(file, "in-the-way"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveCap(lnurl.InvoiceUnpaidCap(time.Now), file); err == nil {
+		t.Fatal("saved over a directory")
+	}
+	if _, err := os.Stat(file + ".tmp"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("the temp file is still there: %v", err)
+	}
+}

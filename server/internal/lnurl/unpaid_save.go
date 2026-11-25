@@ -107,7 +107,7 @@ func (c *UnpaidCap) loadInvoices(in []savedInvoice, now time.Time) {
 func (c *UnpaidCap) loadKnown(in []savedPayer, now time.Time) {
 	byClient := map[string]*payer{}
 	for _, k := range in {
-		p := &payer{since: k.Since, sum: max(k.Sum, 0), knownUntil: k.Until}
+		p := &payer{since: k.Since, sum: min(max(k.Sum, 0), c.l.KnownSat-1), knownUntil: k.Until}
 		if p.since.After(now) {
 			p.since = now
 		}

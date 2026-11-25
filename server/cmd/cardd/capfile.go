@@ -16,7 +16,8 @@ import (
 )
 
 // shutdownWait is how long serve lets requests finish when it stops; held
-// reads (a till waiting for a tap) don't, and are cut.
+// reads (a till waiting for a tap) don't, and are cut. The compose file gives
+// cardd 30 s to stop, so the jobs and the save have the rest.
 const shutdownWait = 3 * time.Second
 
 // serve listens on s's two addresses, reads the unpaid cap's saved state,
@@ -98,7 +99,11 @@ func saveCap(c *lnurl.UnpaidCap, path string) error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, path)
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // loadCap reads the state saveCap wrote into c and deletes it, whether or

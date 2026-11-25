@@ -186,3 +186,17 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 		make1(t, c, "a")
 	}
 }
+
+// A saved sum is what a payer brought towards being known: never as much as being known takes, so a file can't make
+// a payer known on its next sat, nor push the sum past what an int64 holds.
+func TestLoadKeepsASumShortOfKnown(t *testing.T) {
+	at := time.Unix(1_790_000_000, 0)
+	ts := func(d time.Duration) string { return at.Add(d).UTC().Format(time.RFC3339Nano) }
+	file := fmt.Sprintf(`{"version":1,"known":[{"client":"big","since":%q,"sum":9223372036854775807,"until":%q}]}`, ts(-time.Hour), ts(time.Hour))
+	c := smallCap(&at)
+	load(t, c, []byte(file))
+	s := decode(t, save(t, c))
+	if len(s.Known) != 1 || s.Known[0].Sum != 999 {
+		t.Fatalf("kept %+v, want a sum of 999", s.Known)
+	}
+}
