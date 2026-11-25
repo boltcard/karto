@@ -1,5 +1,6 @@
 // The Server page's disk card: what is happening and, when a rebuild would free enough, Rebuild server, which goes
-// as Settings' row does (home under it, then Rebuild server). The watch and the view are fixed; the cards are real.
+// as Settings' row does (back to home, which Rebuild server then replaces). The watch and the view are fixed; the
+// cards are real.
 import { fireEvent, render, screen } from '@testing-library/react';
 import { router } from 'expo-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -39,6 +40,16 @@ describe("the Server page's disk card", () => {
     fireEvent.click(screen.getByRole('button', { name: 'Rebuild server' }));
     expect(router.dismissTo).toHaveBeenCalledWith('/home');
     expect(router.replace).toHaveBeenCalledWith('/rebuild');
+  });
+
+  it('says a critical disk is almost full, rebuild now, and goes home before it opens the rebuild', () => {
+    show({ ...low, freeBytes: 400_000_000, level: 'critical' });
+    expect(screen.getByText('The disk is almost full: rebuild now')).toBeTruthy();
+    expect(screen.getByText(/^400 MB of 10\.7 GB is left\. phoenixd/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Rebuild server' }));
+    const [home] = vi.mocked(router.dismissTo).mock.invocationCallOrder;
+    const [rebuild] = vi.mocked(router.replace).mock.invocationCallOrder;
+    expect(home).toBeLessThan(rebuild);
   });
 
   it('turns Rebuild server off while the phone is busy with the server over SSH', () => {
