@@ -38,7 +38,9 @@ func (s *server) serve(ctx context.Context, out io.Writer) error {
 	s.pubAddr, s.hookAddr = pubL.Addr(), hookL.Addr()
 	loadCap(s.unpaid, s.capFile, s.log)
 
-	runCtx, stopRun := context.WithCancel(ctx)
+	// Not ctx's child: the jobs (the ledger's checks, the alert sender) carry
+	// on until the requests have finished, and stop at stopRun below.
+	runCtx, stopRun := context.WithCancel(context.Background())
 	defer stopRun()
 	ran := make(chan struct{})
 	go func() {
