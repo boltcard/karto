@@ -171,3 +171,56 @@ func TestAFailedSaveLeavesNoTemp(t *testing.T) {
 		t.Fatalf("the temp file is still there: %v", err)
 	}
 }
+
+// The background jobs (the ledger's checks, the alert sender) run on until the requests being served at a stop
+// have finished: a ledger check cut short at the signal would pause spending for the taps still in flight.
+func TestServeStopsTheJobsAfterTheRequests(t *testing.T) {
+	f := phoenixdtest.New()
+	defer f.Close()
+	args, _ := servedArgs(t, f.URL)
+	srv, err := newServer(args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.cleanup()
+	jobs := make(chan context.Context, 1)
+	srv.run = func(ctx context.Context) { jobs <- ctx; <-ctx.Done() }
+	entered, release := make(chan struct{}), make(chan struct{})
+	public := srv.public
+	srv.public = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hold" {
+			public.ServeHTTP(w, r)
+			return
+		}
+		close(entered)
+		<-release
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.serve(ctx, io.Discard) }()
+	<-srv.ready
+	runCtx := <-jobs
+	go func() {
+		if resp, err := http.Get("http://" + srv.pubAddr.String() + "/hold"); err == nil {
+			resp.Body.Close()
+		}
+	}()
+	<-entered
+	cancel()
+	time.Sleep(200 * time.Millisecond)
+	if runCtx.Err() != nil {
+		t.Error("the jobs stopped while a request was still being served")
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("serve: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("serve didn't stop")
+	}
+	if runCtx.Err() == nil {
+		t.Error("the jobs were not stopped by the end of serve")
+	}
+}
